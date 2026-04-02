@@ -1,0 +1,97 @@
+{
+  "server": {
+    "listenerAddress": "0.0.0.0",
+    "listenerPort": 5020,
+    "tlsParams": {
+      "enabled": false
+    }
+  },
+  "devices": [
+    {
+      "name": "EAF_Controller",
+      "id": 1,
+      "holdingRegisters": {
+        "0": { "value": 0, "description": "EAF Temperature (°C)" },
+        "1": { "value": 0, "description": "EAF Power (MW)" },
+        "2": { "value": 0, "description": "Electrode Position (mm)" },
+        "3": { "value": 0, "description": "Bath Level (%)" },
+        "4": { "value": 0, "description": "Oxygen Flow (Nm³/h)" },
+        "5": { "value": 0, "description": "Carbon Injection Rate (kg/min)" },
+        "6": { "value": 0, "description": "Tap-to-Tap Time (min)" },
+        "7": { "value": 0, "description": "Heat Number" }
+      },
+      "inputRegisters": {
+        "0": { "value": 1650, "description": "Target Temperature (°C)" },
+        "1": { "value": 80, "description": "Max Power (MW)" },
+        "2": { "value": 100, "description": "Max Electrode Position (mm)" }
+      },
+      "coils": {
+        "0": { "value": false, "description": "EAF Running" },
+        "1": { "value": false, "description": "Melting Phase" },
+        "2": { "value": false, "description": "Refining Phase" },
+        "3": { "value": false, "description": "Tapping Phase" },
+        "4": { "value": false, "description": "Alarm Active" }
+      },
+      "discreteInputs": {
+        "0": { "value": true, "description": "Power Available" },
+        "1": { "value": true, "description": "Cooling System OK" },
+        "2": { "value": true, "description": "Fume Extraction OK" }
+      }
+    },
+    {
+      "name": "BlastFurnace_Controller",
+      "id": 2,
+      "holdingRegisters": {
+        "0": { "value": 0, "description": "Hot Blast Temperature (°C)" },
+        "1": { "value": 0, "description": "Top Gas Temperature (°C)" },
+        "2": { "value": 0, "description": "Blast Pressure (bar)" },
+        "3": { "value": 0, "description": "Blast Volume (Nm³/min)" },
+        "4": { "value": 0, "description": "Iron Production Rate (t/h)" },
+        "5": { "value": 0, "description": "Coke Rate (kg/t)" },
+        "6": { "value": 0, "description": "Slag Rate (kg/t)" },
+        "7": { "value": 0, "description": "Hearth Temperature (°C)" }
+      },
+      "inputRegisters": {
+        "0": { "value": 1200, "description": "Target Hot Blast Temp (°C)" },
+        "1": { "value": 4, "description": "Target Blast Pressure (bar)" }
+      },
+      "coils": {
+        "0": { "value": false, "description": "Furnace Running" },
+        "1": { "value": false, "description": "Tapping Iron" },
+        "2": { "value": false, "description": "Tapping Slag" },
+        "3": { "value": false, "description": "Charging" },
+        "4": { "value": false, "description": "Alarm Active" }
+      },
+      "discreteInputs": {
+        "0": { "value": true, "description": "Hot Blast Stoves OK" },
+        "1": { "value": true, "description": "Gas Cleaning OK" },
+        "2": { "value": true, "description": "Cooling System OK" }
+      }
+    },
+    {
+      "name": "Energy_Meter",
+      "id": 3,
+      "holdingRegisters": {
+        "0": { "value": 0, "description": "Active Power L1 (kW)" },
+        "1": { "value": 0, "description": "Active Power L2 (kW)" },
+        "2": { "value": 0, "description": "Active Power L3 (kW)" },
+        "3": { "value": 0, "description": "Total Active Power (kW)" },
+        "4": { "value": 0, "description": "Reactive Power (kVAR)" },
+        "5": { "value": 0, "description": "Power Factor" },
+        "6": { "value": 0, "description": "Frequency (Hz)" },
+        "7": { "value": 0, "description": "Total Energy (MWh)" }
+      },
+      "inputRegisters": {
+        "0": { "value": 230, "description": "Nominal Voltage (V)" },
+        "1": { "value": 50, "description": "Nominal Frequency (Hz)" }
+      },
+      "coils": {
+        "0": { "value": true, "description": "Meter Active" }
+      },
+      "discreteInputs": {
+        "0": { "value": true, "description": "Grid Connected" },
+        "1": { "value": false, "description": "Overload Warning" }
+      }
+    }
+  ]
+}

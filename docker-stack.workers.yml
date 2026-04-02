@@ -1,0 +1,645 @@
+# =============================================================================
+# INDUSTREAM PLATFORM - FLOWMAKER WORKERS
+# =============================================================================
+# All FlowMaker worker services
+# Multi-environment support: Uses ${ENV} prefix for isolation
+# =============================================================================
+
+services:
+  # ==========================================
+  # CORE WORKERS
+  # ==========================================
+  worker-data-logger:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-data-logger:${WORKER_DATA_LOGGER_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-data-logger001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-data-logger:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-timer:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-timer:${WORKER_TIMER_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-timer001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-timer:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-js-expression:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-js-expression:${WORKER_JS_EXPRESSION_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-js-expression001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-js-expression:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_URL=${CDN_URL:-http://cdn-cache:8080}
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-http-client:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-http:${WORKER_HTTP_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-http-client001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-http-client:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-postgres-client:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-postgres-client:${WORKER_POSTGRES_CLIENT_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-postgres-client001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-postgres-client:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-timeseries:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-timeseries-workers:${WORKER_TIMESERIES_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-timeseries001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-timeseries:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-influx-client-dc:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-influx-client:${WORKER_INFLUX_CLIENT_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-influx-client-dc001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-influx-client-dc:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-notifications:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-notification:${WORKER_NOTIFICATIONS_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-notifications001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-notifications:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  # ==========================================
+  # INDUSTRIAL PROTOCOL WORKERS
+  # ==========================================
+  worker-mqtt-client:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-mqtt-client:${WORKER_MQTT_CLIENT_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-mqtt-client001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-mqtt-client:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-modbus-tcp:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-modbus-tcp:${WORKER_MODBUS_TCP_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-modbus-tcp001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-modbus-tcp:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-opc-ua-client:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-opc-ua-client:${WORKER_OPC_UA_CLIENT_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-opc-ua-client001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-opc-ua-client:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.08'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+  worker-test-data-generator:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-test-data-generator:${WORKER_TEST_DATA_GENERATOR_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-test-data-generator001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-test-data-generator:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-conditional-validator:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-conditional-dataset-validator:${WORKER_CONDITIONAL_DATASET_VALIDATOR_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-conditional-validator001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-conditional-validator:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-enqueue:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-enqueue:${WORKER_ENQUEUE_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-js-enqueue001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-enqueue:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  equation-solver:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-equation-solver:${WORKER_EQUATION_SOLVER_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-eqsolver001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://equation-solver:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  # ==========================================
+  # WORKER MANAGER
+  # ==========================================
+  worker-manager:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.infra/flowmaker-worker-manager:latest
+    environment:
+      - NODE_ENV=production
+      - DATA_DIR=/data
+      - BODY_SIZE_LIMIT=500M
+      - DOCKER_NETWORK=${STACK_NAME:-industream-${ENV}}_${ENV}-platform
+      - SCHEDULER_SERVICE=${STACK_NAME:-industream-${ENV}}_flowmaker-scheduler
+      - LOGGING_SERVICE=${STACK_NAME:-industream-${ENV}}_flowmaker-logging
+      - KEYCLOAK_URL=https://${INDUSTREAM_DOMAIN:-localhost}/auth
+      - KEYCLOAK_REALM=industream
+      - KEYCLOAK_CLIENT_ID=worker-manager
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${ENV}-worker-manager-data:/data
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    depends_on:
+      - flowmaker-scheduler
+      - flowmaker-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-worker-manager-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-worker-manager-secure.rule=Host(`workers.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-worker-manager-secure.tls=true
+        - traefik.http.routers.${ENV}-worker-manager-secure.service=${ENV}-worker-manager
+        - traefik.http.routers.${ENV}-worker-manager.entrypoints=web
+        - traefik.http.routers.${ENV}-worker-manager.rule=Host(`workers.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-worker-manager.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-worker-manager.loadbalancer.server.port=3000
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+        reservations:
+          cpus: '0.03'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  # ==========================================
+  # NEW WORKERS (from release-tracker 2026-02-17)
+  # ==========================================
+  worker-luminosity-box:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-luminosity-box:${WORKER_LUMINOSITY_BOX_VERSION:-1.0.0}
+    environment:
+    - FM_WORKER_ID=worker-luminosity-box001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-luminosity-box:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: 0.25
+          memory: 128M
+        reservations:
+          cpus: 0.03
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-minio-sink:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-minio-sink:${WORKER_MINIO_SINK_VERSION:-1.0.0}
+    environment:
+    - FM_WORKER_ID=worker-minio-sink001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-minio-sink:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    - MINIO_ENDPOINT=http://minio:9000
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: 0.25
+          memory: 384M
+        reservations:
+          cpus: 0.03
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  rtsp-test-server:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/smartcamera/rtsp-test-server:${RTSP_TEST_SERVER_VERSION:-latest}
+    networks:
+    - ${ENV}-platform
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.03'
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-rtsp-client:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-rtsp-client:${WORKER_RTSP_CLIENT_VERSION:-1.0.0}
+    environment:
+    - FM_WORKER_ID=worker-rtsp-client001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-rtsp-client:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: 0.50
+          memory: 256M
+        reservations:
+          cpus: 0.08
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  ${ENV}-platform:
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  ${ENV}-worker-manager-data:

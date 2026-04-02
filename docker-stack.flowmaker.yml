@@ -1,0 +1,336 @@
+# =============================================================================
+# INDUSTREAM PLATFORM - FLOWMAKER SERVICES
+# =============================================================================
+# FlowMaker core services: scheduler, confighub, logging, uimaker, frontend
+# Multi-environment support: Uses ${ENV} prefix for isolation
+# =============================================================================
+
+services:
+  # ==========================================
+  # FLOWMAKER SCHEDULER
+  # ==========================================
+  flowmaker-scheduler:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/flowmaker-runtime:${FLOWMAKER_CORE_VERSION:-1.6.13}
+    stop_grace_period: 30s
+    environment:
+    - FM_RUNTIME_BACKEND_PORT=3120
+    - FM_ETCD_HOST=http://etcd:2379
+    - FM_SCHEDULER_ID=${FLOWMAKER_SCHEDULER_ID:-RT-SCHED-1234}
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_UIMAKER_BACKEND_URL=http://flowmaker-uimaker-backend:3000
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - etcd
+    - flowmaker-logging
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - bash -c '(echo > /dev/tcp/127.0.0.1/3120) 2>/dev/null' || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+        reservations:
+          cpus: '0.08'
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  # ==========================================
+  # FLOWMAKER CONFIGHUB
+  # ==========================================
+  flowmaker-confighub:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/flowmaker-confighub:${FLOWMAKER_CORE_VERSION:-1.6.13}
+    environment:
+    - FM_ETCD_HOST=http://etcd:2379
+    networks:
+    - traefik-public
+    - ${ENV}-platform
+    depends_on:
+    - etcd
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - bash -c '(echo > /dev/tcp/127.0.0.1/4000) 2>/dev/null' || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-flowmaker-confighub-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-flowmaker-confighub-secure.rule=Host(`confighub.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-confighub-secure.tls=true
+      - traefik.http.routers.${ENV}-flowmaker-confighub-secure.service=${ENV}-flowmaker-confighub
+      - traefik.http.routers.${ENV}-flowmaker-confighub-secure.middlewares=
+      - traefik.http.routers.${ENV}-flowmaker-confighub.entrypoints=web
+      - traefik.http.routers.${ENV}-flowmaker-confighub.rule=Host(`confighub.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-confighub.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-flowmaker-confighub.loadbalancer.server.port=4000
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.08'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  # ==========================================
+  # FLOWMAKER LOGGING
+  # ==========================================
+  flowmaker-logging:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/flowmaker-logger:${FLOWMAKER_CORE_VERSION:-1.6.13}
+    networks:
+    - traefik-public
+    - ${ENV}-platform
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - bash -c '(echo > /dev/tcp/127.0.0.1/3000) 2>/dev/null' || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-flowmaker-logging-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-flowmaker-logging-secure.rule=Host(`logs-flowmaker.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-logging-secure.tls=true
+      - traefik.http.routers.${ENV}-flowmaker-logging-secure.service=${ENV}-flowmaker-logging
+      - traefik.http.routers.${ENV}-flowmaker-logging.entrypoints=web
+      - traefik.http.routers.${ENV}-flowmaker-logging.rule=Host(`logs-flowmaker.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-logging.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-flowmaker-logging.loadbalancer.server.port=3000
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.08'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+    environment: []
+
+  # ==========================================
+  # FLOWMAKER UIMAKER BACKEND
+  # ==========================================
+  flowmaker-uimaker-backend:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/uimaker/uimaker-backend:${UIMAKER_VERSION:-1.2.20-dev-2}
+    environment:
+    - UM_ETCD_PROJECTS=flowmaker|boxes/*/*/*/config|$$1/$$2/$$3
+    - UM_ETCD_HOST=http://etcd:2379
+    volumes:
+    - ${ENV}-flowmaker-uimaker-projects:/usr/app/backend/projects
+    - ${ENV}-flowmaker-uimaker-storage:/usr/app/backend/storage
+    - ${ENV}-flowmaker-uimaker-resources:/usr/app/backend/resources
+    networks:
+    - traefik-public
+    - ${ENV}-platform
+    depends_on:
+    - etcd
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - nc -z 127.0.0.1 3000 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-api-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-api-secure.rule=Host(`uimaker-flowmaker-api.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-api-secure.tls=true
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-api-secure.service=${ENV}-flowmaker-uimaker-api
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-api.entrypoints=web
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-api.rule=Host(`uimaker-flowmaker-api.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-api.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-flowmaker-uimaker-api.loadbalancer.server.port=3000
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.08'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  # ==========================================
+  # FLOWMAKER UIMAKER FRONTEND
+  # ==========================================
+  flowmaker-uimaker-frontend:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/uimaker/uimaker-front:${UIMAKER_VERSION:-1.2.20-dev-2}
+    environment:
+    - MPM_BACKEND_URL=https://uimaker-flowmaker-api.${INDUSTREAM_DOMAIN:-localhost}
+    - MPM_READONLY=false
+    networks:
+    - traefik-public
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-uimaker-backend
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -q --spider http://127.0.0.1:80/ || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend-secure.rule=Host(`uimaker-flowmaker.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend-secure.tls=true
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend-secure.service=${ENV}-flowmaker-uimaker-frontend
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend.entrypoints=web
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend.rule=Host(`uimaker-flowmaker.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-flowmaker-uimaker-frontend.loadbalancer.server.port=80
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+        reservations:
+          cpus: '0.03'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  flowmaker-uimaker-frontend-ro:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/uimaker/uimaker-front:${UIMAKER_VERSION:-1.2.20-dev-2}
+    environment:
+    - MPM_BACKEND_URL=https://uimaker-flowmaker-api.${INDUSTREAM_DOMAIN:-localhost}
+    - MPM_READONLY=true
+    networks:
+    - traefik-public
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-uimaker-backend
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -q --spider http://127.0.0.1:80/ || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend-ro-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend-ro-secure.rule=Host(`uimaker-flowmaker-view.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend-ro-secure.tls=true
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend-ro-secure.service=${ENV}-flowmaker-uimaker-frontend-ro
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend-ro.entrypoints=web
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend-ro.rule=Host(`uimaker-flowmaker-view.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-uimaker-frontend-ro.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-flowmaker-uimaker-frontend-ro.loadbalancer.server.port=80
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+        reservations:
+          cpus: '0.03'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  # ==========================================
+  # FLOWMAKER FRONTEND
+  # ==========================================
+  flowmaker-frontend:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/flowmaker-front:${FLOWMAKER_FRONTEND_VERSION:-1.6.13}
+    environment:
+    - FMUI_CONFIG_HUB_URL=https://confighub.${INDUSTREAM_DOMAIN:-localhost}
+    - FMUI_LOGSERVER_URL=https://logs-flowmaker.${INDUSTREAM_DOMAIN:-localhost}
+    - FMUI_CONFIGMAKER_FRONT_URL=https://uimaker-flowmaker-view.${INDUSTREAM_DOMAIN:-localhost}
+    networks:
+    - traefik-public
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-confighub
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -q --spider http://127.0.0.1:80/ || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-flowmaker-frontend-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-flowmaker-frontend-secure.rule=Host(`flowmaker.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-frontend-secure.tls=true
+      - traefik.http.routers.${ENV}-flowmaker-frontend-secure.service=${ENV}-flowmaker-frontend
+      - traefik.http.routers.${ENV}-flowmaker-frontend-secure.middlewares=
+      - traefik.http.routers.${ENV}-flowmaker-frontend-secure.priority=1
+      - traefik.http.routers.${ENV}-flowmaker-frontend.entrypoints=web
+      - traefik.http.routers.${ENV}-flowmaker-frontend.rule=Host(`flowmaker.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-frontend.middlewares=redirect-to-https@file
+      - traefik.http.routers.${ENV}-flowmaker-frontend.priority=1
+      - traefik.http.middlewares.${ENV}-flowmaker-frontend-stripprefix.stripprefix.prefixes=/flowmaker
+      - traefik.http.services.${ENV}-flowmaker-frontend.loadbalancer.server.port=80
+      - traefik.http.middlewares.${ENV}-flowmaker-add-prefix.addprefix.prefix=/flowmaker
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+        reservations:
+          cpus: '0.03'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  ${ENV}-platform:
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  ${ENV}-flowmaker-uimaker-projects:
+  ${ENV}-flowmaker-uimaker-storage:
+  ${ENV}-flowmaker-uimaker-resources:

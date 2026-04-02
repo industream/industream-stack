@@ -1,0 +1,259 @@
+# =============================================================================
+# INDUSTREAM PLATFORM - BACKUP SERVICES
+# =============================================================================
+# Backup scheduler, backup jobs, backup monitor
+# =============================================================================
+# Multi-environment support: Use ${ENV} prefix for isolation
+# Example: ENV=prod docker stack deploy ...
+# =============================================================================
+
+services:
+  # ==========================================
+  # BACKUP SCHEDULER
+  # ==========================================
+  swarm-cronjob:
+    image: crazymax/swarm-cronjob:latest
+    environment:
+      - TZ=${TZ:-Europe/Berlin}
+      - LOG_LEVEL=info
+      - LOG_JSON=false
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - ${ENV}-platform
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
+        reservations:
+          cpus: '0.02'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  # ==========================================
+  # BACKUP JOBS
+  # ==========================================
+  backup-postgres:
+    image: postgres:${POSTGRES_VERSION:-17.4}
+    entrypoint: ["/bin/bash", "/scripts/backup-postgres.sh"]
+    environment:
+      - BACKUP_DIR=/backups/postgres
+      - RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_ADMIN_USER:-postgres}
+      - DATABASES=keycloak industream DataCatalog
+      - NTFY_URL=http://ntfy:80
+      - NTFY_TOPIC=${NTFY_TOPIC:-industream-backups}
+    volumes:
+      - ./scripts/backups/backup-postgres.sh:/scripts/backup-postgres.sh:ro
+      - ${ENV}-backup-data:/backups
+    networks:
+      - ${ENV}-platform
+    secrets:
+      - ${ENV}_postgres_admin_password
+    depends_on:
+      - postgres
+      - ntfy
+    deploy:
+      mode: replicated
+      replicas: 0
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: none
+      labels:
+        - swarm.cronjob.enable=true
+        - swarm.cronjob.schedule=0 2 * * *
+        - swarm.cronjob.skip-running=true
+
+  backup-volumes:
+    image: alpine:latest
+    entrypoint: ["/bin/sh", "/scripts/backup-volumes.sh"]
+    environment:
+      - BACKUP_DIR=/backups/volumes
+      - RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
+      - GRAFANA_DATA=/data/grafana
+      - NTFY_URL=http://ntfy:80
+      - NTFY_TOPIC=${NTFY_TOPIC:-industream-backups}
+    volumes:
+      - ./scripts/backups/backup-volumes.sh:/scripts/backup-volumes.sh:ro
+      - ${ENV}-backup-data:/backups
+      - ${ENV}-grafana-data:/data/grafana:ro
+    networks:
+      - ${ENV}-platform
+    depends_on:
+      - ntfy
+    deploy:
+      mode: replicated
+      replicas: 0
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: none
+      labels:
+        - swarm.cronjob.enable=true
+        - swarm.cronjob.schedule=0 4 * * *
+        - swarm.cronjob.skip-running=true
+
+  backup-influxdb:
+    image: influxdb:${INFLUXDB_VERSION:-2.7}
+    entrypoint: ["/bin/bash", "/scripts/backup-influxdb.sh"]
+    environment:
+      - BACKUP_DIR=/backups/influxdb
+      - RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
+      - INFLUXDB_HOST=http://influxdb:8086
+      - INFLUXDB_ORG=${INFLUXDB_ORG:-industream}
+      - NTFY_URL=http://ntfy:80
+      - NTFY_TOPIC=${NTFY_TOPIC:-industream-backups}
+    volumes:
+      - ./scripts/backups/backup-influxdb.sh:/scripts/backup-influxdb.sh:ro
+      - ${ENV}-backup-data:/backups
+    networks:
+      - ${ENV}-platform
+    secrets:
+      - ${ENV}_influx_admin_token
+    depends_on:
+      - influxdb
+      - ntfy
+    deploy:
+      mode: replicated
+      replicas: 0
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.03'
+          memory: 128M
+      restart_policy:
+        condition: none
+      labels:
+        - swarm.cronjob.enable=true
+        - swarm.cronjob.schedule=30 2 * * *
+        - swarm.cronjob.skip-running=true
+
+  backup-etcd:
+    image: alpine:latest
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache -q etcd-ctl gzip && sh /scripts/backup-etcd.sh"]
+    environment:
+      - BACKUP_DIR=/backups/etcd
+      - RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
+      - ETCD_ENDPOINTS=http://etcd:2379
+      - NTFY_URL=http://ntfy:80
+      - NTFY_TOPIC=${NTFY_TOPIC:-industream-backups}
+    volumes:
+      - ./scripts/backups/backup-etcd.sh:/scripts/backup-etcd.sh:ro
+      - ${ENV}-backup-data:/backups
+    networks:
+      - ${ENV}-platform
+    depends_on:
+      - etcd
+      - ntfy
+    deploy:
+      mode: replicated
+      replicas: 0
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
+        reservations:
+          cpus: '0.02'
+          memory: 32M
+      restart_policy:
+        condition: none
+      labels:
+        - swarm.cronjob.enable=true
+        - swarm.cronjob.schedule=30 3 * * *
+        - swarm.cronjob.skip-running=true
+
+  # ==========================================
+  # BACKUP MONITOR
+  # ==========================================
+  backup-monitor:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.infra/backup-monitor:1.0.0
+    environment:
+      - BACKUP_DIR=/backups
+      - NODE_ENV=production
+      - KEYCLOAK_URL=https://${INDUSTREAM_DOMAIN:-industream.platform.lan}/auth
+      - KEYCLOAK_REALM=industream
+    volumes:
+      - ${ENV}-backup-data:/backups:ro
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+        reservations:
+          cpus: '0.02'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-backup-monitor-swarm.rule=Host(`backups.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-backup-monitor-swarm.entrypoints=websecure
+        - traefik.http.routers.${ENV}-backup-monitor-swarm.tls=true
+        - traefik.http.routers.${ENV}-backup-monitor-swarm.middlewares=backup-ratelimit@file,backup-security-headers@file
+        - traefik.http.services.${ENV}-backup-monitor-swarm.loadbalancer.server.port=3000
+        - traefik.http.routers.${ENV}-backup-monitor-swarm-http.rule=Host(`backups.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-backup-monitor-swarm-http.entrypoints=web
+        - traefik.http.routers.${ENV}-backup-monitor-swarm-http.middlewares=redirect-to-https@file
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  ${ENV}-platform:
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  ${ENV}-backup-data:
+  ${ENV}-grafana-data:
+    external: true
+
+# =============================================================================
+# SECRETS
+# =============================================================================
+secrets:
+  ${ENV}_postgres_admin_password:
+    external: true
+  ${ENV}_influx_admin_token:
+    external: true

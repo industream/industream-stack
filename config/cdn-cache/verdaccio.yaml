@@ -1,0 +1,86 @@
+# Verdaccio Configuration for Industream CDN Cache
+# Air-gap capable NPM registry with upstream caching
+# Listen on all interfaces (required for Docker networking)
+listen: 0.0.0.0:4873
+
+storage: /verdaccio/storage
+plugins: /verdaccio/plugins
+
+# Web UI configuration
+web:
+  enable: true
+  title: Industream NPM Cache
+  logo: ""
+  primary_color: "#052FAD"
+  gravatar: false
+  sort_packages: asc
+  darkMode: true
+
+# Authentication
+auth:
+  htpasswd:
+    file: /verdaccio/storage/htpasswd
+    max_users: 100
+    algorithm: bcrypt
+
+# Uplinks - External registries for caching
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+    timeout: 30s
+    maxage: 10m
+    fail_timeout: 5m
+    max_fails: 3
+    cache: true
+    agent_options:
+      keepAlive: true
+      maxSockets: 40
+      maxFreeSockets: 10
+
+# Package access rules
+packages:
+  # Scoped packages for Industream
+  '@industream/*':
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+    # No proxy - private packages only
+
+  # All other packages - proxy and cache from npmjs
+  '**':
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+    proxy: npmjs
+
+# Server configuration
+server:
+  keepAliveTimeout: 60
+
+# Middleware
+middlewares:
+  audit:
+    enabled: true
+
+# Logging
+logs:
+  - { type: stdout, format: pretty, level: http }
+
+# Security
+security:
+  api:
+    legacy: true
+    jwt:
+      sign:
+        expiresIn: 29d
+  web:
+    sign:
+      expiresIn: 7d
+
+# Experiments
+experiments:
+  changePassword: true
+  search: true
+
+# Max body size for uploads
+max_body_size: 100mb

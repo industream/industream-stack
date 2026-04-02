@@ -1,0 +1,93 @@
+# =============================================================================
+# INDUSTREAM PLATFORM - CDN CACHE
+# =============================================================================
+# Verdaccio NPM Registry & ESM.sh
+# =============================================================================
+# Service names aligned with FlowMaker reference: cdn-server, cdn-cache
+# =============================================================================
+
+services:
+  # ==========================================
+  # CDN SERVER - Verdaccio NPM Registry (FlowMaker image)
+  # ==========================================
+  # Internal only: workers access via http://cdn-server:4873 on the platform network.
+  # No Traefik exposure needed (aligned with FlowMaker reference deployment).
+  cdn-server:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/cdn-server:${CDN_SERVER_VERSION:-2.0.0}
+    hostname: cdn-server
+    networks:
+      - ${ENV}-platform
+    volumes:
+      - ${ENV}-cdn-server-storage:/verdaccio/storage
+      - ./config/cdn-cache/verdaccio.yaml:/verdaccio/conf/config.yaml:ro
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+
+  # ==========================================
+  # CDN CACHE - ESM.sh (FlowMaker image)
+  # ==========================================
+  cdn-cache:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/cdn-cache:${CDN_CACHE_VERSION:-2.0.2}
+    hostname: cdn-cache
+    depends_on:
+      - cdn-server
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    volumes:
+      - ${ENV}-cdn-cache-storage:/esm/.cache
+    environment:
+      - ESMPORT=8080
+      - NPM_REGISTRY=http://cdn-server:4873
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 128M
+        reservations:
+          cpus: '0.08'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-cdn-cache.rule=Host(`esm.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-cdn-cache.entrypoints=websecure
+        - traefik.http.routers.${ENV}-cdn-cache.tls=true
+        - traefik.http.services.${ENV}-cdn-cache.loadbalancer.server.port=8080
+        - traefik.http.routers.${ENV}-cdn-cache-http.rule=Host(`esm.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-cdn-cache-http.entrypoints=web
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  ${ENV}-platform:
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  ${ENV}-cdn-server-storage:
+  ${ENV}-cdn-cache-storage:

@@ -1,0 +1,143 @@
+# Traefik Dynamic Configuration for Industream
+# This file configures SSL/TLS certificates and other dynamic settings
+# Generated from template - DO NOT EDIT DIRECTLY, edit traefik-dynamic.yml.template instead
+#
+# TLS CONFIGURATION:
+# - Production (real domain): Let's Encrypt certificates are used automatically
+#   via certresolver=letsencrypt in service labels
+# - Development (.local domain): Self-signed certificates below are used as fallback
+#
+# For local development with .local domains, Let's Encrypt won't work.
+# Use the self-signed certificates and add them to your browser's trusted store.
+
+tls:
+  certificates:
+    # Production certificate (from certs/ directory)
+    - certFile: /etc/certs/${INDUSTREAM_DOMAIN}.crt
+      keyFile: /etc/certs/${INDUSTREAM_DOMAIN}.key
+
+  options:
+    default:
+      minVersion: VersionTLS12
+      sniStrict: false
+
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /etc/certs/${INDUSTREAM_DOMAIN}.crt
+        keyFile: /etc/certs/${INDUSTREAM_DOMAIN}.key
+
+# HTTP to HTTPS redirection
+http:
+  middlewares:
+    # Global redirect to HTTPS
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    # Security headers
+    security-headers:
+      headers:
+        sslRedirect: true
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        customFrameOptionsValue: "SAMEORIGIN"
+        contentTypeNosniff: true
+        browserXssFilter: true
+
+    # Allow iframe embedding for UIFusion portal
+    allow-iframe:
+      headers:
+        customFrameOptionsValue: "ALLOWALL"
+        contentSecurityPolicy: "frame-ancestors 'self' https://${INDUSTREAM_DOMAIN} https://*.${INDUSTREAM_DOMAIN}"
+
+    # Basic auth for Traefik dashboard
+    # Default credentials: admin / industream (change in production!)
+    # Generate new password: htpasswd -nb admin newpassword | sed -e 's/\$/\$\$/g'
+    traefik-auth:
+      basicAuth:
+        users:
+          - "admin:$$apr1$$ruca84Hq$$mbjdMZBAG.KWn7vfN/SNK/"
+
+    # Rate limiting middleware
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+
+    # Backup Monitor - Rate limiting
+    backup-ratelimit:
+      rateLimit:
+        average: 10
+        burst: 20
+
+    # Backup Monitor - Security headers (allows iframe embedding from UIFusion)
+    backup-security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        contentTypeNosniff: true
+        frameDeny: false
+        customFrameOptionsValue: "SAMEORIGIN"
+        browserXssFilter: true
+        contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; frame-ancestors 'self' https://${INDUSTREAM_DOMAIN} https://*.${INDUSTREAM_DOMAIN};"
+        referrerPolicy: 'strict-origin-when-cross-origin'
+        permissionsPolicy: 'camera=(), microphone=(), geolocation=()'
+
+    # Backup Monitor - Basic auth (temporary until oauth2-proxy is configured)
+    # Default: admin / industream
+    # To add users: htpasswd -B /path/to/traefik-dynamic/backup-monitor-htpasswd newuser
+    backup-auth:
+      basicAuth:
+        usersFile: "/etc/traefik/dynamic/backup-monitor-htpasswd"
+
+  # Traefik dashboard router
+  routers:
+    dashboard:
+      rule: "Host(`traefik.${INDUSTREAM_DOMAIN}`)"
+      entryPoints:
+        - websecure
+      service: api@internal
+      tls:
+        ${TLS_CERTRESOLVER_CONFIG}
+      middlewares:
+        - traefik-auth
+        - rate-limit
+
+    dashboard-redirect:
+      rule: "Host(`traefik.${INDUSTREAM_DOMAIN}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+      service: api@internal
+
+    # Backup Monitor routes (auth handled by JWT token in app)
+    backup-monitor:
+      rule: "Host(`backups.${INDUSTREAM_DOMAIN}`)"
+      entryPoints:
+        - websecure
+      service: backup-monitor
+      tls: {}
+      middlewares:
+        - backup-ratelimit
+        - backup-security-headers
+
+    backup-monitor-redirect:
+      rule: "Host(`backups.${INDUSTREAM_DOMAIN}`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+      service: backup-monitor
+
+  # Services
+  services:
+    backup-monitor:
+      loadBalancer:
+        servers:
+          - url: "http://backup-monitor:3000"

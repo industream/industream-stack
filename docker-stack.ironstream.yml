@@ -1,0 +1,121 @@
+# =============================================================================
+# IRONSTREAM - BUSINESS SERVICES
+# =============================================================================
+# Dedicated IronStream stack with its own PostgreSQL instance.
+# Connects to FlowMaker platform (scheduler, logging) via shared network.
+#
+# Multi-environment support: Uses ${ENV} prefix for isolation
+# Deploy: ./scripts/deploy-swarm.sh --env prod --with-ironstream
+# =============================================================================
+
+services:
+  # ==========================================
+  # IRONSTREAM POSTGRESQL - Dedicated Database
+  # ==========================================
+  ironstream-postgres:
+    image: postgres:${IRONSTREAM_POSTGRES_VERSION:-18-alpine}
+    hostname: ironstream-postgres
+    environment:
+      POSTGRES_USER: ${IRONSTREAM_DB_USER:-ironstream}
+      POSTGRES_PASSWORD_FILE: /run/secrets/${ENV}_ironstream_db_password
+      POSTGRES_DB: ironstream_demo
+    volumes:
+    - ${ENV}-ironstream-postgres-data:/var/lib/postgresql/data
+    networks:
+    - ${ENV}-platform
+    secrets:
+    - ${ENV}_ironstream_db_password
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U ${IRONSTREAM_DB_USER:-ironstream} -d ironstream_demo
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.05'
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  # ==========================================
+  # IRONSTREAM DEMO WORKER
+  # ==========================================
+  ironstream-demo:
+    hostname: ironstream-demo
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/ironstream/ironstream-demo:${IRONSTREAM_DEMO_VERSION:-0.0.1}
+    entrypoint:
+    - /bin/sh
+    - -c
+    - |
+      export ConnectionStrings__DemoDb="Host=ironstream-postgres:5432;Database=ironstream_demo;Username=${IRONSTREAM_DB_USER:-ironstream};Password=$$(cat /run/secrets/${ENV}_ironstream_db_password);Timezone=UTC"
+      exec dotnet IronStream.Demo.dll
+    environment:
+    - FM_WORKER_ID=ironstream-demo-001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://ironstream-demo:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - SeedDataFolder=./SeedData
+    networks:
+    - traefik-public
+    - ${ENV}-platform
+    secrets:
+    - ${ENV}_ironstream_db_password
+    depends_on:
+    - ironstream-postgres
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-ironstream-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-ironstream-secure.rule=Host(`ironstream.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-ironstream-secure.tls=true
+      - traefik.http.routers.${ENV}-ironstream-secure.service=${ENV}-ironstream
+      - traefik.http.routers.${ENV}-ironstream-secure.middlewares=${ENV}-ironstream-headers
+      - traefik.http.middlewares.${ENV}-ironstream-headers.headers.customresponseheaders.Content-Security-Policy=
+      - traefik.http.middlewares.${ENV}-ironstream-headers.headers.customresponseheaders.X-Frame-Options=
+      - traefik.http.services.${ENV}-ironstream.loadbalancer.server.port=9010
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.08'
+          memory: 256M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  ${ENV}-platform:
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  ${ENV}-ironstream-postgres-data:
+
+# =============================================================================
+# SECRETS
+# =============================================================================
+secrets:
+  ${ENV}_ironstream_db_password:
+    external: true

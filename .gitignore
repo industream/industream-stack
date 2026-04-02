@@ -1,0 +1,22 @@
+.env
+.env.prod
+.env.dev
+.env.staging
+.env.secure
+
+# Docker Secrets (local backup)
+secrets/
+*.secret
+config/gotify/token
+
+# Generated files
+SIMULATORS-*.md
+docker-stack-resolved*.yml
+docker-stack-secrets.yml
+docker-stack.workers-legacy.yml
+traefik-dynamic/traefik-dynamic.yml
+certs/
+client-setup/
+config/worker-versions.json
+config/uifusion/config.json
+config/cloudbeaver/data-sources.json

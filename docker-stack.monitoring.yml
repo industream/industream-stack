@@ -1,0 +1,403 @@
+# =============================================================================
+# INDUSTREAM PLATFORM - MONITORING STACK
+# =============================================================================
+# Grafana, Prometheus, exporters, alerting
+# =============================================================================
+# Multi-environment support: Use ${ENV} prefix for isolation
+# Example: ENV=prod docker stack deploy ...
+# =============================================================================
+
+services:
+  # ==========================================
+  # GRAFANA IMAGE RENDERER
+  # ==========================================
+  grafana-renderer:
+    image: grafana/grafana-image-renderer:${GRAFANA_RENDERER_VERSION:-latest}
+    environment:
+      - RENDERING_MODE=clustered
+      - RENDERING_CLUSTERING_MODE=browser
+      - RENDERING_CLUSTERING_MAX_CONCURRENCY=5
+      - RENDERING_CLUSTERING_TIMEOUT=60
+      - IGNORE_HTTPS_ERRORS=true
+      - TZ=${TZ:-Europe/Berlin}
+    networks:
+      - ${ENV}-platform
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 64M
+        reservations:
+          cpus: '0.08'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  # ==========================================
+  # GRAFANA DASHBOARD
+  # ==========================================
+  grafana:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/grafana/grafana-industream:${GRAFANA_VERSION:-latest}
+    environment:
+    - TERM=linux
+    - GF_DEFAULT_APP_MODE=${GF_APP_MODE:-development}
+    - GF_LOG_LEVEL=${GF_LOG_LEVEL:-info}
+    - GF_DATAPROXY_LOGGING=true
+    - GF_AUTH_ANONYMOUS_ENABLED=false
+    - GF_AUTH_BASIC_ENABLED=true
+    - GF_AUTH_DISABLE_LOGIN_FORM=false
+    - GF_AUTH_DISABLE_SIGNOUT_MENU=false
+    - GF_AUTH_LOGIN_COOKIE_NAME=grafana_session
+    - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+    - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/${ENV}_grafana_admin_password
+    - GF_FEATURE_TOGGLES_ENABLE=accessControlOnCall,idForwarding,externalServiceAccounts
+    - GF_ALERTING_ENABLED=false
+    - GF_UNIFIED_ALERTING_ENABLED=false
+    - GF_RENDERING_SERVER_URL=http://grafana-renderer:8081/render
+    - GF_RENDERING_CALLBACK_URL=http://grafana:3000/
+    - GF_LOG_FILTERS=rendering:debug plugin.mahendrapaipuri-dashboardreporter-app:debug
+    - GF_SECURITY_ALLOW_EMBEDDING=true
+    - GF_SERVER_SERVE_FROM_SUB_PATH=false
+    - GF_SERVER_ROOT_URL=https://dashboard.${INDUSTREAM_DOMAIN:-localhost}
+    - GF_DATABASE_TYPE=postgres
+    - GF_DATABASE_HOST=postgres:5432
+    - GF_DATABASE_NAME=${GRAFANA_DB_NAME:-industream}
+    - GF_DATABASE_USER=${GRAFANA_DB_USER:-dashboard}
+    - GF_DATABASE_PASSWORD__FILE=/run/secrets/${ENV}_grafana_db_password
+    - GF_DATABASE_SSL_MODE=disable
+    - GF_AUTH_GENERIC_OAUTH_ENABLED=${GRAFANA_OAUTH_ENABLED:-true}
+    - GF_AUTH_GENERIC_OAUTH_NAME=Keycloak
+    - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OAUTH_CLIENT_ID:-uifusion}
+    - GF_AUTH_GENERIC_OAUTH_SCOPES=openid email profile offline_access roles
+    - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://${INDUSTREAM_DOMAIN:-localhost}/auth/realms/industream/protocol/openid-connect/auth
+    - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=http://keycloak:8080/auth/realms/industream/protocol/openid-connect/token
+    - GF_AUTH_GENERIC_OAUTH_API_URL=http://keycloak:8080/auth/realms/industream/protocol/openid-connect/userinfo
+    - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(realm_access.roles[*], 'grafanaadmin') && 'GrafanaAdmin' || contains(realm_access.roles[*], 'admin') && 'Admin' || contains(realm_access.roles[*], 'editor') && 'Editor' || 'Viewer'
+    - GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE=true
+    - GF_AUTH_GENERIC_OAUTH_USE_PKCE=true
+    - GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN=true
+    - GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
+    - TZ=${TZ:-Europe/Berlin}
+    - GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource,marcusolsson-json-datasource
+    - INDUSTREAM_DOMAIN=${INDUSTREAM_DOMAIN:-industream.platform.lan}
+    # Datasource provisioning variables
+    - INFLUX_BUCKET=${INFLUX_BUCKET:-test}
+    - INFLUX_ORG=${INFLUX_ORG:-industream}
+    - INFLUX_ADMIN_TOKEN=${INFLUX_ADMIN_TOKEN:-}
+    - DATACATALOG_DB_USER=${DATACATALOG_DB_USER:-datacatalog}
+    - DATACATALOG_DB_PASSWORD=${DATACATALOG_DB_PASSWORD:-}
+    - POSTGRES_ADMIN_USER=${POSTGRES_ADMIN_USER:-postgres}
+    - POSTGRES_ADMIN_PASSWORD=${POSTGRES_ADMIN_PASSWORD:-}
+    volumes:
+    - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    - ${ENV}-grafana-data:/var/lib/grafana
+    networks:
+    - traefik-public
+    - ${ENV}-platform
+    depends_on:
+    - postgres
+    - keycloak
+    - grafana-renderer
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    secrets:
+    - ${ENV}_grafana_admin_password
+    - ${ENV}_grafana_db_password
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-grafana-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-grafana-secure.rule=Host(`dashboard.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-grafana-secure.tls=true
+      - traefik.http.routers.${ENV}-grafana-secure.service=${ENV}-grafana
+      - traefik.http.routers.${ENV}-grafana.entrypoints=web
+      - traefik.http.routers.${ENV}-grafana.rule=Host(`dashboard.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-grafana.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-grafana.loadbalancer.server.port=3000
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 384M
+        reservations:
+          cpus: '0.03'
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 0
+        window: 120s
+
+  # ==========================================
+  # PROMETHEUS
+  # ==========================================
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:${POSTGRES_EXPORTER_VERSION:-v0.16.0}
+    environment:
+      - DATA_SOURCE_URI=postgres:5432/postgres?sslmode=disable
+      - DATA_SOURCE_USER=${POSTGRES_ADMIN_USER:-postgres}
+      - DATA_SOURCE_PASS_FILE=/run/secrets/${ENV}_postgres_admin_password
+      - PG_EXPORTER_DISABLE_DEFAULT_METRICS=false
+      - PG_EXPORTER_DISABLE_SETTINGS_METRICS=false
+    networks:
+      - ${ENV}-platform
+    depends_on:
+      - postgres
+    secrets:
+      - ${ENV}_postgres_admin_password
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
+        reservations:
+          cpus: '0.02'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v3.2.1}
+    hostname: prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.external-url=https://prometheus.${INDUSTREAM_DOMAIN:-localhost}'
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/rules:/etc/prometheus/rules:ro
+      - ${ENV}-prometheus-data:/prometheus
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    depends_on:
+      - node-exporter
+      - cadvisor
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-prometheus-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-prometheus-secure.rule=Host(`prometheus.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-prometheus-secure.tls=true
+        - traefik.http.routers.${ENV}-prometheus-secure.service=${ENV}-prometheus
+        - traefik.http.routers.${ENV}-prometheus.entrypoints=web
+        - traefik.http.routers.${ENV}-prometheus.rule=Host(`prometheus.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-prometheus.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-prometheus.loadbalancer.server.port=9090
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+        reservations:
+          cpus: '0.08'
+          memory: 256M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  node-exporter:
+    image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.9.0}
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/host'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro,rslave
+    networks:
+      - ${ENV}-platform
+    deploy:
+      mode: global
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
+        reservations:
+          cpus: '0.02'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  cadvisor:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/monitoring/cadvisor:${CADVISOR_VERSION:-v0.56.2}
+    command:
+      - --housekeeping_interval=30s
+      - --disable_metrics=disk,diskIO,tcp,udp,percpu,sched,process
+      - --store_container_labels=true
+      - --docker_only=true
+      - --containerd=/run/containerd/containerd.sock
+      - --containerd-namespace=moby
+    volumes:
+      - /:/rootfs:ro,rslave
+      - /var/run:/var/run:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
+      - /sys:/sys:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /dev/disk/:/dev/disk:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - ${ENV}-platform
+    deploy:
+      mode: global
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.08'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  # ==========================================
+  # ALERTING
+  # ==========================================
+  alertmanager:
+    image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.28.1}
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=https://alertmanager.${INDUSTREAM_DOMAIN:-localhost}'
+      - '--cluster.listen-address='
+    volumes:
+      - ./config/alertmanager:/etc/alertmanager:ro
+      - ${ENV}-alertmanager-data:/alertmanager
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    depends_on:
+      - prometheus
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-alertmanager-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-alertmanager-secure.rule=Host(`alertmanager.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-alertmanager-secure.tls=true
+        - traefik.http.routers.${ENV}-alertmanager-secure.service=${ENV}-alertmanager
+        - traefik.http.routers.${ENV}-alertmanager.entrypoints=web
+        - traefik.http.routers.${ENV}-alertmanager.rule=Host(`alertmanager.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-alertmanager.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-alertmanager.loadbalancer.server.port=9093
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
+        reservations:
+          cpus: '0.02'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  # ==========================================
+  # NTFY - Push Notifications
+  # ==========================================
+  ntfy:
+    image: binwiederhier/ntfy:${NTFY_VERSION:-v2.11.0}
+    command:
+      - serve
+    environment:
+      - TZ=${TZ:-Europe/Berlin}
+      - NTFY_BASE_URL=https://ntfy.${INDUSTREAM_DOMAIN:-localhost}
+      - NTFY_BEHIND_PROXY=true
+      - NTFY_CACHE_FILE=/var/lib/ntfy/cache.db
+      - NTFY_ATTACHMENT_CACHE_DIR=/var/lib/ntfy/attachments
+    volumes:
+      - ${ENV}-ntfy-data:/var/lib/ntfy
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-ntfy-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-ntfy-secure.rule=Host(`ntfy.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-ntfy-secure.tls=true
+        - traefik.http.routers.${ENV}-ntfy-secure.service=${ENV}-ntfy
+        - traefik.http.routers.${ENV}-ntfy.entrypoints=web
+        - traefik.http.routers.${ENV}-ntfy.rule=Host(`ntfy.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-ntfy.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-ntfy.loadbalancer.server.port=80
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
+        reservations:
+          cpus: '0.02'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  ${ENV}-platform:
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  ${ENV}-grafana-data:
+  ${ENV}-prometheus-data:
+  ${ENV}-alertmanager-data:
+  ${ENV}-ntfy-data:
+
+# =============================================================================
+# SECRETS
+# =============================================================================
+secrets:
+  ${ENV}_grafana_admin_password:
+    external: true
+  ${ENV}_grafana_db_password:
+    external: true
+  ${ENV}_postgres_admin_password:
+    external: true

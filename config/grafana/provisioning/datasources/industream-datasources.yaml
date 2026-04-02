@@ -1,0 +1,90 @@
+# Industream Datasources Configuration
+# This file provisions datasources automatically in Grafana on startup
+# Grafana supports $VAR syntax for env variable substitution (NOT ${VAR:-default})
+
+apiVersion: 1
+
+datasources:
+  # Industream Datasource - Custom datasource with Timeseries and DataCatalog APIs
+  - name: Industream-datasource
+    type: industream-datasource
+    access: proxy
+    url: http://databridge:8080
+    jsonData:
+      timeseriesApiUrl: https://databridge.$INDUSTREAM_DOMAIN
+      dataCatalogApiUrl: https://datacatalog.$INDUSTREAM_DOMAIN
+      tlsSkipVerify: true
+    editable: true
+    isDefault: true
+    uid: industream-datasource
+
+  # Timeseries API - InfluxDB datasource
+  - name: Industream-Timeseries
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    database: $INFLUX_BUCKET
+    jsonData:
+      version: Flux
+      organization: $INFLUX_ORG
+      defaultBucket: $INFLUX_BUCKET
+      tlsSkipVerify: true
+    secureJsonData:
+      token: $INFLUX_ADMIN_TOKEN
+    editable: true
+    isDefault: false
+    uid: industream-timeseries
+
+  # DataCatalog API - JSON API datasource (via Infinity plugin)
+  - name: Industream-DataCatalog
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    url: https://datacatalog.$INDUSTREAM_DOMAIN
+    jsonData:
+      tlsSkipVerify: true
+      timeField: "timestamp"
+      allowedHosts:
+        - datacatalog.$INDUSTREAM_DOMAIN
+    editable: true
+    uid: industream-datacatalog
+
+  # DataCatalog API - Alternative: PostgreSQL direct connection
+  - name: Industream-DataCatalog-DB
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: DataCatalog
+    user: $DATACATALOG_DB_USER
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1700  # PostgreSQL 17.x
+      timescaledb: false
+    secureJsonData:
+      password: $DATACATALOG_DB_PASSWORD
+    editable: true
+    uid: industream-datacatalog-db
+
+  # PostgreSQL - Main database
+  - name: Industream-PostgreSQL
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: postgres
+    user: $POSTGRES_ADMIN_USER
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1700
+    secureJsonData:
+      password: $POSTGRES_ADMIN_PASSWORD
+    editable: true
+    uid: industream-postgres
+
+  # Timeseries API - Alternative: Direct HTTP API datasource
+  - name: Industream-Timeseries-API
+    type: marcusolsson-json-datasource
+    access: proxy
+    url: https://databridge.$INDUSTREAM_DOMAIN
+    jsonData:
+      tlsSkipVerify: true
+    editable: true
+    uid: industream-timeseries-api

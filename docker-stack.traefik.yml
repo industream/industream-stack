@@ -1,0 +1,165 @@
+# =============================================================================
+# INDUSTREAM PLATFORM - SHARED TRAEFIK INFRASTRUCTURE
+# =============================================================================
+# This stack is deployed ONCE and shared between all environments (prod/dev/staging)
+#
+# Usage: docker stack deploy -c docker-stack.traefik.yml traefik-shared
+# =============================================================================
+
+services:
+  # ==========================================
+  # DOCKER SOCKET PROXY
+  # ==========================================
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    privileged: true
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+    - CONTAINERS=1
+    - NETWORKS=1
+    - SERVICES=1
+    - TASKS=1
+    - POST=0
+    - NODES=1
+    - LOG_LEVEL=debug
+    networks:
+    - socket-proxy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.04'
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+  # ==========================================
+  # DNSMASQ - DISABLED
+  # ==========================================
+  # Replaced by static /etc/hosts on clients.
+  # Use ./scripts/generate/generate-client-setup.sh to produce a ready-to-deploy
+  # client kit (hosts file + certificate + install scripts).
+  # ==========================================
+  # dnsmasq:
+  #   image: andyshinn/dnsmasq:2.83
+  #   cap_add:
+  #     - NET_ADMIN
+  #   environment:
+  #     INDUSTREAM_SERVER_IP: ${INDUSTREAM_SERVER_IP:-127.0.0.1}
+  #   ports:
+  #     - "53:53/tcp"
+  #     - "53:53/udp"
+  #   volumes:
+  #     - ./config/dnsmasq/dnsmasq.conf:/etc/dnsmasq.conf:ro
+  #   networks:
+  #     - traefik-public
+  #   command:
+  #     - "--conf-file=/etc/dnsmasq.conf"
+  #     - "--address=/.industream.platform.lan/${INDUSTREAM_SERVER_IP:-127.0.0.1}"
+  #     - "--address=/.dev.industream.platform.lan/${INDUSTREAM_SERVER_IP:-127.0.0.1}"
+  #     - "--address=/.staging.industream.platform.lan/${INDUSTREAM_SERVER_IP:-127.0.0.1}"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "nslookup industream.platform.lan 127.0.0.1 || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 10s
+  #   deploy:
+  #     mode: replicated
+  #     replicas: 1
+  #     placement:
+  #       constraints:
+  #         - node.role == manager
+  #     resources:
+  #       limits:
+  #         cpus: '0.25'
+  #         memory: 128M
+  #       reservations:
+  #         cpus: '0.03'
+  #         memory: 64M
+  #     restart_policy:
+  #       condition: any
+  #       delay: 5s
+  #       max_attempts: 3
+  #       window: 120s
+
+  # ==========================================
+  # TRAEFIK - Reverse Proxy
+  # ==========================================
+  traefik:
+    image: traefik:${TRAEFIK_VERSION:-v3.6.7}
+    command:
+    - --api.dashboard=true
+    - --api.insecure=false
+    - --log.level=${TRAEFIK_LOG_LEVEL:-INFO}
+    - --metrics.prometheus=true
+    - --metrics.prometheus.buckets=0.1,0.3,1.2,5.0
+    - --providers.swarm=true
+    - --providers.swarm.exposedbydefault=false
+    - --providers.swarm.endpoint=unix:///var/run/docker.sock
+    - --providers.swarm.network=traefik-shared_traefik-public
+    - --entrypoints.web.address=:80
+    - --entrypoints.websecure.address=:443
+    - --entrypoints.websecure.http.encodedCharacters.allowEncodedSlash=true
+    - --entrypoints.web.http.encodedCharacters.allowEncodedSlash=true
+    - --entrypoints.traefik.address=:8080
+    - --providers.file.directory=/etc/traefik/dynamic
+    - --ping=true
+    ports:
+    - 80:80
+    - 443:443
+    - 8080:8080
+    volumes:
+    - ./certs:/etc/certs:ro
+    - ./traefik-dynamic:/etc/traefik/dynamic:ro
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    - letsencrypt-data:/letsencrypt
+    networks:
+    - traefik-public
+    - socket-proxy
+    healthcheck:
+      test:
+      - CMD
+      - traefik
+      - healthcheck
+      - --ping
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.08'
+          memory: 256M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  socket-proxy:
+    driver: overlay
+    internal: true
+  traefik-public:
+    driver: overlay
+    attachable: true
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  letsencrypt-data:

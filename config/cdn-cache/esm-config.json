@@ -1,0 +1,10 @@
+{
+  "port": 80,
+  "npmRegistry": "http://verdaccio:4873/",
+  "cache": "/esm/cache",
+  "compress": true,
+  "minify": true,
+  "sourcemap": true,
+  "corsAllowOrigins": ["*"],
+  "logLevel": "info"
+}
