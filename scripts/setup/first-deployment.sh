@@ -799,7 +799,6 @@ show_urls() {
     echo -e "  ${CYAN}Industream Portal${NC}   https://${domain}"
     echo -e "  ${CYAN}Grafana${NC}             https://grafana.${domain}"
     echo -e "  ${CYAN}FlowMaker${NC}           https://flowmaker.${domain}"
-    echo -e "  ${CYAN}UIMaker${NC}             https://uimaker.${domain}"
     echo -e "  ${CYAN}DataCatalog${NC}         https://datacatalog.${domain}"
     echo ""
     echo -e "${BOLD}Administration:${NC}"
@@ -814,7 +813,6 @@ show_urls() {
     echo -e "${BOLD}APIs:${NC}"
     echo -e "  ${CYAN}InfluxDB${NC}            https://influxdb.${domain}"
     echo -e "  ${CYAN}Timeseries API${NC}      https://timeseries.${domain}"
-    echo -e "  ${CYAN}UIMaker API${NC}         https://uimaker-api.${domain}"
     echo ""
 
     # Show credentials

@@ -9,38 +9,6 @@
 
 services:
   # ==========================================
-  # GRAFANA IMAGE RENDERER
-  # ==========================================
-  grafana-renderer:
-    image: grafana/grafana-image-renderer:${GRAFANA_RENDERER_VERSION:-latest}
-    environment:
-      - RENDERING_MODE=clustered
-      - RENDERING_CLUSTERING_MODE=browser
-      - RENDERING_CLUSTERING_MAX_CONCURRENCY=5
-      - RENDERING_CLUSTERING_TIMEOUT=60
-      - IGNORE_HTTPS_ERRORS=true
-      - TZ=${TZ:-Europe/Berlin}
-    networks:
-      - ${ENV}-platform
-    healthcheck:
-      test: ["NONE"]
-    deploy:
-      mode: replicated
-      replicas: 1
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 64M
-        reservations:
-          cpus: '0.08'
-          memory: 32M
-      restart_policy:
-        condition: any
-        delay: 5s
-        max_attempts: 0
-        window: 120s
-
-  # ==========================================
   # GRAFANA DASHBOARD
   # ==========================================
   grafana:
@@ -60,9 +28,7 @@ services:
     - GF_FEATURE_TOGGLES_ENABLE=accessControlOnCall,idForwarding,externalServiceAccounts
     - GF_ALERTING_ENABLED=false
     - GF_UNIFIED_ALERTING_ENABLED=false
-    - GF_RENDERING_SERVER_URL=http://grafana-renderer:8081/render
-    - GF_RENDERING_CALLBACK_URL=http://grafana:3000/
-    - GF_LOG_FILTERS=rendering:debug plugin.mahendrapaipuri-dashboardreporter-app:debug
+    - GF_LOG_FILTERS=plugin.mahendrapaipuri-dashboardreporter-app:debug
     - GF_SECURITY_ALLOW_EMBEDDING=true
     - GF_SERVER_SERVE_FROM_SUB_PATH=false
     - GF_SERVER_ROOT_URL=https://dashboard.${INDUSTREAM_DOMAIN:-localhost}
@@ -104,7 +70,6 @@ services:
     depends_on:
     - postgres
     - keycloak
-    - grafana-renderer
     healthcheck:
       test:
       - CMD-SHELL

@@ -1,7 +1,7 @@
 # =============================================================================
 # INDUSTREAM PLATFORM - CORE INFRASTRUCTURE
 # =============================================================================
-# Base services: PostgreSQL, Keycloak, etcd, UIFusion
+# Base services: PostgreSQL, Keycloak, UIFusion
 #
 # Multi-environment support: Uses ${ENV} prefix for isolation
 # Environments: prod, dev, staging
@@ -118,69 +118,6 @@ services:
         delay: 5s
         max_attempts: 0
         window: 120s
-
-  # ==========================================
-  # ETCD - Key-Value Store for FlowMaker
-  # ==========================================
-  etcd:
-    image: public.ecr.aws/bitnami/etcd:${ETCD_VERSION:-3.6.7-debian-12-r3}
-    environment:
-    - ALLOW_NONE_AUTHENTICATION=yes
-    - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
-    - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
-    - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
-    - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd:2380
-    - ETCD_NAME=etcd0
-    volumes:
-    - ${ENV}-etcd-data:/bitnami/etcd/data
-    networks:
-    - ${ENV}-platform
-    healthcheck:
-      test:
-      - CMD-SHELL
-      - etcdctl endpoint health --endpoints=http://localhost:2379
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 384M
-        reservations:
-          cpus: '0.08'
-          memory: 128M
-      restart_policy:
-        condition: any
-        delay: 5s
-        max_attempts: 0
-        window: 120s
-
-  etcd-browser:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/etcd3-browser
-    environment:
-    - ETCD=etcd:2379
-    - EDITABLE=1
-    networks:
-    - traefik-public
-    - ${ENV}-platform
-    depends_on:
-    - etcd
-    deploy:
-      labels:
-      - traefik.enable=true
-      - traefik.http.routers.${ENV}-etcd-browser.rule=Host(`etcd.${INDUSTREAM_DOMAIN:-localhost}`)
-      - traefik.http.routers.${ENV}-etcd-browser.entrypoints=websecure
-      - traefik.http.routers.${ENV}-etcd-browser.tls=true
-      - traefik.http.services.${ENV}-etcd-browser.loadbalancer.server.port=8081
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 64M
-        reservations:
-          cpus: '0.03'
-          memory: 32M
 
   # ==========================================
   # UIFUSION - Main Portal
@@ -422,7 +359,6 @@ networks:
 # =============================================================================
 volumes:
   ${ENV}-postgres-data:
-  ${ENV}-etcd-data:
   ${ENV}-minio-data:
   ${ENV}-cloudbeaver-data:
 

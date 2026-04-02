@@ -877,60 +877,6 @@ echo -e "${GREEN}✓ ${ENV^^} environment deployed successfully!${NC}"
 echo -e "${GREEN}══════════════════════════════════════════════════${NC}"
 
 # =============================================================================
-# Configure etcd environment variables
-# =============================================================================
-echo ""
-echo -e "${BLUE}Configuring FlowMaker environment in etcd...${NC}"
-
-# Wait for etcd to be ready
-ETCD_READY=false
-for i in {1..30}; do
-    ETCD_CONTAINER=$(docker ps -q -f name=${STACK_NAME}_etcd.1 2>/dev/null)
-    if [ -n "$ETCD_CONTAINER" ]; then
-        if docker exec "$ETCD_CONTAINER" etcdctl endpoint health >/dev/null 2>&1; then
-            ETCD_READY=true
-            break
-        fi
-    fi
-    echo -e "${YELLOW}  Waiting for etcd to be ready... ($i/30)${NC}"
-    sleep 2
-done
-
-if [ "$ETCD_READY" = "true" ]; then
-    # Configure DataCatalog URL
-    DATACATALOG_URL="https://datacatalog.${INDUSTREAM_DOMAIN}"
-    docker exec "$ETCD_CONTAINER" etcdctl put "environment/datacatalog" "{\"url\": \"${DATACATALOG_URL}\"}" >/dev/null 2>&1
-    echo -e "${GREEN}  ✓ DataCatalog URL: ${DATACATALOG_URL}${NC}"
-
-    # Configure DataCatalog API (internal)
-    DATACATALOG_API_URL="${DATACATALOG_URL:-http://datacatalog-api:8080}"
-    docker exec "$ETCD_CONTAINER" etcdctl put "environment/datacatalog-api" "{\"url\": \"${DATACATALOG_API_URL}\"}" >/dev/null 2>&1
-    echo -e "${GREEN}  ✓ DataCatalog API URL: ${DATACATALOG_API_URL}${NC}"
-
-    # Configure CDN (combined key for FlowMaker)
-    CDN_SERVER_URL="https://npm.${INDUSTREAM_DOMAIN}"
-    CDN_SERVER_INTERNAL="http://cdn-server:4873"
-    CDN_CACHE_URL="https://esm.${INDUSTREAM_DOMAIN}"
-    CDN_CACHE_INTERNAL="http://cdn-cache:8080"
-    docker exec "$ETCD_CONTAINER" etcdctl put "environment/cdn" "${CDN_CACHE_URL}" >/dev/null 2>&1
-    echo -e "${GREEN}  ✓ CDN: registry=${CDN_SERVER_URL}, cache=${CDN_CACHE_URL}${NC}"
-
-    # Configure CDN Server (Verdaccio NPM Registry)
-    docker exec "$ETCD_CONTAINER" etcdctl put "environment/cdn-server" "{\"url\": \"${CDN_SERVER_URL}\", \"internalUrl\": \"${CDN_SERVER_INTERNAL}\"}" >/dev/null 2>&1
-    echo -e "${GREEN}  ✓ CDN Server (Verdaccio): ${CDN_SERVER_URL}${NC}"
-
-    # Configure CDN Cache (ESM.sh)
-    docker exec "$ETCD_CONTAINER" etcdctl put "environment/cdn-cache" "{\"url\": \"${CDN_CACHE_URL}\", \"internalUrl\": \"${CDN_CACHE_INTERNAL}\"}" >/dev/null 2>&1
-    echo -e "${GREEN}  ✓ CDN Cache (ESM.sh): ${CDN_CACHE_URL}${NC}"
-
-    echo -e "${GREEN}✓ etcd configuration complete${NC}"
-else
-    echo -e "${YELLOW}⚠ Could not configure etcd (service not ready). Configure manually:${NC}"
-    echo "  docker exec \$(docker ps -q -f name=${STACK_NAME}_etcd.1) etcdctl put \"environment/datacatalog\" '{\"url\": \"https://datacatalog.${INDUSTREAM_DOMAIN}\"}'"
-    echo "  docker exec $(docker ps -q -f name=${STACK_NAME}_etcd.1) etcdctl put \"environment/cdn\" 'https://esm.${INDUSTREAM_DOMAIN}'" 
-fi
-
-# =============================================================================
 # Display demo information if deployed
 # =============================================================================
 if [ "$DEPLOY_DEMO" = "true" ]; then
@@ -962,7 +908,7 @@ echo "  DataCatalog:    https://datacatalog.${INDUSTREAM_DOMAIN}"
 echo ""
 echo -e "${BLUE}/etc/hosts (copy-paste on your workstation):${NC}"
 SERVER_IP="${INDUSTREAM_SERVER_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
-HOSTS_SUBDOMAINS="dashboard grafana flowmaker uimaker uimaker-api uimaker-flowmaker uimaker-flowmaker-api uimaker-flowmaker-view datacatalog datacatalog-api datacatalog-ui databridge keycloak traefik influxdb timeseries prometheus alertmanager ntfy npm esm etcd-browser etcd cloudbeaver minio s3 db ironstream backups logs-flowmaker workers"
+HOSTS_SUBDOMAINS="dashboard grafana flowmaker confighub datacatalog datacatalog-api datacatalog-ui databridge databridge-pg keycloak traefik influxdb timeseries prometheus alertmanager ntfy npm esm cloudbeaver minio s3 db ironstream backups logs-flowmaker workers"
 HOSTS_LINE="${SERVER_IP} ${INDUSTREAM_DOMAIN}"
 for sub in $HOSTS_SUBDOMAINS; do
     HOSTS_LINE="${HOSTS_LINE} ${sub}.${INDUSTREAM_DOMAIN}"

@@ -549,6 +549,36 @@ services:
         delay: 10s
         window: 120s
 
+  worker-datacatalog-mapper:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-datacatalog-mapper:${WORKER_DATACATALOG_MAPPER_VERSION:-1.0.2}
+    environment:
+    - FM_WORKER_ID=worker-datacatalog-mapper001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-datacatalog-mapper:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: 0.25
+          memory: 256M
+        reservations:
+          cpus: 0.03
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
   worker-minio-sink:
     image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-minio-sink:${WORKER_MINIO_SINK_VERSION:-1.0.0}
     environment:
@@ -574,25 +604,6 @@ services:
           memory: 384M
         reservations:
           cpus: 0.03
-          memory: 128M
-      restart_policy:
-        condition: any
-        delay: 10s
-        window: 120s
-
-  rtsp-test-server:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/smartcamera/rtsp-test-server:${RTSP_TEST_SERVER_VERSION:-latest}
-    networks:
-    - ${ENV}-platform
-    healthcheck:
-      test: ["NONE"]
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 256M
-        reservations:
-          cpus: '0.03'
           memory: 128M
       restart_policy:
         condition: any

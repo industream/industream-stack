@@ -106,19 +106,12 @@ GRAFANA_INDUSTREAM=$(echo "$README" | sed -n '/## Grafana/,/## /p' | grep '| `gr
 # Timeseries / DataBridge
 DATABRIDGE_API=$(echo "$README" | sed -n '/## Timeseries/,/## /p' | grep '| `api`' | head -1 | awk -F'|' '{print $4}' | sed 's/[` ]//g')
 
-# UIMaker
-UIMAKER_BACKEND=$(parse_version "uimaker-backend")
-UIMAKER_FRONT=$(parse_version "uimaker-front")
-
 # Determine common worker box version (most common version among workers)
 WORKER_VERSIONS=("$BOX_DATA_LOGGER" "$BOX_TIMER" "$BOX_JS_EXPRESSION" "$BOX_POSTGRES_CLIENT" "$BOX_TIMESERIES" "$BOX_INFLUX_CLIENT" "$BOX_NOTIFICATION" "$BOX_MQTT_CLIENT" "$BOX_MODBUS_TCP" "$BOX_OPC_UA" "$BOX_ENQUEUE" "$BOX_EQUATION_SOLVER" "$BOX_CONDITIONAL" "$BOX_TEST_DATA_GEN" "$BOX_LUMINOSITY" "$BOX_MINIO_SINK" "$BOX_RTSP_CLIENT")
 COMMON_BOX_VERSION=$(printf '%s\n' "${WORKER_VERSIONS[@]}" | sort | uniq -c | sort -rn | head -1 | awk '{print $2}')
 
 # Use the highest version between runtime/confighub/logger as FLOWMAKER_CORE_VERSION
 FLOWMAKER_CORE="$FLOWMAKER_RUNTIME"
-
-# UIMaker: use same version if backend == front
-UIMAKER_VERSION="$UIMAKER_BACKEND"
 
 # =============================================================================
 # Display results
@@ -193,10 +186,6 @@ show_version "Grafana Industream" "GRAFANA_VERSION" "$GRAFANA_INDUSTREAM"
 echo ""
 echo -e "${BLUE}Timeseries / DataBridge:${NC}"
 show_version "API" "DATABRIDGE_API_VERSION" "$DATABRIDGE_API"
-
-echo ""
-echo -e "${BLUE}UIMaker:${NC}"
-show_version "Backend/Frontend" "UIMAKER_VERSION" "$UIMAKER_VERSION"
 
 echo ""
 
@@ -293,7 +282,7 @@ if [ "$APPLY" = true ]; then
     update_env "DATACATALOG_UI_VERSION" "$DATACATALOG_UI"
     update_env "UIFUSION_VERSION" "$UIFUSION_UI"
     update_env "UIFUSION_API_VERSION" "$UIFUSION_API"
-    update_env "UIMAKER_VERSION" "$UIMAKER_VERSION"
+
     update_env "GRAFANA_VERSION" "$GRAFANA_INDUSTREAM"
     update_env "DATABRIDGE_API_VERSION" "$DATABRIDGE_API"
 
@@ -334,7 +323,7 @@ if [ "$APPLY" = true ]; then
         update_env "DATACATALOG_UI_VERSION" "$DATACATALOG_UI"
         update_env "UIFUSION_VERSION" "$UIFUSION_UI"
         update_env "UIFUSION_API_VERSION" "$UIFUSION_API"
-        update_env "UIMAKER_VERSION" "$UIMAKER_VERSION"
+    
         update_env "GRAFANA_VERSION" "$GRAFANA_INDUSTREAM"
     update_env "DATABRIDGE_API_VERSION" "$DATABRIDGE_API"
         echo ""

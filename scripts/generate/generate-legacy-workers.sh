@@ -65,19 +65,21 @@ if [ "$1" = "--check-flows" ]; then
     STACK_NAME="${STACK_NAME:-industream-${ENV:-prod}}"
     export STACK_NAME
 
-    # Find etcd container
-    ETCD_CONTAINER=$($SSH_CMD docker ps --format '{{.Names}}' | grep "${STACK_NAME}_etcd\." | grep -v browser | head -1)
-    if [ -z "$ETCD_CONTAINER" ]; then
-        echo -e "${RED}✗ Could not find etcd container for stack ${STACK_NAME}${NC}"
+    # FlowMaker v2 uses confighub API instead of etcd
+    # Fetch flows from confighub v2 API
+    STACK_NAME="${STACK_NAME:-industream-${ENV:-prod}}"
+    CONFIGHUB_CONTAINER=$($SSH_CMD docker ps --format '{{.Names}}' | grep "${STACK_NAME}_flowmaker-confighub\." | head -1)
+    if [ -z "$CONFIGHUB_CONTAINER" ]; then
+        echo -e "${RED}✗ Could not find confighub container for stack ${STACK_NAME}${NC}"
+        echo -e "${YELLOW}  Flow scanning requires a running FlowMaker v2 confighub service${NC}"
         exit 1
     fi
-    export ETCD_CONTAINER
 
-    # Fetch all flows from etcd
-    echo -e "${BLUE}Reading flows from etcd (${ETCD_CONTAINER})...${NC}"
-    FLOWS_JSON=$($SSH_CMD docker exec "$ETCD_CONTAINER" etcdctl get --prefix "flows/" -w json 2>/dev/null)
+    echo -e "${BLUE}Reading flows from confighub API...${NC}"
+    FLOWS_JSON=$($SSH_CMD docker exec "$CONFIGHUB_CONTAINER" wget -qO- http://localhost:4000/api/flows 2>/dev/null)
     if [ -z "$FLOWS_JSON" ]; then
-        echo -e "${RED}✗ Could not read flows from etcd${NC}"
+        echo -e "${YELLOW}⚠ Could not read flows from confighub API${NC}"
+        echo -e "${YELLOW}  Flow scanning not available — use --force to bypass${NC}"
         exit 1
     fi
     export FLOWS_JSON
@@ -138,26 +140,34 @@ for lid in sorted(legacy_ids):
     print(f"\033[1;33m    - {lid}\033[0m")
 print()
 
-# Parse etcd response
-etcd_data = json.loads(FLOWS_JSON)
-kvs = etcd_data.get("kvs", [])
+# Parse confighub API response (JSON array of flows)
+flows_data = json.loads(FLOWS_JSON)
+if isinstance(flows_data, dict):
+    flows_list = flows_data.get("flows", flows_data.get("kvs", []))
+else:
+    flows_list = flows_data
 
 # Parse each flow
 flows_using_legacy = {}  # flow_name -> [(node_name, flowElement_id)]
 
-for kv in kvs:
-    key = base64.b64decode(kv["key"]).decode("utf-8")
-    # Only process versioned flow keys (e.g., flows/name/1.0.1), skip flow root keys
-    if key.count("/") < 2:
-        continue
-
+for entry in flows_list:
     try:
-        value = base64.b64decode(kv["value"]).decode("utf-8")
-        flow_data = json.loads(value)
+        if isinstance(entry, dict) and "key" in entry and "value" in entry:
+            # Legacy etcd format (base64 encoded)
+            key = base64.b64decode(entry["key"]).decode("utf-8")
+            if key.count("/") < 2:
+                continue
+            value = base64.b64decode(entry["value"]).decode("utf-8")
+            flow_data = json.loads(value)
+        elif isinstance(entry, dict):
+            # Confighub v2 format (direct JSON)
+            flow_data = entry
+        else:
+            continue
     except (json.JSONDecodeError, KeyError, UnicodeDecodeError):
         continue
 
-    flow_name = flow_data.get("displayName", key)
+    flow_name = flow_data.get("displayName", flow_data.get("name", "unknown"))
     flow_id = flow_data.get("id", key)
 
     definition = flow_data.get("definition", {})
@@ -238,9 +248,9 @@ if [ "$1" = "--cleanup" ]; then
     if [ -n "$CLEANUP_SSH" ] && [ "$CLEANUP_FORCE" != "true" ]; then
         echo -e "${BLUE}Checking flows on remote server (${CLEANUP_SSH})...${NC}"
         STACK_NAME="${STACK_NAME:-industream-${ENV:-prod}}"
-        ETCD_CONTAINER=$(ssh "$CLEANUP_SSH" "docker ps --format '{{.Names}}' | grep '${STACK_NAME}_etcd\.' | grep -v browser | head -1" 2>/dev/null)
-        if [ -n "$ETCD_CONTAINER" ]; then
-            FLOWS_JSON=$(ssh "$CLEANUP_SSH" "docker exec $ETCD_CONTAINER etcdctl get --prefix 'flows/' -w json" 2>/dev/null)
+        CONFIGHUB_CONTAINER=$(ssh "$CLEANUP_SSH" "docker ps --format '{{.Names}}' | grep '${STACK_NAME}_flowmaker-confighub\.' | head -1" 2>/dev/null)
+        if [ -n "$CONFIGHUB_CONTAINER" ]; then
+            FLOWS_JSON=$(ssh "$CLEANUP_SSH" "docker exec $CONFIGHUB_CONTAINER wget -qO- http://localhost:4000/api/flows" 2>/dev/null)
             if [ -n "$FLOWS_JSON" ]; then
                 export FLOWS_JSON
                 # Python checks if any flows use the versions being cleaned up
@@ -307,21 +317,30 @@ if not target_ids:
     sys.exit(0)
 
 # Scan flows
-etcd_data = json.loads(FLOWS_JSON)
+flows_response = json.loads(FLOWS_JSON)
+if isinstance(flows_response, dict):
+    flows_list = flows_response.get("flows", flows_response.get("kvs", []))
+else:
+    flows_list = flows_response
 blocked_flows = []
 
-for kv in etcd_data.get("kvs", []):
-    key = base64.b64decode(kv["key"]).decode("utf-8")
-    if key.count("/") < 2:
-        continue
+for entry in flows_list:
     try:
-        value = base64.b64decode(kv["value"]).decode("utf-8")
-        flow_data = json.loads(value)
+        if isinstance(entry, dict) and "key" in entry and "value" in entry:
+            key = base64.b64decode(entry["key"]).decode("utf-8")
+            if key.count("/") < 2:
+                continue
+            value = base64.b64decode(entry["value"]).decode("utf-8")
+            flow_data = json.loads(value)
+        elif isinstance(entry, dict):
+            flow_data = entry
+        else:
+            continue
     except (json.JSONDecodeError, KeyError, UnicodeDecodeError):
         continue
 
-    flow_name = flow_data.get("displayName", key)
-    flow_id = flow_data.get("id", key)
+    flow_name = flow_data.get("displayName", flow_data.get("name", "unknown"))
+    flow_id = flow_data.get("id", "unknown")
     nodes = flow_data.get("definition", {}).get("flow", {}).get("nodes", [])
 
     for node in nodes:
