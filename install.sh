@@ -2,7 +2,7 @@
 # =============================================================================
 # INDUSTREAM PLATFORM - One-Line Installer
 # =============================================================================
-# Usage: curl -fsSL https://install.industream.io | bash -s
+# Usage: bash <(curl -fsSL https://raw.githubusercontent.com/industream/industream-swarm/main/install.sh)
 #
 # This script:
 #   1. Asks for registry credentials
@@ -37,8 +37,12 @@ echo ""
 echo -e "${BLUE}Docker registry credentials${NC}"
 echo -e "${BLUE}Registry: ${BOLD}${REGISTRY}${NC}"
 echo ""
-read -p "  Username: " REGISTRY_USER < /dev/tty
-read -s -p "  Password: " REGISTRY_PASSWORD < /dev/tty
+printf "  Username: "
+read REGISTRY_USER
+printf "  Password: "
+stty -echo 2>/dev/null
+read REGISTRY_PASSWORD
+stty echo 2>/dev/null
 echo ""
 echo ""
 
