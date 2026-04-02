@@ -37,8 +37,8 @@ echo ""
 echo -e "${BLUE}Docker registry credentials${NC}"
 echo -e "${BLUE}Registry: ${BOLD}${REGISTRY}${NC}"
 echo ""
-read -p "  Username: " REGISTRY_USER
-read -s -p "  Password: " REGISTRY_PASSWORD
+read -p "  Username: " REGISTRY_USER < /dev/tty
+read -s -p "  Password: " REGISTRY_PASSWORD < /dev/tty
 echo ""
 echo ""
 
