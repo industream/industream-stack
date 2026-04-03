@@ -54,13 +54,51 @@ echo -e "  environment/datacatalog  = {\"url\": \"${DATACATALOG_URL}\"}"
 echo -e "  Scheduler 1              = ${SCHEDULER_URL} (logger: ${LOGGER_URL})"
 echo ""
 
+# Helper: run a Node.js HTTP request inside the confighub container
+# Usage: confighub_request <method> <path> [json_body]
+confighub_request() {
+    local method="$1"
+    local path="$2"
+    local body="$3"
+
+    local node_script="
+const http = require('http');
+const options = {
+    hostname: 'localhost',
+    port: 4000,
+    path: '${path}',
+    method: '${method}',
+    headers: { 'Content-Type': 'application/json' }
+};
+const req = http.request(options, (res) => {
+    let data = '';
+    res.on('data', (chunk) => data += chunk);
+    res.on('end', () => {
+        process.stdout.write(res.statusCode.toString());
+    });
+});
+req.on('error', (e) => {
+    process.stderr.write(e.message);
+    process.exit(1);
+});
+"
+    if [ -n "$body" ]; then
+        node_script+="req.write(JSON.stringify(${body}));
+"
+    fi
+    node_script+="req.end();"
+
+    docker exec "$CONFIGHUB_CONTAINER" node -e "$node_script" 2>/dev/null
+}
+
 # Wait for ConfigHub container to be ready
 CONFIGHUB_CONTAINER=""
 ATTEMPTS=$((MAX_WAIT / 5))
 for i in $(seq 1 "$ATTEMPTS"); do
     CONFIGHUB_CONTAINER=$(docker ps --format '{{.Names}}' | grep "${STACK_NAME}_flowmaker-confighub\." | head -1)
     if [ -n "$CONFIGHUB_CONTAINER" ]; then
-        if docker exec "$CONFIGHUB_CONTAINER" wget -q --spider http://localhost:4000/ 2>/dev/null; then
+        HEALTH=$(confighub_request "GET" "/" 2>/dev/null || true)
+        if [ -n "$HEALTH" ]; then
             echo -e "  ${GREEN}✓ ConfigHub is ready${NC}"
             break
         fi
@@ -80,60 +118,52 @@ fi
 echo ""
 echo -e "${BLUE}Setting environment variables...${NC}"
 
-# Build JSON payload inside container (no jq dependency on host needed)
-docker exec "$CONFIGHUB_CONTAINER" sh -c "
-    DATACATALOG_JSON='{\"url\":\"${DATACATALOG_URL}\"}'
-    CONFIGHUB_JSON='{\"url\":\"${CONFIGHUB_EXTERNAL_URL}\",\"internalUrl\":\"${CONFIGHUB_INTERNAL_URL}\"}'
+# Build the JSON payload as a Node.js object (avoids shell escaping nightmares)
+ENV_BODY="{
+    \"environment/cdn\": \"${CDN_URL}\",
+    \"environment/confighub\": JSON.stringify({url: \"${CONFIGHUB_EXTERNAL_URL}\", internalUrl: \"${CONFIGHUB_INTERNAL_URL}\"}),
+    \"environment/datacatalog\": JSON.stringify({url: \"${DATACATALOG_URL}\"})
+}"
 
-    # Escape inner JSON for the payload (values must be JSON strings)
-    DATACATALOG_ESCAPED=\$(echo \"\$DATACATALOG_JSON\" | sed 's/\"/\\\\\"/g')
-    CONFIGHUB_ESCAPED=\$(echo \"\$CONFIGHUB_JSON\" | sed 's/\"/\\\\\"/g')
+HTTP_CODE=$(confighub_request "POST" "/environments" "$ENV_BODY")
 
-    PAYLOAD=\"{\\\"environment/cdn\\\":\\\"${CDN_URL}\\\",\\\"environment/confighub\\\":\\\"\${CONFIGHUB_ESCAPED}\\\",\\\"environment/datacatalog\\\":\\\"\${DATACATALOG_ESCAPED}\\\"}\"
-
-    wget -q --post-data=\"\$PAYLOAD\" \
-        --header='Content-Type: application/json' \
-        -O /dev/null \
-        'http://localhost:4000/environments'
-" 2>/dev/null
-
-if [ $? -eq 0 ]; then
+if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "204" ]; then
     echo -e "  ${GREEN}✓ environment/cdn = ${CDN_URL}${NC}"
     echo -e "  ${GREEN}✓ environment/confighub set${NC}"
     echo -e "  ${GREEN}✓ environment/datacatalog set${NC}"
 else
-    echo -e "  ${RED}✗ Failed to seed environment variables${NC}"
+    echo -e "  ${RED}✗ Failed to seed environment variables (HTTP ${HTTP_CODE})${NC}"
 fi
 
 # --- Create scheduler ---
 echo ""
 echo -e "${BLUE}Creating scheduler...${NC}"
 
-SCHEDULER_PAYLOAD="{\"name\":\"Scheduler 1\",\"url\":\"${SCHEDULER_URL}\",\"logServerUrl\":\"${LOGGER_URL}\",\"color\":\"lightskyblue\",\"isDefault\":true}"
+SCHED_BODY="{
+    name: \"Scheduler 1\",
+    url: \"${SCHEDULER_URL}\",
+    logServerUrl: \"${LOGGER_URL}\",
+    color: \"lightskyblue\",
+    isDefault: true
+}"
 
-HTTP_RESPONSE=$(docker exec "$CONFIGHUB_CONTAINER" wget -q \
-    --post-data="$SCHEDULER_PAYLOAD" \
-    --header='Content-Type: application/json' \
-    -S -O /dev/null \
-    'http://localhost:4000/schedulers' 2>&1 | grep "HTTP/" | tail -1 | awk '{print $2}')
+HTTP_CODE=$(confighub_request "POST" "/schedulers" "$SCHED_BODY")
 
-case "$HTTP_RESPONSE" in
+case "$HTTP_CODE" in
     201)
         echo -e "  ${GREEN}✓ Scheduler 1 created (${SCHEDULER_URL})${NC}"
         ;;
     409)
         echo -e "  ${YELLOW}Scheduler 1 already exists, updating...${NC}"
-        docker exec "$CONFIGHUB_CONTAINER" wget -q \
-            --method=PUT \
-            --body-data="$SCHEDULER_PAYLOAD" \
-            --header='Content-Type: application/json' \
-            -O /dev/null \
-            'http://localhost:4000/schedulers/Scheduler%201' 2>/dev/null \
-            && echo -e "  ${GREEN}✓ Scheduler 1 updated${NC}" \
-            || echo -e "  ${YELLOW}⚠ Failed to update scheduler${NC}"
+        HTTP_CODE=$(confighub_request "PUT" "/schedulers/Scheduler%201" "$SCHED_BODY")
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+            echo -e "  ${GREEN}✓ Scheduler 1 updated${NC}"
+        else
+            echo -e "  ${YELLOW}⚠ Failed to update scheduler (HTTP ${HTTP_CODE})${NC}"
+        fi
         ;;
     *)
-        echo -e "  ${RED}✗ Failed to create scheduler (HTTP ${HTTP_RESPONSE})${NC}"
+        echo -e "  ${RED}✗ Failed to create scheduler (HTTP ${HTTP_CODE})${NC}"
         ;;
 esac
 
