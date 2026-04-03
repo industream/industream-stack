@@ -155,7 +155,7 @@ fi
 # Deploy stack
 echo ""
 echo -e "${BLUE}Deploying stack '$STACK_NAME'...${NC}"
-docker stack deploy -c docker-stack.traefik.yml $STACK_NAME
+docker stack deploy -c docker-stack.traefik.yml --detach $STACK_NAME
 
 echo ""
 echo -e "${GREEN}══════════════════════════════════════════════════${NC}"
