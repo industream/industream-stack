@@ -16,17 +16,9 @@ Additional Use Grant:
         - Non-profit organization internal use
         - Contributing to the Licensed Work itself
 
-  (b) COMMERCIAL USE WITHIN FREE TIER LIMITS — your use is commercial but
-      does not exceed the following limits:
-        - 25 tags in DataCatalog (AssetCatalog)
-        - 5 data sources in DataBridge
-        - 2 concurrent FlowMaker flows
-        - 1 environment (no multi-environment deployment)
-        - Community support only (no SLA)
-
-  Commercial use exceeding these limits requires a paid subscription or
-  perpetual license from the Licensor. Tag-based tiers are available at
-  100, 500, 1,000 and 5,000 tags per site. See https://industream.com/pricing
+  Any commercial use — including evaluation in a commercial context —
+  requires a paid subscription or perpetual license from the Licensor.
+  Tag-based tiers start at 25 tags per site. See https://industream.com/pricing
   for current pricing.
 
   To obtain a commercial license, contact: license@industream.com
