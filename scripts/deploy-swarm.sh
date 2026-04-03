@@ -908,7 +908,7 @@ echo "  DataCatalog:    https://datacatalog.${INDUSTREAM_DOMAIN}"
 echo ""
 echo -e "${BLUE}/etc/hosts (copy-paste on your workstation):${NC}"
 SERVER_IP="${INDUSTREAM_SERVER_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
-HOSTS_SUBDOMAINS="dashboard grafana flowmaker confighub datacatalog datacatalog-api datacatalog-ui databridge databridge-pg keycloak traefik influxdb timeseries prometheus alertmanager ntfy npm esm cloudbeaver minio s3 db ironstream backups logs-flowmaker workers"
+HOSTS_SUBDOMAINS="dashboard grafana flowmaker confighub scheduler logger datacatalog datacatalog-api datacatalog-ui databridge databridge-pg keycloak traefik influxdb timeseries prometheus alertmanager ntfy npm cdn cloudbeaver minio s3 db ironstream backups workers"
 HOSTS_LINE="${SERVER_IP} ${INDUSTREAM_DOMAIN}"
 for sub in $HOSTS_SUBDOMAINS; do
     HOSTS_LINE="${HOSTS_LINE} ${sub}.${INDUSTREAM_DOMAIN}"
@@ -974,6 +974,14 @@ if [ -d "$SECRETS_DIR" ]; then
     echo ""
 fi
 
+# =============================================================================
+# SEED CONFIGHUB - Environment variables & Scheduler
+# =============================================================================
+"$SCRIPT_DIR/setup/seed-confighub.sh" \
+    --stack "$STACK_NAME" \
+    --domain "$INDUSTREAM_DOMAIN"
+
+echo ""
 echo -e "${BLUE}Useful commands:${NC}"
 echo "  docker stack services $STACK_NAME      # List services"
 echo "  docker stack ps $STACK_NAME            # List tasks"

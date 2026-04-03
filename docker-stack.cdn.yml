@@ -69,11 +69,11 @@ services:
         window: 120s
       labels:
         - traefik.enable=true
-        - traefik.http.routers.${ENV}-cdn-cache.rule=Host(`esm.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-cdn-cache.rule=Host(`cdn.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-cdn-cache.entrypoints=websecure
         - traefik.http.routers.${ENV}-cdn-cache.tls=true
         - traefik.http.services.${ENV}-cdn-cache.loadbalancer.server.port=8080
-        - traefik.http.routers.${ENV}-cdn-cache-http.rule=Host(`esm.${INDUSTREAM_DOMAIN:-localhost}`)
+        - traefik.http.routers.${ENV}-cdn-cache-http.rule=Host(`cdn.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-cdn-cache-http.entrypoints=web
 
 # =============================================================================

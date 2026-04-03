@@ -20,6 +20,7 @@ services:
     volumes:
     - ${ENV}-flowmaker-launcher-data:/data
     networks:
+    - traefik-public
     - ${ENV}-platform
     depends_on:
     - flowmaker-confighub
@@ -33,6 +34,16 @@ services:
       retries: 3
       start_period: 30s
     deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.rule=Host(`scheduler.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.tls=true
+      - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.service=${ENV}-flowmaker-scheduler
+      - traefik.http.routers.${ENV}-flowmaker-scheduler.entrypoints=web
+      - traefik.http.routers.${ENV}-flowmaker-scheduler.rule=Host(`scheduler.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-scheduler.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-flowmaker-scheduler.loadbalancer.server.port=3120
       resources:
         limits:
           cpus: '1.0'
@@ -112,11 +123,11 @@ services:
       labels:
       - traefik.enable=true
       - traefik.http.routers.${ENV}-flowmaker-logging-secure.entrypoints=websecure
-      - traefik.http.routers.${ENV}-flowmaker-logging-secure.rule=Host(`logs-flowmaker.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-logging-secure.rule=Host(`logger.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-flowmaker-logging-secure.tls=true
       - traefik.http.routers.${ENV}-flowmaker-logging-secure.service=${ENV}-flowmaker-logging
       - traefik.http.routers.${ENV}-flowmaker-logging.entrypoints=web
-      - traefik.http.routers.${ENV}-flowmaker-logging.rule=Host(`logs-flowmaker.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-flowmaker-logging.rule=Host(`logger.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-flowmaker-logging.middlewares=redirect-to-https@file
       - traefik.http.services.${ENV}-flowmaker-logging.loadbalancer.server.port=3000
       resources:
