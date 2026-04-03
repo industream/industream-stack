@@ -306,6 +306,13 @@ are_env_secrets_created() {
         "${env_name}_keycloak_admin_password"
         "${env_name}_influx_admin_token"
     )
+
+    # Check local secrets directory exists (needed to display credentials)
+    if [ ! -d "$SCRIPT_DIR/secrets" ]; then
+        return 1
+    fi
+
+    # Check Docker secrets exist
     local existing_secrets=$(docker secret ls --format '{{.Name}}' 2>/dev/null)
     for secret in "${required_secrets[@]}"; do
         if ! echo "$existing_secrets" | grep -q "^${secret}$"; then
