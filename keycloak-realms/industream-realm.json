@@ -2367,5 +2367,29 @@
   },
   "clientPolicies": {
     "policies": []
-  }
+  },
+  "users": [
+    {
+      "username": "industream",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "Industream",
+      "email": "info@industream.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "industream",
+          "temporary": true
+        }
+      ],
+      "realmRoles": [
+        "default-roles-industream",
+        "admin"
+      ],
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ]
+    }
+  ]
 }
