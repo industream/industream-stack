@@ -625,6 +625,7 @@ select_environments_menu() {
     echo -e "${BLUE}│${NC}    ${WHITE}5)${NC} Development only ${GRAY}(dev.${INDUSTREAM_DOMAIN})${NC}" >&2
     echo -e "${BLUE}│${NC}    ${WHITE}6)${NC} Staging only ${GRAY}(staging.${INDUSTREAM_DOMAIN})${NC}" >&2
     echo -e "${BLUE}│${NC}    ${WHITE}7)${NC} Custom selection" >&2
+    echo -e "${BLUE}│${NC}    ${YELLOW}8)${NC} ${YELLOW}Demo${NC} ${GRAY}(dev + industrial simulators)${NC}" >&2
     echo -e "${BLUE}│${NC}    ${GRAY}0)${NC} Cancel" >&2
     print_section_end >&2
 
@@ -646,6 +647,7 @@ select_environments_menu() {
             read -p "  Environments: " custom_envs
             echo "$custom_envs"
             ;;
+        8) echo "demo" ;;
         0) echo "" ;;
         *) echo "" ;;
     esac
@@ -653,13 +655,6 @@ select_environments_menu() {
 
 deploy_menu() {
     local with_demo=false
-
-    # Ask for demo
-    echo ""
-    read -p "  Include demo simulators? [y/N]: " demo_answer
-    if [[ "$demo_answer" =~ ^[Yy]$ ]]; then
-        with_demo=true
-    fi
 
     # Select environments (UI goes to stderr, result to stdout)
     local envs
@@ -670,11 +665,17 @@ deploy_menu() {
         return
     fi
 
+    # Handle demo mode: deploy dev environment with simulators
+    if [ "$envs" = "demo" ]; then
+        envs="dev"
+        with_demo=true
+    fi
+
     # Confirm
     echo ""
     echo -e "  ${CYAN}Will deploy:${NC} $envs"
     if [ "$with_demo" = "true" ]; then
-        echo -e "  ${CYAN}With demo:${NC} yes"
+        echo -e "  ${CYAN}With demo:${NC} ${YELLOW}yes (industrial simulators included)${NC}"
     fi
     read -p "  Continue? [Y/n]: " confirm
     confirm="${confirm:-Y}"
