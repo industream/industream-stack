@@ -37,6 +37,7 @@ cd "$PROJECT_DIR"
 # =============================================================================
 # Parse arguments
 # =============================================================================
+EXCLUDE_SERVICES=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env)
@@ -54,6 +55,10 @@ while [[ $# -gt 0 ]]; do
         --cleanup-legacy)
             CLEANUP_LEGACY=true
             shift
+            ;;
+        --exclude)
+            EXCLUDE_SERVICES="$2"
+            shift 2
             ;;
         --help|-h)
             echo "Usage: $0 --env <prod|dev|staging> [OPTIONS]"
@@ -553,6 +558,29 @@ if [ -f "scripts/utils/fix-swarm-yaml.py" ]; then
 fi
 
 echo -e "${GREEN}✓ Variables resolved -> $RESOLVED_FILE${NC}"
+
+# Exclude premium services if --exclude flag is provided
+if [ -n "$EXCLUDE_SERVICES" ]; then
+    echo ""
+    echo -e "${BLUE}Excluding premium services (community mode)...${NC}"
+    IFS=',' read -ra EXCLUDE_LIST <<< "$EXCLUDE_SERVICES"
+    for svc in "${EXCLUDE_LIST[@]}"; do
+        svc=$(echo "$svc" | xargs) # trim
+        if [ -z "$svc" ]; then continue; fi
+        # Use python to remove service from YAML cleanly
+        python3 -c "
+import yaml, sys
+with open('$RESOLVED_FILE') as f:
+    data = yaml.safe_load(f)
+if 'services' in data and '$svc' in data['services']:
+    del data['services']['$svc']
+    print('  - removed: $svc')
+with open('$RESOLVED_FILE', 'w') as f:
+    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+"
+    done
+    echo -e "${GREEN}✓ Premium services excluded${NC}"
+fi
 
 # =============================================================================
 # Check Docker registry authentication
