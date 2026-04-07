@@ -25,6 +25,46 @@ Additional Use Grant:
 
   To obtain a commercial license, contact: license@industream.com
 
+Third-Party Workers and External Modules:
+
+  You may deploy third-party workers, modules and services alongside the
+  Licensed Work, including your own in-house developments, provided that:
+
+  (a) Such third-party workers are developed independently and do NOT
+      copy, derive from, reverse engineer, or otherwise circumvent any
+      proprietary modules of the Industream Platform, including but not
+      limited to:
+        - OPC-UA, Siemens S7, RTSP, GStreamer, Audio, Lenada, OSIsoft PI,
+          SAP, ODOO, and MS SQL Server connectors
+        - AI Studio, ONNX Runtime, AutoML, Anomaly Detection, Pattern
+          Recognition, Virtual Sensor, Golden Batch, Root Cause Analysis
+        - Video Processing, Sound Processing, SPC, Advanced Signal
+          Processing libraries
+        - Tuyere Monitoring, IR Hot Spot Detection, Free Roll Monitoring
+        - FlowGuard, IronStream, ArcStream, and all domain process packages
+        - MCP servers (FlowMaker, Visualization, Industream, DataCatalog)
+        - FlowMaker Designer, Worker Manager, Edge AI Inference Engine
+
+  (b) You do not use the Licensed Work or any third-party workers
+      deployed on it to build a competing industrial data platform,
+      integration product, or SaaS service;
+
+  (c) You comply with the license terms of any proprietary Industream
+      modules you have access to — you may only use modules licensed
+      to you via active entitlements;
+
+  (d) You do not redistribute proprietary Industream modules or their
+      derivatives in any form, under any license (open source or
+      otherwise), whether standalone or bundled with other software.
+
+  Third-party workers remain the sole responsibility of their authors
+  and are not covered by this License. The Licensor provides no warranty
+  or support for third-party workers.
+
+  Violation of these terms automatically terminates your right to use
+  the Licensed Work, regardless of any open source or proprietary
+  license applied to the third-party workers.
+
 Change Date:  Four years from the date of each release
               (e.g., code released on 2026-04-03 becomes Apache 2.0 on 2030-04-03)
 
