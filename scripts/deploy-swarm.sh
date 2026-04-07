@@ -209,7 +209,9 @@ if [ ! -f ".env" ]; then
         echo "  - TLS_MODE (selfsigned or letsencrypt)"
         echo "  - Service versions (UIFUSION_VERSION, FLOWMAKER_*, etc.)"
         echo ""
-        read -p "Press Enter to continue after reviewing .env, or Ctrl+C to abort... "
+        if [ -t 0 ]; then
+            read -p "Press Enter to continue after reviewing .env, or Ctrl+C to abort... "
+        fi
     else
         echo -e "${YELLOW}⚠ No .env file found, using defaults${NC}"
     fi
@@ -628,13 +630,17 @@ if [ "$REGISTRY_CREDS_EXIST" = "true" ]; then
         echo "  - Image tag does not exist (check UIFUSION_VERSION in .env)"
         echo "  - Network issue (check connectivity)"
         echo ""
-        read -p "$(echo -e "${YELLOW}Re-login now? [Y/n]: ${NC}")" relogin_choice
+        if [ -t 0 ]; then
+            read -p "$(echo -e "${YELLOW}Re-login now? [Y/n]: ${NC}")" relogin_choice
+        fi
         relogin_choice="${relogin_choice:-Y}"
         if [[ "$relogin_choice" =~ ^[Yy]$ ]]; then
             docker login "$REGISTRY"
             if [ $? -ne 0 ]; then
                 echo -e "${RED}✗ Registry login failed${NC}"
-                read -p "Continue deployment anyway? [y/N] " continue_choice
+                if [ -t 0 ]; then
+                    read -p "Continue deployment anyway? [y/N] " continue_choice
+                fi
                 if [[ ! "$continue_choice" =~ ^[Yy]$ ]]; then
                     exit 1
                 fi
@@ -642,7 +648,9 @@ if [ "$REGISTRY_CREDS_EXIST" = "true" ]; then
                 echo -e "${GREEN}✓ Registry login successful${NC}"
             fi
         else
-            read -p "Continue deployment anyway? [y/N] " continue_choice
+            if [ -t 0 ]; then
+                read -p "Continue deployment anyway? [y/N] " continue_choice
+            fi
             if [[ ! "$continue_choice" =~ ^[Yy]$ ]]; then
                 exit 1
             fi
@@ -653,14 +661,18 @@ else
     echo -e "${YELLOW}⚠ Not logged in to Docker registry: ${REGISTRY}${NC}"
     echo -e "${BLUE}Registry login is required to pull private images.${NC}"
     echo ""
-    read -p "Do you want to log in now? [Y/n] " login_choice
+    if [ -t 0 ]; then
+        read -p "Do you want to log in now? [Y/n] " login_choice
+    fi
     login_choice="${login_choice:-Y}"
     if [[ "$login_choice" =~ ^[Yy]$ ]]; then
         echo ""
         docker login "$REGISTRY"
         if [ $? -ne 0 ]; then
             echo -e "${RED}✗ Registry login failed${NC}"
-            read -p "Continue deployment anyway? [y/N] " continue_choice
+            if [ -t 0 ]; then
+                read -p "Continue deployment anyway? [y/N] " continue_choice
+            fi
             if [[ ! "$continue_choice" =~ ^[Yy]$ ]]; then
                 exit 1
             fi
@@ -755,7 +767,9 @@ if [ "$NEEDED_MB" -gt "$AVAILABLE_MB" ]; then
     echo -e "${RED}║  Some services may fail to start (pending state).           ║${NC}"
     echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    read -p "Continue anyway? [y/N]: " CONTINUE_DEPLOY
+    if [ -t 0 ]; then
+        read -p "Continue anyway? [y/N]: " CONTINUE_DEPLOY
+    fi
     if [[ ! "$CONTINUE_DEPLOY" =~ ^[Yy]$ ]]; then
         echo -e "${RED}Deployment aborted.${NC}"
         echo -e "${YELLOW}Increase VM RAM to at least ${RECOMMENDED_GB} GiB and retry.${NC}"
@@ -835,7 +849,9 @@ if [ ${#MISSING_IMAGES[@]} -gt 0 ]; then
         echo "  - Image tag does not exist (check versions in .env)"
         echo "  - Network issue (check connectivity to ${REGISTRY})"
         echo ""
-        read -p "$(echo -e "${YELLOW}Continue deployment anyway? [y/N]: ${NC}")" CONTINUE_PULL
+        if [ -t 0 ]; then
+            read -p "$(echo -e "${YELLOW}Continue deployment anyway? [y/N]: ${NC}")" CONTINUE_PULL
+        fi
         if [[ ! "$CONTINUE_PULL" =~ ^[Yy]$ ]]; then
             echo -e "${RED}Deployment aborted.${NC}"
             exit 1

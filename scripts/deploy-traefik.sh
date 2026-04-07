@@ -51,7 +51,11 @@ if [ ! -f ".env" ]; then
         echo "  - ACME_EMAIL (for Let's Encrypt)"
         echo "  - TLS_MODE (selfsigned or letsencrypt)"
         echo ""
-        read -p "Press Enter to continue after reviewing .env, or Ctrl+C to abort... "
+        if [ -t 0 ]; then
+            read -p "Press Enter to continue after reviewing .env, or Ctrl+C to abort... "
+        else
+            echo -e "${YELLOW}Running non-interactively — continuing with default .env values${NC}"
+        fi
     fi
 fi
 
