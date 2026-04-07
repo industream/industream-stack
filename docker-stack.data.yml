@@ -66,7 +66,7 @@ services:
   databridge:
     image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/timeseries/api:${DATABRIDGE_API_VERSION:-1.0.0-alpha.4}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
-    command: ["dotnet", "/app/Industream.Timeseries.Api.dll"]
+    command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
     - InfluxDB__Connection__Url=http://influxdb:8086
     - InfluxDB__Connection__Token=__INFLUX_TOKEN_PLACEHOLDER__
@@ -211,7 +211,7 @@ services:
   databridge-postgresql:
     image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/timeseries/api:${DATABRIDGE_API_VERSION:-1.0.0-alpha.4}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
-    command: ["dotnet", "/app/Industream.Timeseries.Api.dll"]
+    command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
     - DB_SECRET_PATTERN=databridge_pg_password
     - PostgreSql__ConnectionString=Server=postgres;Port=5432;User Id=${DATABRIDGE_PG_DB_USER:-databridge};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${DATABRIDGE_PG_DB_NAME:-DataBridge};
@@ -257,7 +257,7 @@ services:
   databridge-timescaledb:
     image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/timeseries/api:${DATABRIDGE_API_VERSION:-1.0.0-alpha.4}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
-    command: ["dotnet", "/app/Industream.Timeseries.Api.dll"]
+    command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
     - DB_SECRET_PATTERN=timescaledb_password
     - PostgreSql__ConnectionString=Server=timescaledb;Port=5432;User Id=${TIMESCALEDB_ADMIN_USER:-postgres};Password=__DB_PASSWORD_PLACEHOLDER__;Database=industream;
