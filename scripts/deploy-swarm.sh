@@ -38,6 +38,7 @@ cd "$PROJECT_DIR"
 # Parse arguments
 # =============================================================================
 EXCLUDE_SERVICES=""
+COMMUNITY_MODE=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env)
@@ -59,6 +60,10 @@ while [[ $# -gt 0 ]]; do
         --exclude)
             EXCLUDE_SERVICES="$2"
             shift 2
+            ;;
+        --community)
+            COMMUNITY_MODE=true
+            shift
             ;;
         --help|-h)
             echo "Usage: $0 --env <prod|dev|staging> [OPTIONS]"
@@ -252,6 +257,20 @@ if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
     set +a
     echo -e "${GREEN}✓ $ENV_FILE loaded (domain: ${INDUSTREAM_DOMAIN})${NC}"
+fi
+
+# Load .env.community overrides if community mode is enabled
+if [ "$COMMUNITY_MODE" = "true" ]; then
+    if [ -f ".env.community" ]; then
+        set -a
+        source .env.community
+        set +a
+        echo -e "${GREEN}✓ .env.community loaded (BSL-only image paths)${NC}"
+        echo -e "${BLUE}  CORE_PROJECT=${CORE_PROJECT}${NC}"
+        echo -e "${BLUE}  BOXES_PROJECT=${BOXES_PROJECT}${NC}"
+    else
+        echo -e "${YELLOW}⚠ --community flag set but .env.community not found${NC}"
+    fi
 fi
 
 # Ensure ENV and STACK_NAME are from command line
