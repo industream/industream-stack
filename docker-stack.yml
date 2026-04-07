@@ -279,70 +279,6 @@ services:
   # ==========================================
   # CLOUDBEAVER - Database Administration
   # ==========================================
-  cloudbeaver:
-    image: dbeaver/cloudbeaver:latest
-    hostname: cloudbeaver
-    entrypoint:
-    - /bin/bash
-    - -c
-    - |
-      # Auto-configure on first start: copy initial data sources
-      INIT_MARKER="/opt/cloudbeaver/workspace/.initialized"
-      if [ \! -f "$$INIT_MARKER" ]; then
-        echo "First start: initializing CloudBeaver workspace..."
-        # Wait for workspace to be created by CB
-        sleep 5
-        mkdir -p /opt/cloudbeaver/workspace/GlobalConfiguration/.dbeaver
-        if [ -f /tmp/initial-data-sources.json ]; then
-          cp /tmp/initial-data-sources.json /opt/cloudbeaver/workspace/GlobalConfiguration/.dbeaver/data-sources.json
-          echo "Initial data sources configured"
-        fi
-        touch "$$INIT_MARKER"
-      fi
-      exec ./launch-product.sh
-    environment:
-      CB_SERVER_NAME: Industream Platform
-      CB_SERVER_URL: https://db.${INDUSTREAM_DOMAIN:-localhost}
-      CB_ADMIN_NAME: cbadmin
-      CB_ADMIN_PASSWORD_FILE: /run/secrets/${ENV}_cloudbeaver_admin_password
-      CLOUDBEAVER_FORCE_HTTPS: "false"
-    volumes:
-    - ${ENV}-cloudbeaver-data:/opt/cloudbeaver/workspace
-    - ./config/cloudbeaver/data-sources.json:/tmp/initial-data-sources.json:ro
-    networks:
-    - traefik-public
-    - ${ENV}-platform
-    secrets:
-    - ${ENV}_cloudbeaver_admin_password
-    healthcheck:
-      test:
-      - CMD-SHELL
-      - curl -sf http://localhost:8978/status || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
-    deploy:
-      labels:
-      - traefik.enable=true
-      - traefik.http.routers.${ENV}-cloudbeaver-secure.entrypoints=websecure
-      - traefik.http.routers.${ENV}-cloudbeaver-secure.rule=Host(`db.${INDUSTREAM_DOMAIN:-localhost}`)
-      - traefik.http.routers.${ENV}-cloudbeaver-secure.tls=true
-      - traefik.http.routers.${ENV}-cloudbeaver-secure.service=${ENV}-cloudbeaver
-      - traefik.http.services.${ENV}-cloudbeaver.loadbalancer.server.port=8978
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 512M
-        reservations:
-          cpus: '0.05'
-          memory: 256M
-      restart_policy:
-        condition: any
-        delay: 5s
-        max_attempts: 0
-        window: 120s
-
 # =============================================================================
 # NETWORKS
 # =============================================================================
@@ -360,7 +296,6 @@ networks:
 volumes:
   ${ENV}-postgres-data:
   ${ENV}-minio-data:
-  ${ENV}-cloudbeaver-data:
 
 # =============================================================================
 # SECRETS
@@ -385,8 +320,6 @@ secrets:
   ${ENV}_minio_root_user:
     external: true
   ${ENV}_minio_root_password:
-    external: true
-  ${ENV}_cloudbeaver_admin_password:
     external: true
   ${ENV}_databridge_pg_password:
     external: true
