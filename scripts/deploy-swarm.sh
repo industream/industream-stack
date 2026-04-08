@@ -617,7 +617,10 @@ if [ -f "$HOME/.docker/config.json" ] && grep -q "$REGISTRY" "$HOME/.docker/conf
     REGISTRY_CREDS_EXIST=true
 fi
 
-if [ "$REGISTRY_CREDS_EXIST" = "true" ]; then
+if [ "$COMMUNITY_MODE" = "true" ]; then
+    # Community mode: pull check is done implicitly by the main pull below
+    echo -e "${GREEN}✓ Community mode — using public flowmaker.community project${NC}"
+elif [ "$REGISTRY_CREDS_EXIST" = "true" ]; then
     # Credentials exist — verify they actually work with a test pull
     echo -e "${BLUE}Verifying registry access to ${REGISTRY}...${NC}"
     # Pick a small known image to test (the UIFusion image is always needed)
