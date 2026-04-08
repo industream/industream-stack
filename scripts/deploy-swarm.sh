@@ -611,22 +611,13 @@ fi
 # =============================================================================
 REGISTRY="${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}"
 
-# Community mode uses the public flowmaker.community project — no auth needed
-if [ "$COMMUNITY_MODE" = "true" ]; then
-    echo -e "${GREEN}✓ Community mode: using public project, no registry login required${NC}"
-    REGISTRY_CREDS_EXIST=true
-    SKIP_REGISTRY_CHECK=true
-fi
-
 # Check if credentials exist in docker config
-REGISTRY_CREDS_EXIST=${REGISTRY_CREDS_EXIST:-false}
+REGISTRY_CREDS_EXIST=false
 if [ -f "$HOME/.docker/config.json" ] && grep -q "$REGISTRY" "$HOME/.docker/config.json" 2>/dev/null; then
     REGISTRY_CREDS_EXIST=true
 fi
 
-if [ "$SKIP_REGISTRY_CHECK" = "true" ]; then
-    : # skip the entire authentication block
-elif [ "$REGISTRY_CREDS_EXIST" = "true" ]; then
+if [ "$REGISTRY_CREDS_EXIST" = "true" ]; then
     # Credentials exist — verify they actually work with a test pull
     echo -e "${BLUE}Verifying registry access to ${REGISTRY}...${NC}"
     # Pick a small known image to test (the UIFusion image is always needed)
