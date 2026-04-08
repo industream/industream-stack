@@ -10,7 +10,7 @@ services:
   # FLOWMAKER LAUNCHER (v2 - replaces runtime)
   # ==========================================
   flowmaker-scheduler:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/${CORE_PROJECT:-flowmaker.core}/flowmaker-launcher:${FLOWMAKER_CORE_VERSION:-2.0.2}
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/flowmaker-launcher:${FLOWMAKER_CORE_VERSION:-2.0.2}
     stop_grace_period: 30s
     environment:
     - FM_RUNTIME_BACKEND_PORT=3120
@@ -61,7 +61,7 @@ services:
   # FLOWMAKER CONFIGHUB v2 (LMDB-backed)
   # ==========================================
   flowmaker-confighub:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/${CORE_PROJECT:-flowmaker.core}/flowmaker-confighub-v2:${FLOWMAKER_CORE_VERSION:-2.0.2}
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/flowmaker-confighub-v2:${FLOWMAKER_CORE_VERSION:-2.0.2}
     environment:
     - FM_CONFIGHUB_PORT=4000
     - FM_CONFIGHUB_DATA_PATH=/data
@@ -107,7 +107,7 @@ services:
   # FLOWMAKER LOGGING
   # ==========================================
   flowmaker-logging:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/${CORE_PROJECT:-flowmaker.core}/flowmaker-logger:${FLOWMAKER_CORE_VERSION:-2.0.2}
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/flowmaker-logger:${FLOWMAKER_CORE_VERSION:-2.0.2}
     networks:
     - traefik-public
     - ${ENV}-platform
@@ -147,7 +147,7 @@ services:
   # FLOWMAKER FRONTEND
   # ==========================================
   flowmaker-frontend:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/${CORE_PROJECT:-flowmaker.core}/flowmaker-front:${FLOWMAKER_FRONTEND_VERSION:-2.0.2}
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/flowmaker-front:${FLOWMAKER_FRONTEND_VERSION:-2.0.2}
     environment:
     - FMUI_CONFIG_HUB_URL=https://confighub.${INDUSTREAM_DOMAIN:-localhost}
     networks:

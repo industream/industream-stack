@@ -588,7 +588,6 @@ if [ -n "$EXCLUDE_SERVICES" ]; then
     for svc in "${EXCLUDE_LIST[@]}"; do
         svc=$(echo "$svc" | xargs) # trim
         if [ -z "$svc" ]; then continue; fi
-        # Use python to remove service from YAML cleanly
         python3 -c "
 import yaml, sys
 with open('$RESOLVED_FILE') as f:
@@ -601,6 +600,20 @@ with open('$RESOLVED_FILE', 'w') as f:
 "
     done
     echo -e "${GREEN}✓ Premium services excluded${NC}"
+fi
+
+# Rewrite image paths to point to flowmaker.community in community mode
+if [ "$COMMUNITY_MODE" = "true" ]; then
+    echo ""
+    echo -e "${BLUE}Rewriting image paths to flowmaker.community...${NC}"
+    REGISTRY_HOST="${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}"
+    # List of source projects whose images live under flowmaker.community/
+    # Order matters: longer prefixes first to avoid partial matches
+    for project in flowmaker.core flowmaker.boxes flowmaker.infra datacatalog grafana uifusion timeseries monitoring; do
+        # Replace ${REGISTRY}/${project}/ with ${REGISTRY}/flowmaker.community/${project}/
+        sed -i "s|${REGISTRY_HOST}/${project}/|${REGISTRY_HOST}/flowmaker.community/${project}/|g" "$RESOLVED_FILE"
+    done
+    echo -e "${GREEN}✓ Image paths rewritten${NC}"
 fi
 
 # =============================================================================

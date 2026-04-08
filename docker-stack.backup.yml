@@ -155,7 +155,7 @@ services:
   # BACKUP MONITOR
   # ==========================================
   backup-monitor:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/${INFRA_PROJECT:-flowmaker.infra}/backup-monitor:1.0.0
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.infra/backup-monitor:1.0.0
     environment:
       - BACKUP_DIR=/backups
       - NODE_ENV=production
