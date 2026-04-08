@@ -872,7 +872,7 @@ fi
 # =============================================================================
 echo ""
 echo -e "${BLUE}Deploying stack '${STACK_NAME}'...${NC}"
-docker stack deploy -c "$RESOLVED_FILE" --with-registry-auth --detach "$STACK_NAME"
+docker stack deploy -c "$RESOLVED_FILE" --with-registry-auth --prune --detach "$STACK_NAME"
 
 # =============================================================================
 # Wait for core services before workers can connect
