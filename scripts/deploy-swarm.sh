@@ -261,18 +261,8 @@ if [ -f "$ENV_FILE" ]; then
     echo -e "${GREEN}✓ $ENV_FILE loaded (domain: ${INDUSTREAM_DOMAIN})${NC}"
 fi
 
-# Load .env.community overrides if community mode is enabled
 if [ "$COMMUNITY_MODE" = "true" ]; then
-    if [ -f ".env.community" ]; then
-        set -a
-        source .env.community
-        set +a
-        echo -e "${GREEN}✓ .env.community loaded (BSL-only image paths)${NC}"
-        echo -e "${BLUE}  CORE_PROJECT=${CORE_PROJECT}${NC}"
-        echo -e "${BLUE}  BOXES_PROJECT=${BOXES_PROJECT}${NC}"
-    else
-        echo -e "${YELLOW}⚠ --community flag set but .env.community not found${NC}"
-    fi
+    echo -e "${GREEN}✓ Community mode enabled — using public flowmaker.community project${NC}"
 fi
 
 # Ensure ENV and STACK_NAME are from command line
@@ -621,13 +611,22 @@ fi
 # =============================================================================
 REGISTRY="${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}"
 
+# Community mode uses the public flowmaker.community project — no auth needed
+if [ "$COMMUNITY_MODE" = "true" ]; then
+    echo -e "${GREEN}✓ Community mode: using public project, no registry login required${NC}"
+    REGISTRY_CREDS_EXIST=true
+    SKIP_REGISTRY_CHECK=true
+fi
+
 # Check if credentials exist in docker config
-REGISTRY_CREDS_EXIST=false
+REGISTRY_CREDS_EXIST=${REGISTRY_CREDS_EXIST:-false}
 if [ -f "$HOME/.docker/config.json" ] && grep -q "$REGISTRY" "$HOME/.docker/config.json" 2>/dev/null; then
     REGISTRY_CREDS_EXIST=true
 fi
 
-if [ "$REGISTRY_CREDS_EXIST" = "true" ]; then
+if [ "$SKIP_REGISTRY_CHECK" = "true" ]; then
+    : # skip the entire authentication block
+elif [ "$REGISTRY_CREDS_EXIST" = "true" ]; then
     # Credentials exist — verify they actually work with a test pull
     echo -e "${BLUE}Verifying registry access to ${REGISTRY}...${NC}"
     # Pick a small known image to test (the UIFusion image is always needed)
