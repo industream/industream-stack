@@ -401,9 +401,10 @@ fi
 
 if [ "$METRICS_NEEDED" = "true" ]; then
     echo -e "${BLUE}Enabling Docker daemon metrics on port 9323...${NC}"
-    if [ -f "$DAEMON_JSON" ]; then
-        # Merge metrics-addr into existing daemon.json
-        TEMP_JSON=$(python3 -c "
+    # Check if we can sudo before attempting (skip if no sudo access)
+    if sudo -n true 2>/dev/null; then
+        if [ -f "$DAEMON_JSON" ]; then
+            TEMP_JSON=$(python3 -c "
 import json, sys
 try:
     with open('$DAEMON_JSON') as f:
@@ -414,15 +415,18 @@ cfg['metrics-addr'] = '0.0.0.0:9323'
 cfg['experimental'] = True
 print(json.dumps(cfg, indent=2))
 " 2>/dev/null)
-        if [ -n "$TEMP_JSON" ]; then
-            echo "$TEMP_JSON" | sudo tee "$DAEMON_JSON" > /dev/null
+            if [ -n "$TEMP_JSON" ]; then
+                echo "$TEMP_JSON" | sudo tee "$DAEMON_JSON" > /dev/null
+            fi
+        else
+            sudo mkdir -p /etc/docker
+            echo '{"metrics-addr": "0.0.0.0:9323", "experimental": true}' | sudo tee "$DAEMON_JSON" > /dev/null
         fi
+        echo -e "${YELLOW}⚠ Docker daemon metrics enabled - Docker restart may be needed${NC}"
     else
-        sudo mkdir -p /etc/docker
-        echo '{"metrics-addr": "0.0.0.0:9323", "experimental": true}' | sudo tee "$DAEMON_JSON" > /dev/null
+        echo -e "${YELLOW}⚠ Skipping Docker metrics (no sudo access). Enable manually:${NC}"
+        echo -e "${YELLOW}  sudo tee /etc/docker/daemon.json <<< '{\"metrics-addr\":\"0.0.0.0:9323\",\"experimental\":true}'${NC}"
     fi
-    echo -e "${YELLOW}⚠ Docker daemon metrics enabled - Docker restart may be needed${NC}"
-    echo -e "${YELLOW}  Run 'sudo systemctl restart docker' if Swarm metrics don't appear${NC}"
 fi
 
 # =============================================================================
