@@ -540,6 +540,24 @@ for file in "${STACK_FILES[@]}"; do
     fi
 done
 
+# Include external worker stack files
+if [ -d "external-workers" ]; then
+    EXTERNAL_COUNT=0
+    for worker_dir in external-workers/*/; do
+        stack_file="${worker_dir}docker-stack.external.yml"
+        if [ -f "$stack_file" ]; then
+            STACK_FILES+=("$stack_file")
+            COMPOSE_ARGS="$COMPOSE_ARGS -f $stack_file"
+            WORKER_NAME=$(basename "$worker_dir")
+            echo -e "${GREEN}  + external: ${WORKER_NAME}${NC}"
+            EXTERNAL_COUNT=$((EXTERNAL_COUNT + 1))
+        fi
+    done
+    if [ "$EXTERNAL_COUNT" -gt 0 ]; then
+        echo -e "${GREEN}  ✓ ${EXTERNAL_COUNT} external worker(s) included${NC}"
+    fi
+fi
+
 # =============================================================================
 # Pre-process stack files with envsubst (for ${ENV} in secrets/volumes/networks)
 # =============================================================================
