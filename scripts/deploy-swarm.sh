@@ -493,6 +493,11 @@ STACK_FILES=(
     "docker-stack.cdn.yml"
 )
 
+# Include premium workers only when not in community mode
+if [ "$COMMUNITY_MODE" != "true" ]; then
+    STACK_FILES+=("docker-stack.workers-premium.yml")
+fi
+
 # Add legacy workers if generated
 if [ -f "docker-stack.workers-legacy.yml" ]; then
     STACK_FILES+=("docker-stack.workers-legacy.yml")

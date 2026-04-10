@@ -1,0 +1,106 @@
+# =============================================================================
+# INDUSTREAM PLATFORM - PREMIUM WORKERS
+# =============================================================================
+# Premium workers — requires PRODUCT_DATACATALOG entitlement
+# Multi-environment support: Uses ${ENV} prefix for isolation
+# =============================================================================
+
+services:
+  worker-opc-ua-client:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-opc-ua-client:${WORKER_OPC_UA_CLIENT_VERSION:-2.0.3}
+    environment:
+    - FM_WORKER_ID=worker-opc-ua-client001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-opc-ua-client:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.08'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-rtsp-client:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-rtsp-client:${WORKER_RTSP_CLIENT_VERSION:-1.0.0}
+    environment:
+    - FM_WORKER_ID=worker-rtsp-client001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-rtsp-client:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: 0.50
+          memory: 256M
+        reservations:
+          cpus: 0.08
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  worker-luminosity-box:
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-luminosity-box:${WORKER_LUMINOSITY_BOX_VERSION:-1.0.0}
+    environment:
+    - FM_WORKER_ID=worker-luminosity-box001
+    - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+    - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+    - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://worker-luminosity-box:5560
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CDN_REGISTRY_URL=${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    - FM_DATACATALOG_URL=${DATACATALOG_URL:-http://datacatalog-api:8080}
+    networks:
+    - ${ENV}-platform
+    depends_on:
+    - flowmaker-scheduler
+    - flowmaker-logging
+    healthcheck:
+      test: ["NONE"]
+    deploy:
+      resources:
+        limits:
+          cpus: 0.25
+          memory: 128M
+        reservations:
+          cpus: 0.03
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  ${ENV}-platform:
