@@ -173,7 +173,9 @@ if [ -f "certs/${DOMAIN}.crt" ] && [ -f "certs/${DOMAIN}.key" ]; then
         # Interactive mode: ask user
         echo -e "${YELLOW}Certificates already exist in certs/${DOMAIN}.*${NC}"
         echo ""
-        read -p "Do you want to regenerate them? (y/n) " -n 1 -r
+        if [ -t 0 ]; then
+            read -p "Do you want to regenerate them? (y/n) " -n 1 -r
+        fi
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             echo -e "${BLUE}Keeping existing certificates${NC}"
@@ -185,7 +187,9 @@ fi
 # Ask for validity period only in interactive mode
 if [ "$AUTO_TRUST" = false ] && [ "$FORCE_REGEN" = false ]; then
     echo -e "${BLUE}Certificate validity period:${NC}"
-    read -p "How many years should the certificate be valid? [$CERT_YEARS]: " INPUT_YEARS
+    if [ -t 0 ]; then
+        read -p "How many years should the certificate be valid? [$CERT_YEARS]: " INPUT_YEARS
+    fi
     CERT_YEARS=${INPUT_YEARS:-$CERT_YEARS}
 fi
 
@@ -233,7 +237,9 @@ echo ""
 if [ "$AUTO_TRUST" = true ]; then
     install_certificate_trust
 else
-    read -p "Do you want to install the certificate in the system trust store? (y/n) " -n 1 -r
+    if [ -t 0 ]; then
+        read -p "Do you want to install the certificate in the system trust store? (y/n) " -n 1 -r
+    fi
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         install_certificate_trust
