@@ -371,12 +371,21 @@ DOMAIN="${INDUSTREAM_DOMAIN:-industream.platform.lan}"
 if [ ! -f "${CERT_DIR}/${DOMAIN}.crt" ] || [ ! -f "${CERT_DIR}/${DOMAIN}.key" ]; then
     echo -e "${BLUE}Generating self-signed certificate for ${DOMAIN}...${NC}"
     mkdir -p "${CERT_DIR}"
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    # Fix ownership if dir was created by root (e.g. previous sudo run)
+    if [ -d "${CERT_DIR}" ] && [ ! -w "${CERT_DIR}" ]; then
+        sudo chown -R "$(id -u):$(id -g)" "${CERT_DIR}" 2>/dev/null || true
+    fi
+    openssl req -x509 -nodes -days 1825 -newkey rsa:2048 \
         -keyout "${CERT_DIR}/${DOMAIN}.key" \
         -out "${CERT_DIR}/${DOMAIN}.crt" \
         -subj "/CN=${DOMAIN}" \
         -addext "subjectAltName=DNS:${DOMAIN},DNS:*.${DOMAIN}" 2>/dev/null
-    echo -e "${GREEN}✓ Certificate generated${NC}"
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Certificate generated (5 years)${NC}"
+    else
+        echo -e "${RED}✗ Certificate generation failed${NC}"
+        echo -e "${YELLOW}  Try: sudo chown -R \$(whoami) ${CERT_DIR}${NC}"
+    fi
 else
     echo -e "${GREEN}✓ Certificate exists${NC}"
 fi
