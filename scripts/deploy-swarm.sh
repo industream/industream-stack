@@ -877,10 +877,28 @@ if [ ${#MISSING_IMAGES[@]} -gt 0 ]; then
     done
     echo ""
 
+    # Retry failed pulls (network timeouts are common on first install)
+    if [ ${#PULL_ERRORS[@]} -gt 0 ]; then
+        echo ""
+        echo -e "${YELLOW}  ${#PULL_ERRORS[@]} image(s) failed — retrying...${NC}"
+        RETRY_ERRORS=()
+        for img in "${PULL_ERRORS[@]}"; do
+            SHORT_IMG=$(echo "$img" | sed "s|.*${REGISTRY}/||")
+            echo -ne "\r${BLUE}  Retrying ${SHORT_IMG}...${NC}                    "
+            if docker pull "$img" >/dev/null 2>&1; then
+                PULL_OK=$((PULL_OK + 1))
+            else
+                RETRY_ERRORS+=("$img")
+            fi
+        done
+        echo ""
+        PULL_ERRORS=("${RETRY_ERRORS[@]}")
+    fi
+
     if [ ${#PULL_ERRORS[@]} -gt 0 ]; then
         echo ""
         echo -e "${RED}╔══════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${RED}║  ⚠  ${#PULL_ERRORS[@]} image(s) failed to pull                              ║${NC}"
+        echo -e "${RED}║  ⚠  ${#PULL_ERRORS[@]} image(s) failed to pull (after retry)                ║${NC}"
         echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
         for err_img in "${PULL_ERRORS[@]}"; do
             echo -e "${RED}  ✗ ${err_img}${NC}"
