@@ -122,7 +122,8 @@ http:
       entryPoints:
         - websecure
       service: backup-monitor
-      tls: {}
+      tls:
+        ${TLS_CERTRESOLVER_CONFIG}
       middlewares:
         - backup-ratelimit
         - backup-security-headers

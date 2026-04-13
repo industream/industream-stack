@@ -111,6 +111,18 @@ services:
     - --entrypoints.traefik.address=:8080
     - --providers.file.directory=/etc/traefik/dynamic
     - --ping=true
+    # ACME / Let's Encrypt - DNS challenge (OVH provider)
+    # Always configured in static config; activated only when certResolver is referenced in dynamic config
+    - --certificatesresolvers.letsencrypt.acme.dnschallenge=true
+    - --certificatesresolvers.letsencrypt.acme.dnschallenge.provider=ovh
+    - --certificatesresolvers.letsencrypt.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
+    - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}
+    - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+    environment:
+    - OVH_ENDPOINT=${OVH_ENDPOINT:-ovh-eu}
+    - OVH_APPLICATION_KEY=${OVH_APPLICATION_KEY:-}
+    - OVH_APPLICATION_SECRET=${OVH_APPLICATION_SECRET:-}
+    - OVH_CONSUMER_KEY=${OVH_CONSUMER_KEY:-}
     ports:
     - 80:80
     - 443:443
