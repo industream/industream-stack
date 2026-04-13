@@ -764,19 +764,20 @@ AVAILABLE_MB=$((TOTAL_SYSTEM_MB - 512))
 SYSTEM_CPUS=$(nproc)
 
 # Already reserved by running containers from other stacks
-ALREADY_RESERVED_MB=$(docker stats --no-stream --format "{{.MemUsage}}" 2>/dev/null | awk -F/ '{
-    lim=$2; gsub(/ /, "", lim)
-    if (lim ~ /GiB/) { gsub(/GiB/, "", lim); t += lim * 1024 }
-    else if (lim ~ /MiB/) { gsub(/MiB/, "", lim); t += lim }
+# Note: Use docker inspect to get explicit memory limits (MemoryReservation or Memory).
+# docker stats shows host total RAM as "limit" for unlimited containers, which inflates the count.
+ALREADY_RESERVED_MB=$(docker inspect --format '{{.HostConfig.MemoryReservation}} {{.HostConfig.Memory}}' $(docker ps -q 2>/dev/null) 2>/dev/null | awk '{
+    # Use MemoryReservation if set, otherwise Memory limit; skip if both are 0 (unlimited)
+    val = ($1 > 0) ? $1 : $2
+    if (val > 0) t += val / 1024 / 1024
 } END { printf "%d", t }')
 
 # Check if this is the same stack being redeployed (update) or a new one
 EXISTING_STACK_MB=0
 if docker stack ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}$"; then
-    EXISTING_STACK_MB=$(docker stats --no-stream --format "{{.Name}} {{.MemUsage}}" 2>/dev/null | grep "^${STACK_NAME}_" | awk -F/ '{
-        lim=$2; gsub(/ /, "", lim)
-        if (lim ~ /GiB/) { gsub(/GiB/, "", lim); t += lim * 1024 }
-        else if (lim ~ /MiB/) { gsub(/MiB/, "", lim); t += lim }
+    EXISTING_STACK_MB=$(docker inspect --format '{{.Name}} {{.HostConfig.MemoryReservation}} {{.HostConfig.Memory}}' $(docker ps -q 2>/dev/null) 2>/dev/null | grep "/${STACK_NAME}_" | awk '{
+        val = ($2 > 0) ? $2 : $3
+        if (val > 0) t += val / 1024 / 1024
     } END { printf "%d", t }')
 fi
 
