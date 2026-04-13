@@ -39,6 +39,7 @@ cd "$PROJECT_DIR"
 # =============================================================================
 EXCLUDE_SERVICES=""
 COMMUNITY_MODE=false
+SKIP_MEMORY_CHECK=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env)
@@ -65,6 +66,10 @@ while [[ $# -gt 0 ]]; do
             COMMUNITY_MODE=true
             shift
             ;;
+        --skip-memory-check)
+            SKIP_MEMORY_CHECK=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 --env <prod|dev|staging> [OPTIONS]"
             echo ""
@@ -74,8 +79,9 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --with-demo        Also deploy demo simulators (dev env only - OPC-UA, MQTT, S7, Modbus, RTSP)"
             echo "  --with-ironstream  Include IronStream business services"
-            echo "  --cleanup-legacy   Remove legacy worker services (after flow migration)"
-            echo "  --help, -h         Show this help message"
+            echo "  --cleanup-legacy       Remove legacy worker services (after flow migration)"
+            echo "  --skip-memory-check    Skip system memory validation"
+            echo "  --help, -h             Show this help message"
             echo ""
             echo "Prerequisites:"
             echo "  1. Deploy Traefik first: ./scripts/deploy-traefik.sh"
@@ -731,10 +737,13 @@ echo ""
 # Resource check
 # =============================================================================
 echo ""
-echo -e "${BLUE}Checking system resources...${NC}"
+if [ "$SKIP_MEMORY_CHECK" = true ]; then
+    echo -e "${YELLOW}⚠ Memory check skipped (--skip-memory-check)${NC}"
+else
+    echo -e "${BLUE}Checking system resources...${NC}"
 
-# Calculate total memory reservations from the resolved stack file
-TOTAL_RESERVED_MB=$(python3 -c "
+    # Calculate total memory reservations from the resolved stack file
+    TOTAL_RESERVED_MB=$(python3 -c "
 import yaml, sys
 try:
     with open('$RESOLVED_FILE') as f:
@@ -758,69 +767,62 @@ except Exception as e:
     print(0)
 " 2>/dev/null)
 
-# Get available system memory (total - ~512MB OS overhead)
-TOTAL_SYSTEM_MB=$(free -m | awk '/Mem:/ {print $2}')
-AVAILABLE_MB=$((TOTAL_SYSTEM_MB - 512))
-SYSTEM_CPUS=$(nproc)
+    # Get available system memory (total - ~512MB OS overhead)
+    TOTAL_SYSTEM_MB=$(free -m | awk '/Mem:/ {print $2}')
+    AVAILABLE_MB=$((TOTAL_SYSTEM_MB - 512))
+    SYSTEM_CPUS=$(nproc)
 
-# Already reserved by running containers from other stacks
-# Note: Use docker inspect to get explicit memory limits (MemoryReservation or Memory).
-# docker stats shows host total RAM as "limit" for unlimited containers, which inflates the count.
-ALREADY_RESERVED_MB=$(docker inspect --format '{{.HostConfig.MemoryReservation}} {{.HostConfig.Memory}}' $(docker ps -q 2>/dev/null) 2>/dev/null | awk '{
-    # Use MemoryReservation if set, otherwise Memory limit; skip if both are 0 (unlimited)
-    val = ($1 > 0) ? $1 : $2
-    if (val > 0) t += val / 1024 / 1024
-} END { printf "%d", t }')
-
-# Check if this is the same stack being redeployed (update) or a new one
-EXISTING_STACK_MB=0
-if docker stack ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}$"; then
-    EXISTING_STACK_MB=$(docker inspect --format '{{.Name}} {{.HostConfig.MemoryReservation}} {{.HostConfig.Memory}}' $(docker ps -q 2>/dev/null) 2>/dev/null | grep "/${STACK_NAME}_" | awk '{
-        val = ($2 > 0) ? $2 : $3
+    # Already reserved by running containers from other stacks
+    # Note: Use docker inspect to get explicit memory limits (MemoryReservation or Memory).
+    # docker stats shows host total RAM as "limit" for unlimited containers, which inflates the count.
+    ALREADY_RESERVED_MB=$(docker inspect --format '{{.HostConfig.MemoryReservation}} {{.HostConfig.Memory}}' $(docker ps -q 2>/dev/null) 2>/dev/null | awk '{
+        # Use MemoryReservation if set, otherwise Memory limit; skip if both are 0 (unlimited)
+        val = ($1 > 0) ? $1 : $2
         if (val > 0) t += val / 1024 / 1024
     } END { printf "%d", t }')
-fi
 
-# Net new memory needed
-OTHER_STACKS_MB=$((ALREADY_RESERVED_MB - EXISTING_STACK_MB))
-NEEDED_MB=$((TOTAL_RESERVED_MB + OTHER_STACKS_MB))
-
-TOTAL_RESERVED_GB=$(echo "scale=1; ${TOTAL_RESERVED_MB} / 1024" | bc)
-AVAILABLE_GB=$(echo "scale=1; ${AVAILABLE_MB} / 1024" | bc)
-NEEDED_GB=$(echo "scale=1; ${NEEDED_MB} / 1024" | bc)
-
-echo -e "  System:     ${BOLD}${SYSTEM_CPUS} CPUs, ${TOTAL_SYSTEM_MB} MiB RAM${NC}"
-echo -e "  Available:  ${BOLD}${AVAILABLE_GB} GiB${NC} (after OS overhead)"
-if [ "$OTHER_STACKS_MB" -gt 0 ]; then
-    OTHER_GB=$(echo "scale=1; ${OTHER_STACKS_MB} / 1024" | bc)
-    echo -e "  Other stacks: ${BOLD}${OTHER_GB} GiB${NC} reserved"
-fi
-echo -e "  This stack: ${BOLD}${TOTAL_RESERVED_GB} GiB${NC} reserved"
-echo -e "  Total needed: ${BOLD}${NEEDED_GB} GiB${NC}"
-
-if [ "$NEEDED_MB" -gt "$AVAILABLE_MB" ]; then
-    DEFICIT_GB=$(echo "scale=1; (${NEEDED_MB} - ${AVAILABLE_MB}) / 1024" | bc)
-    RECOMMENDED_MB=$((NEEDED_MB + 1024))
-    RECOMMENDED_GB=$(echo "scale=1; ${RECOMMENDED_MB} / 1024" | bc)
-    echo ""
-    echo -e "${RED}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║  ⚠  INSUFFICIENT MEMORY: ${DEFICIT_GB} GiB short                          ║${NC}"
-    echo -e "${RED}╠══════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${RED}║  Recommended: ${RECOMMENDED_GB} GiB RAM minimum for this configuration     ║${NC}"
-    echo -e "${RED}║  Some services may fail to start (pending state).           ║${NC}"
-    echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-    if [ -t 0 ]; then
-        read -p "Continue anyway? [y/N]: " CONTINUE_DEPLOY
+    # Check if this is the same stack being redeployed (update) or a new one
+    EXISTING_STACK_MB=0
+    if docker stack ls --format "{{.Name}}" 2>/dev/null | grep -q "^${STACK_NAME}$"; then
+        EXISTING_STACK_MB=$(docker inspect --format '{{.Name}} {{.HostConfig.MemoryReservation}} {{.HostConfig.Memory}}' $(docker ps -q 2>/dev/null) 2>/dev/null | grep "/${STACK_NAME}_" | awk '{
+            val = ($2 > 0) ? $2 : $3
+            if (val > 0) t += val / 1024 / 1024
+        } END { printf "%d", t }')
     fi
-    if [[ ! "$CONTINUE_DEPLOY" =~ ^[Yy]$ ]]; then
-        echo -e "${RED}Deployment aborted.${NC}"
-        echo -e "${YELLOW}Increase VM RAM to at least ${RECOMMENDED_GB} GiB and retry.${NC}"
-        exit 1
+
+    # Net new memory needed
+    OTHER_STACKS_MB=$((ALREADY_RESERVED_MB - EXISTING_STACK_MB))
+    NEEDED_MB=$((TOTAL_RESERVED_MB + OTHER_STACKS_MB))
+
+    TOTAL_RESERVED_GB=$(echo "scale=1; ${TOTAL_RESERVED_MB} / 1024" | bc)
+    AVAILABLE_GB=$(echo "scale=1; ${AVAILABLE_MB} / 1024" | bc)
+    NEEDED_GB=$(echo "scale=1; ${NEEDED_MB} / 1024" | bc)
+
+    echo -e "  System:     ${BOLD}${SYSTEM_CPUS} CPUs, ${TOTAL_SYSTEM_MB} MiB RAM${NC}"
+    echo -e "  Available:  ${BOLD}${AVAILABLE_GB} GiB${NC} (after OS overhead)"
+    if [ "$OTHER_STACKS_MB" -gt 0 ]; then
+        OTHER_GB=$(echo "scale=1; ${OTHER_STACKS_MB} / 1024" | bc)
+        echo -e "  Other stacks: ${BOLD}${OTHER_GB} GiB${NC} reserved"
     fi
-    echo -e "${YELLOW}Proceeding despite insufficient memory...${NC}"
-else
-    echo -e "${GREEN}✓ Sufficient resources available${NC}"
+    echo -e "  This stack: ${BOLD}${TOTAL_RESERVED_GB} GiB${NC} reserved"
+    echo -e "  Total needed: ${BOLD}${NEEDED_GB} GiB${NC}"
+
+    if [ "$NEEDED_MB" -gt "$AVAILABLE_MB" ]; then
+        DEFICIT_GB=$(echo "scale=1; (${NEEDED_MB} - ${AVAILABLE_MB}) / 1024" | bc)
+        RECOMMENDED_MB=$((NEEDED_MB + 1024))
+        RECOMMENDED_GB=$(echo "scale=1; ${RECOMMENDED_MB} / 1024" | bc)
+        echo ""
+        echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║  ⚠  LOW MEMORY: ${DEFICIT_GB} GiB short of recommended                    ║${NC}"
+        echo -e "${YELLOW}╠══════════════════════════════════════════════════════════════╣${NC}"
+        echo -e "${YELLOW}║  Recommended: ${RECOMMENDED_GB} GiB RAM for this configuration              ║${NC}"
+        echo -e "${YELLOW}║  Some services may fail to start (pending state).           ║${NC}"
+        echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "${YELLOW}Proceeding with deployment (use --skip-memory-check to hide this warning)...${NC}"
+    else
+        echo -e "${GREEN}✓ Sufficient resources available${NC}"
+    fi
 fi
 
 # =============================================================================
