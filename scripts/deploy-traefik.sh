@@ -17,7 +17,6 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-STACK_NAME="traefik-shared"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/.."
 
@@ -71,6 +70,10 @@ if [ -f ".env" ]; then
     echo "  ACME_EMAIL=${ACME_EMAIL:-not set}"
     echo ""
 fi
+
+# Stack name is fixed to "traefik-shared" regardless of .env STACK_NAME
+# (STACK_NAME in .env is for the environment stack used by deploy-swarm.sh)
+STACK_NAME="traefik-shared"
 
 # =============================================================================
 # Auto-detect server IP for dnsmasq DNS resolution
