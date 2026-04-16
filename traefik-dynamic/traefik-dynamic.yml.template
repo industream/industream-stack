@@ -26,6 +26,7 @@ tls:
       defaultCertificate:
         certFile: /etc/certs/${INDUSTREAM_DOMAIN}.crt
         keyFile: /etc/certs/${INDUSTREAM_DOMAIN}.key
+${DEFAULT_GENERATED_CERT_BLOCK}
 
 # HTTP to HTTPS redirection
 http:

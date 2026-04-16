@@ -137,9 +137,36 @@ if [ "${TLS_MODE}" = "letsencrypt" ]; then
     echo "  ACME_EMAIL: ${ACME_EMAIL}"
     echo "  Note: each hostname must resolve to this server and port 80 must be"
     echo "        reachable from the Internet for Let's Encrypt to issue certs."
+
+    # Build a single SAN certificate covering all platform subdomains.
+    # This collapses ~20 individual cert requests into one, keeping us well
+    # below Let's Encrypt's 50-certs-per-week-per-registered-domain limit
+    # when multiple clients share a root domain (e.g. *.industream.app).
+    SANS_LIST=$("$SCRIPT_DIR/generate/generate-sans.sh")
+    if [ -z "$SANS_LIST" ]; then
+        echo -e "${YELLOW}⚠ No subdomains detected — defaultGeneratedCert will only cover the apex domain${NC}"
+        SANS_YAML=""
+    else
+        SANS_COUNT=$(echo "$SANS_LIST" | wc -l)
+        echo "  Grouping ${SANS_COUNT} subdomains into a single SAN certificate"
+        SANS_YAML=$(echo "$SANS_LIST" | while read -r prefix; do
+            printf '            - %s.%s\n' "$prefix" "$INDUSTREAM_DOMAIN"
+        done)
+    fi
+    DEFAULT_GENERATED_CERT_BLOCK=$(cat <<EOF
+      defaultGeneratedCert:
+        resolver: letsencrypt
+        domain:
+          main: ${INDUSTREAM_DOMAIN}
+          sans:
+$SANS_YAML
+EOF
+)
+    export DEFAULT_GENERATED_CERT_BLOCK
 else
     # Empty YAML object for self-signed (uses certificates defined in tls.certificates)
     export TLS_CERTRESOLVER_CONFIG="{}"
+    export DEFAULT_GENERATED_CERT_BLOCK=""
     echo -e "${GREEN}✓ Using self-signed certificates${NC}"
 fi
 
