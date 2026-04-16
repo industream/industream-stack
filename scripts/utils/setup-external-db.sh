@@ -117,7 +117,18 @@ echo -e "${GREEN}✓ Database + user ready${NC}"
 # 5. Launch socat bridge (or reuse existing)
 # =============================================================================
 BRIDGE_NAME="pg-lan-bridge"
-NETWORK_NAME="${STACK_NAME}_default"
+
+# Auto-detect the network postgres is attached to (more reliable than guessing
+# "${STACK_NAME}_default", since stacks may use multiple networks with custom
+# names like "industream-prod_data", "internal", etc.)
+NETWORK_NAME=$(docker inspect "$POSTGRES_CONTAINER" \
+    --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' \
+    | grep -v '^$' | head -1)
+if [ -z "$NETWORK_NAME" ]; then
+    echo -e "${RED}✗ Could not detect Postgres network${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Postgres network: $NETWORK_NAME${NC}"
 
 if docker ps -qf "name=^${BRIDGE_NAME}$" | grep -q .; then
     echo -e "${GREEN}✓ Socat bridge '$BRIDGE_NAME' already running${NC}"
