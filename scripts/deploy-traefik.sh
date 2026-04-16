@@ -121,13 +121,13 @@ echo "  Run ./scripts/generate/generate-client-setup.sh to create a client kit"
 echo "  (hosts file + certificate + install scripts for USB deployment)"
 
 # =============================================================================
-# TLS Configuration (Let's Encrypt DNS challenge vs Self-signed)
+# TLS Configuration (Let's Encrypt HTTP-01 challenge vs Self-signed)
 # =============================================================================
 echo ""
 echo -e "${BLUE}TLS Mode: ${TLS_MODE:-selfsigned}${NC}"
 if [ "${TLS_MODE}" = "letsencrypt" ]; then
     export TLS_CERTRESOLVER_CONFIG="certResolver: letsencrypt"
-    echo -e "${GREEN}✓ Using Let's Encrypt certificates (DNS challenge via OVH)${NC}"
+    echo -e "${GREEN}✓ Using Let's Encrypt certificates (HTTP-01 challenge)${NC}"
 
     if [ -z "$ACME_EMAIL" ]; then
         echo -e "${RED}✗ ACME_EMAIL is not set — required for Let's Encrypt${NC}"
@@ -135,32 +135,8 @@ if [ "${TLS_MODE}" = "letsencrypt" ]; then
         exit 1
     fi
     echo "  ACME_EMAIL: ${ACME_EMAIL}"
-
-    # Load OVH DNS API credentials from pass (if not already set in env)
-    if [ -z "$OVH_APPLICATION_KEY" ]; then
-        OVH_APPLICATION_KEY="$(pass ovh/dns/application-key 2>/dev/null || true)"
-        export OVH_APPLICATION_KEY
-    fi
-    if [ -z "$OVH_APPLICATION_SECRET" ]; then
-        OVH_APPLICATION_SECRET="$(pass ovh/dns/application-secret 2>/dev/null || true)"
-        export OVH_APPLICATION_SECRET
-    fi
-    if [ -z "$OVH_CONSUMER_KEY" ]; then
-        OVH_CONSUMER_KEY="$(pass ovh/dns/consumer-key 2>/dev/null || true)"
-        export OVH_CONSUMER_KEY
-    fi
-    export OVH_ENDPOINT="${OVH_ENDPOINT:-ovh-eu}"
-
-    if [ -z "$OVH_APPLICATION_KEY" ] || [ -z "$OVH_APPLICATION_SECRET" ] || [ -z "$OVH_CONSUMER_KEY" ]; then
-        echo -e "${RED}✗ OVH DNS API credentials not found${NC}"
-        echo "  Store them in pass:"
-        echo "    pass insert ovh/dns/application-key"
-        echo "    pass insert ovh/dns/application-secret"
-        echo "    pass insert ovh/dns/consumer-key"
-        echo "  Or set OVH_APPLICATION_KEY / OVH_APPLICATION_SECRET / OVH_CONSUMER_KEY in env"
-        exit 1
-    fi
-    echo -e "${GREEN}✓ OVH DNS API credentials loaded${NC}"
+    echo "  Note: each hostname must resolve to this server and port 80 must be"
+    echo "        reachable from the Internet for Let's Encrypt to issue certs."
 else
     # Empty YAML object for self-signed (uses certificates defined in tls.certificates)
     export TLS_CERTRESOLVER_CONFIG="{}"
