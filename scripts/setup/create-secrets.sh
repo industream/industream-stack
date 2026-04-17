@@ -55,7 +55,9 @@ while [[ $# -gt 0 ]]; do
             echo "                 all      - All environments"
             echo ""
             echo "Optional:"
-            echo "  --regenerate   Force regenerate all secrets (WARNING: will break existing deployments)"
+            echo "  --regenerate   Rotate secrets not currently used by any service."
+            echo "                 Secrets in use will abort the script with an error —"
+            echo "                 stateful services need their dedicated rotation scripts."
             echo ""
             echo "Examples:"
             echo "  $0 --env prod          # Create secrets for production"
@@ -173,10 +175,32 @@ create_secrets_for_env() {
         # Check if Docker secret exists
         if docker secret ls --format '{{.Name}}' | grep -q "^${docker_secret}$"; then
             if [ "$REGENERATE" = true ]; then
-                # Remove and recreate
-                docker secret rm "$docker_secret" >/dev/null 2>&1 || true
+                # Swarm refuses to remove a secret mounted by a running service,
+                # and even if rm succeeded the mounted value would not update.
+                local in_use_by
+                in_use_by=$(docker service ls --format '{{.Name}}' \
+                    | xargs -r -I{} docker service inspect {} --format '{{range .Spec.TaskTemplate.ContainerSpec.Secrets}}{{.SecretName}} {{end}}{{.Spec.Name}}' \
+                    | grep -E "^(.* )?${docker_secret} " | awk '{print $NF}' || true)
+
+                if [ -n "$in_use_by" ]; then
+                    local services_csv
+                    services_csv=$(echo "$in_use_by" | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')
+                    echo -e "${RED}✗ Cannot rotate '$docker_secret' — currently used by service(s): $services_csv${NC}"
+                    echo ""
+                    echo -e "${YELLOW}  Docker Swarm secrets are immutable while mounted by a service."
+                    echo -e "  For stateful services (postgres, keycloak), use the dedicated"
+                    echo -e "  rotation scripts that update the password IN the database first:${NC}"
+                    echo ""
+                    echo "    ./scripts/utils/rotate-postgres-password.sh"
+                    echo "    ./scripts/utils/rotate-keycloak-password.sh"
+                    echo ""
+                    echo -e "${YELLOW}  For other secrets, stop the service first, then rerun --regenerate.${NC}"
+                    exit 1
+                fi
+
+                docker secret rm "$docker_secret"
                 echo -n "$secret_value" | docker secret create "$docker_secret" - >/dev/null
-                echo -e "${YELLOW}↻ Updated secret: $docker_secret${NC}"
+                echo -e "${YELLOW}↻ Rotated secret: $docker_secret${NC}"
                 updated=$((updated + 1))
             else
                 echo -e "${YELLOW}⏭ Secret '$docker_secret' already exists, skipping...${NC}"
