@@ -84,17 +84,25 @@ echo -e "${GREEN}✓ Admin user: $ADMIN_USER${NC}"
 # =============================================================================
 # 2. Load OLD admin password
 # =============================================================================
-if [ ! -f "$ADMIN_PW_FILE" ]; then
-    echo -e "${RED}✗ Admin password file not found: $ADMIN_PW_FILE${NC}"
-    echo "  Override the path with: INDUSTREAM_SECRETS_DIR=/path/to/secrets $0 ..."
-    exit 1
-fi
-OLD_PASSWORD=$(cat "$ADMIN_PW_FILE")
+# Read from the mounted secret inside the running container — this is the
+# authoritative source because it matches what Postgres was initialized with.
+# The host file in secrets/ can drift (e.g. a previous --regenerate that
+# rewrote the file but failed to update the Swarm secret on a live service).
+OLD_PASSWORD=$(docker exec "$POSTGRES_CONTAINER" cat "/run/secrets/${SECRET_NAME}" 2>/dev/null || true)
 if [ -z "$OLD_PASSWORD" ]; then
-    echo -e "${RED}✗ Admin password file is empty: $ADMIN_PW_FILE${NC}"
-    exit 1
+    echo -e "${YELLOW}⚠ Could not read /run/secrets/${SECRET_NAME} from container, falling back to host file${NC}"
+    if [ ! -f "$ADMIN_PW_FILE" ]; then
+        echo -e "${RED}✗ Admin password file not found: $ADMIN_PW_FILE${NC}"
+        echo "  Override the path with: INDUSTREAM_SECRETS_DIR=/path/to/secrets $0 ..."
+        exit 1
+    fi
+    OLD_PASSWORD=$(cat "$ADMIN_PW_FILE")
+    if [ -z "$OLD_PASSWORD" ]; then
+        echo -e "${RED}✗ Admin password file is empty: $ADMIN_PW_FILE${NC}"
+        exit 1
+    fi
 fi
-echo -e "${GREEN}✓ Loaded current admin password from $ADMIN_PW_FILE${NC}"
+echo -e "${GREEN}✓ Loaded current admin password from /run/secrets/${SECRET_NAME}${NC}"
 
 # =============================================================================
 # 3. Generate NEW password if not supplied
@@ -165,25 +173,27 @@ echo -e "${GREEN}✓ $ADMIN_PW_FILE updated (0600)${NC}"
 # =============================================================================
 # 8. Swap the Docker Swarm secret
 # =============================================================================
-echo -e "${BLUE}Scaling $SERVICE_NAME to 0 to release the secret...${NC}"
+# Scaling to 0 isn't enough: the service SPEC still references the secret,
+# so `docker secret rm` is refused. We have to detach the secret from the
+# service first (--secret-rm), then rm+create, then reattach (--secret-add).
+echo -e "${BLUE}Scaling $SERVICE_NAME to 0 to avoid auth failures during swap...${NC}"
 docker service scale "${SERVICE_NAME}=0" >/dev/null
 
-# Poll until no postgres tasks remain in a non-terminal state, otherwise
-# `docker secret rm` will fail with "secret in use".
 for _ in $(seq 1 60); do
-    RUNNING_TASKS=$(docker service ps "$SERVICE_NAME" \
-        --filter "desired-state=running" \
-        --format "{{.ID}}" | wc -l)
     ACTIVE_TASKS=$(docker service ps "$SERVICE_NAME" \
         --format "{{.CurrentState}}" \
         | grep -E "^(Running|Starting|Preparing|Assigned|Accepted|Ready)" \
         | wc -l)
-    if [ "$RUNNING_TASKS" -eq 0 ] && [ "$ACTIVE_TASKS" -eq 0 ]; then
+    if [ "$ACTIVE_TASKS" -eq 0 ]; then
         break
     fi
     sleep 2
 done
 echo -e "${GREEN}✓ Service drained${NC}"
+
+echo -e "${BLUE}Detaching secret '$SECRET_NAME' from service...${NC}"
+docker service update --quiet --secret-rm "$SECRET_NAME" "$SERVICE_NAME" >/dev/null
+echo -e "${GREEN}✓ Secret detached${NC}"
 
 echo -e "${BLUE}Removing old Docker secret '$SECRET_NAME'...${NC}"
 if docker secret inspect "$SECRET_NAME" >/dev/null 2>&1; then
@@ -196,6 +206,12 @@ fi
 echo -e "${BLUE}Creating new Docker secret '$SECRET_NAME'...${NC}"
 printf '%s' "$NEW_PASSWORD" | docker secret create "$SECRET_NAME" - >/dev/null
 echo -e "${GREEN}✓ New secret created${NC}"
+
+echo -e "${BLUE}Re-attaching secret to service...${NC}"
+docker service update --quiet \
+    --secret-add "source=$SECRET_NAME,target=$SECRET_NAME" \
+    "$SERVICE_NAME" >/dev/null
+echo -e "${GREEN}✓ Secret re-attached${NC}"
 
 echo -e "${BLUE}Scaling $SERVICE_NAME back to 1...${NC}"
 docker service scale "${SERVICE_NAME}=1" >/dev/null

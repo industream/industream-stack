@@ -72,15 +72,23 @@ echo -e "${GREEN}✓ Keycloak container: $(docker inspect --format '{{.Name}}' "
 # =============================================================================
 # 2. Load OLD password
 # =============================================================================
-if [ ! -f "$OLD_PW_FILE" ]; then
-    echo -e "${RED}✗ Old password file not found: $OLD_PW_FILE${NC}"
-    echo "  Override the path with: INDUSTREAM_SECRETS_DIR=/path/to/secrets $0 ..."
-    exit 1
-fi
-OLD_PW=$(cat "$OLD_PW_FILE")
+# Read from the mounted secret inside the running container — this is the
+# authoritative source because it matches what Keycloak was bootstrapped with.
+# The host file in secrets/ can drift (e.g. a previous --regenerate that
+# rewrote the file but failed to update the Swarm secret on a live service).
+OLD_PW=$(docker exec "$KC_CONTAINER" cat "/run/secrets/${SECRET_NAME}" 2>/dev/null || true)
 if [ -z "$OLD_PW" ]; then
-    echo -e "${RED}✗ Old password file is empty: $OLD_PW_FILE${NC}"
-    exit 1
+    echo -e "${YELLOW}⚠ Could not read /run/secrets/${SECRET_NAME} from container, falling back to host file${NC}"
+    if [ ! -f "$OLD_PW_FILE" ]; then
+        echo -e "${RED}✗ Old password file not found: $OLD_PW_FILE${NC}"
+        echo "  Override the path with: INDUSTREAM_SECRETS_DIR=/path/to/secrets $0 ..."
+        exit 1
+    fi
+    OLD_PW=$(cat "$OLD_PW_FILE")
+    if [ -z "$OLD_PW" ]; then
+        echo -e "${RED}✗ Old password file is empty: $OLD_PW_FILE${NC}"
+        exit 1
+    fi
 fi
 
 ADMIN_USER="${KEYCLOAK_ADMIN:-admin}"
@@ -100,12 +108,22 @@ else
     PW_GENERATED=0
 fi
 
+# Keycloak may be deployed under a relative path (e.g. KC_HTTP_RELATIVE_PATH=/auth)
+# The kcadm.sh --server URL must include that path, otherwise everything 404s.
+KC_RELATIVE_PATH=$(docker exec "$KC_CONTAINER" printenv KC_HTTP_RELATIVE_PATH 2>/dev/null | sed 's|^/||;s|/$||' || true)
+if [ -n "$KC_RELATIVE_PATH" ]; then
+    KC_SERVER="http://localhost:8080/$KC_RELATIVE_PATH"
+else
+    KC_SERVER="http://localhost:8080"
+fi
+echo -e "${GREEN}✓ kcadm server URL: $KC_SERVER${NC}"
+
 # =============================================================================
 # 4. Authenticate kcadm with OLD password
 # =============================================================================
 echo -e "${BLUE}Authenticating against Keycloak with current password...${NC}"
 if ! docker exec -i "$KC_CONTAINER" /opt/keycloak/bin/kcadm.sh config credentials \
-        --server http://localhost:8080 \
+        --server "$KC_SERVER" \
         --realm master \
         --user "$ADMIN_USER" \
         --password "$OLD_PW" > /dev/null 2>&1; then
@@ -144,7 +162,7 @@ echo -e "${GREEN}✓ Password updated in Keycloak DB${NC}"
 # =============================================================================
 echo -e "${BLUE}Verifying new password...${NC}"
 if ! docker exec -i "$KC_CONTAINER" /opt/keycloak/bin/kcadm.sh config credentials \
-        --server http://localhost:8080 \
+        --server "$KC_SERVER" \
         --realm master \
         --user "$ADMIN_USER" \
         --password "$NEW_PASSWORD" > /dev/null 2>&1; then
@@ -173,17 +191,25 @@ echo -e "${GREEN}✓ Local secret file updated: $OLD_PW_FILE${NC}"
 # =============================================================================
 # 9. Swap the Docker Swarm secret
 # =============================================================================
+# Scaling to 0 isn't enough: the service SPEC still references the secret,
+# so `docker secret rm` is refused. We have to detach the secret from the
+# service first (--secret-rm), then rm+create, then reattach (--secret-add).
 echo -e "${BLUE}Scaling $SERVICE_NAME down to drain tasks...${NC}"
 docker service scale "$SERVICE_NAME=0" > /dev/null
 
 for _ in $(seq 1 60); do
-    RUNNING=$(docker service ps "$SERVICE_NAME" \
-        --filter "desired-state=running" \
-        --format '{{.ID}}' 2>/dev/null | wc -l)
-    [ "$RUNNING" = "0" ] && break
+    ACTIVE=$(docker service ps "$SERVICE_NAME" \
+        --format "{{.CurrentState}}" 2>/dev/null \
+        | grep -E "^(Running|Starting|Preparing|Assigned|Accepted|Ready)" \
+        | wc -l)
+    [ "$ACTIVE" = "0" ] && break
     sleep 1
 done
 echo -e "${GREEN}✓ Tasks drained${NC}"
+
+echo -e "${BLUE}Detaching secret '$SECRET_NAME' from service...${NC}"
+docker service update --quiet --secret-rm "$SECRET_NAME" "$SERVICE_NAME" > /dev/null
+echo -e "${GREEN}✓ Secret detached${NC}"
 
 if docker secret inspect "$SECRET_NAME" > /dev/null 2>&1; then
     docker secret rm "$SECRET_NAME" > /dev/null
@@ -192,6 +218,12 @@ fi
 
 printf '%s' "$NEW_PASSWORD" | docker secret create "$SECRET_NAME" - > /dev/null
 echo -e "${GREEN}✓ Created new secret '$SECRET_NAME'${NC}"
+
+echo -e "${BLUE}Re-attaching secret to service...${NC}"
+docker service update --quiet \
+    --secret-add "source=$SECRET_NAME,target=$SECRET_NAME" \
+    "$SERVICE_NAME" > /dev/null
+echo -e "${GREEN}✓ Secret re-attached${NC}"
 
 echo -e "${BLUE}Scaling $SERVICE_NAME back up...${NC}"
 docker service scale "$SERVICE_NAME=1" > /dev/null
