@@ -24,6 +24,11 @@ services:
       POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
       POSTGRES_PASSWORD_FILE: /run/secrets/${ENV}_postgres_admin_password
       POSTGRES_MULTIPLE_DATABASES: keycloak:keycloak:FROM_SECRET,industream:dashboard:FROM_SECRET,DataCatalog:datacatalog:FROM_SECRET,DataBridge:databridge:FROM_SECRET
+      # Postgres 18 changed PGDATA from /var/lib/postgresql/data to
+      # /var/lib/postgresql/18/docker. Pin it to a subdir of the mounted
+      # volume so the data actually persists across restarts regardless of
+      # the image major version.
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
     - ${ENV}-postgres-data:/var/lib/postgresql/data
     - ./scripts/setup/init-postgres.sh:/docker-entrypoint-initdb.d/init-postgres.sh:ro
