@@ -1,6 +1,14 @@
 # Industream Datasources Configuration
 # This file provisions datasources automatically in Grafana on startup
 # Grafana supports $VAR syntax for env variable substitution (NOT ${VAR:-default})
+#
+# SECRETS POLICY:
+# Sensitive values (DB passwords, API tokens) are NOT read from env vars.
+# Env vars are readable via `docker inspect`, /proc/<pid>/environ, and leak
+# into core dumps. Instead we use Grafana's `<field>__file` convention
+# (supported for secureJsonData since Grafana 8), which makes Grafana read
+# the content from the given path at load time. The path points at a
+# Docker secret mounted read-only in /run/secrets/*.
 
 apiVersion: 1
 
@@ -30,7 +38,7 @@ datasources:
       defaultBucket: $INFLUX_BUCKET
       tlsSkipVerify: true
     secureJsonData:
-      token: $INFLUX_ADMIN_TOKEN
+      token__file: /run/secrets/${ENV}_influx_admin_token
     editable: true
     isDefault: false
     uid: industream-timeseries
@@ -60,7 +68,7 @@ datasources:
       postgresVersion: 1700  # PostgreSQL 17.x
       timescaledb: false
     secureJsonData:
-      password: $DATACATALOG_DB_PASSWORD
+      password__file: /run/secrets/${ENV}_datacatalog_db_password
     editable: true
     uid: industream-datacatalog-db
 
@@ -75,7 +83,7 @@ datasources:
       sslmode: disable
       postgresVersion: 1700
     secureJsonData:
-      password: $POSTGRES_ADMIN_PASSWORD
+      password__file: /run/secrets/${ENV}_postgres_admin_password
     editable: true
     uid: industream-postgres
 

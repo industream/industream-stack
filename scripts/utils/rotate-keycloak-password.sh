@@ -53,7 +53,14 @@ while [ $# -gt 0 ]; do
 done
 
 SECRETS_DIR="${INDUSTREAM_SECRETS_DIR:-$HOME/industream-platform/secrets}"
-OLD_PW_FILE="$SECRETS_DIR/keycloak_admin_password"
+# Per-env layout first (secrets/<env>/keycloak_admin_password), fall back to
+# the legacy flat layout for pre-migration installs.
+OLD_PW_FILE="$SECRETS_DIR/$ENV/keycloak_admin_password"
+LEGACY_OLD_PW_FILE="$SECRETS_DIR/keycloak_admin_password"
+if [ ! -f "$OLD_PW_FILE" ] && [ -f "$LEGACY_OLD_PW_FILE" ]; then
+    echo -e "${YELLOW}⚠ Using legacy secrets path '$LEGACY_OLD_PW_FILE' (deprecated, migrate to '$OLD_PW_FILE')${NC}"
+    OLD_PW_FILE="$LEGACY_OLD_PW_FILE"
+fi
 STACK_NAME="industream-${ENV}"
 SERVICE_NAME="${STACK_NAME}_keycloak"
 SECRET_NAME="${ENV}_keycloak_admin_password"
@@ -68,6 +75,47 @@ if [ -z "$KC_CONTAINER" ]; then
     exit 1
 fi
 echo -e "${GREEN}✓ Keycloak container: $(docker inspect --format '{{.Name}}' "$KC_CONTAINER" | sed 's|^/||')${NC}"
+
+# =============================================================================
+# Helpers to run kcadm.sh without leaking the password.
+#
+# Rationale: passing `--password "$PW"` through `docker exec` makes the
+# plaintext visible via `docker inspect <exec-id>` for the lifetime of the
+# exec. Instead we stream the password into a transient 0600 file inside
+# the container and let a small shell wrapper read it at runtime; the exec
+# argv only contains the shell command, never the password itself.
+# =============================================================================
+container_write_kcpw() {
+    local pw="$1"
+    local path="/tmp/.kcpw_rotate_$$"
+    printf '%s' "$pw" \
+        | docker exec -i "$KC_CONTAINER" sh -c "umask 077 && cat > '$path' && chmod 600 '$path'"
+    printf '%s' "$path"
+}
+
+container_rm_kcpw() {
+    local path="$1"
+    [ -z "$path" ] && return 0
+    docker exec "$KC_CONTAINER" rm -f "$path" 2>/dev/null || true
+}
+
+# Authenticate kcadm reading the password from a file inside the container.
+# Args: <pw_file_path> <admin_user>
+kcadm_login_from_file() {
+    local pw_file="$1"
+    local user="$2"
+    docker exec -i "$KC_CONTAINER" sh -c \
+        "/opt/keycloak/bin/kcadm.sh config credentials --server '$KC_SERVER' --realm master --user '$user' --password \"\$(cat '$pw_file')\""
+}
+
+# Change a Keycloak user's password, reading the new value from a file.
+# Args: <new_pw_file_path> <user_id>
+kcadm_set_password_from_file() {
+    local pw_file="$1"
+    local user_id="$2"
+    docker exec -i "$KC_CONTAINER" sh -c \
+        "/opt/keycloak/bin/kcadm.sh set-password -r master --userid '$user_id' --new-password \"\$(cat '$pw_file')\""
+}
 
 # =============================================================================
 # 2. Load OLD password
@@ -122,11 +170,11 @@ echo -e "${GREEN}✓ kcadm server URL: $KC_SERVER${NC}"
 # 4. Authenticate kcadm with OLD password
 # =============================================================================
 echo -e "${BLUE}Authenticating against Keycloak with current password...${NC}"
-if ! docker exec -i "$KC_CONTAINER" /opt/keycloak/bin/kcadm.sh config credentials \
-        --server "$KC_SERVER" \
-        --realm master \
-        --user "$ADMIN_USER" \
-        --password "$OLD_PW" > /dev/null 2>&1; then
+OLD_PW_CONTAINER_FILE=$(container_write_kcpw "$OLD_PW")
+# Ensure transient password files are removed even on early exit.
+trap 'container_rm_kcpw "${OLD_PW_CONTAINER_FILE:-}"; container_rm_kcpw "${NEW_PW_CONTAINER_FILE:-}"' EXIT
+
+if ! kcadm_login_from_file "$OLD_PW_CONTAINER_FILE" "$ADMIN_USER" > /dev/null 2>&1; then
     echo -e "${RED}✗ Authentication failed with the current password${NC}"
     echo "  The password file '$OLD_PW_FILE' may be stale or wrong."
     echo "  Restore the correct password there before rotating."
@@ -150,8 +198,8 @@ echo -e "${GREEN}✓ Admin user ID: $ADMIN_ID${NC}"
 # 6. Set the new password inside Keycloak
 # =============================================================================
 echo -e "${BLUE}Updating password in Keycloak DB via kcadm.sh...${NC}"
-if ! docker exec -i "$KC_CONTAINER" /opt/keycloak/bin/kcadm.sh set-password \
-        -r master --userid "$ADMIN_ID" --new-password "$NEW_PASSWORD" > /dev/null 2>&1; then
+NEW_PW_CONTAINER_FILE=$(container_write_kcpw "$NEW_PASSWORD")
+if ! kcadm_set_password_from_file "$NEW_PW_CONTAINER_FILE" "$ADMIN_ID" > /dev/null 2>&1; then
     echo -e "${RED}✗ Failed to set new password in Keycloak${NC}"
     exit 1
 fi
@@ -161,11 +209,7 @@ echo -e "${GREEN}✓ Password updated in Keycloak DB${NC}"
 # 7. Verify NEW password works
 # =============================================================================
 echo -e "${BLUE}Verifying new password...${NC}"
-if ! docker exec -i "$KC_CONTAINER" /opt/keycloak/bin/kcadm.sh config credentials \
-        --server "$KC_SERVER" \
-        --realm master \
-        --user "$ADMIN_USER" \
-        --password "$NEW_PASSWORD" > /dev/null 2>&1; then
+if ! kcadm_login_from_file "$NEW_PW_CONTAINER_FILE" "$ADMIN_USER" > /dev/null 2>&1; then
     # DB now holds the NEW password, but we cannot confirm it works. Do NOT try
     # to roll back — the old hash is gone. Ask the user to intervene manually.
     echo -e "${RED}✗ New password verification failed${NC}"
@@ -184,6 +228,8 @@ echo -e "${GREEN}✓ New password verified${NC}"
 # =============================================================================
 # 8. Update local secrets file
 # =============================================================================
+mkdir -p "$(dirname "$OLD_PW_FILE")"
+chmod 700 "$(dirname "$OLD_PW_FILE")" 2>/dev/null || true
 printf '%s' "$NEW_PASSWORD" > "$OLD_PW_FILE"
 chmod 600 "$OLD_PW_FILE"
 echo -e "${GREEN}✓ Local secret file updated: $OLD_PW_FILE${NC}"

@@ -86,9 +86,10 @@ services:
       - traefik.http.routers.${ENV}-ironstream-secure.rule=Host(`ironstream.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-ironstream-secure.tls=true
       - traefik.http.routers.${ENV}-ironstream-secure.service=${ENV}-ironstream
-      - traefik.http.routers.${ENV}-ironstream-secure.middlewares=${ENV}-ironstream-headers
-      - traefik.http.middlewares.${ENV}-ironstream-headers.headers.customresponseheaders.Content-Security-Policy=
-      - traefik.http.middlewares.${ENV}-ironstream-headers.headers.customresponseheaders.X-Frame-Options=
+      # Allow iframe embedding by UIFusion but keep clickjacking defence via
+      # CSP frame-ancestors allowlist instead of blanket-stripping X-Frame-Options.
+      - traefik.http.middlewares.${ENV}-ironstream-headers.headers.contentsecuritypolicy=frame-ancestors 'self' https://${INDUSTREAM_DOMAIN:-localhost} https://*.${INDUSTREAM_DOMAIN:-localhost}
+      - traefik.http.routers.${ENV}-ironstream-secure.middlewares=${ENV}-ironstream-headers,security-headers@file
       - traefik.http.services.${ENV}-ironstream.loadbalancer.server.port=9010
       resources:
         limits:

@@ -54,41 +54,45 @@ echo -e "  environment/datacatalog  = {\"url\": \"${DATACATALOG_URL}\"}"
 echo -e "  Scheduler 1              = ${SCHEDULER_URL} (logger: ${LOGGER_URL})"
 echo ""
 
-# Helper: run a Node.js HTTP request inside the confighub container
+# Helper: run a Node.js HTTP request inside the confighub container.
 # Usage: confighub_request <method> <path> [json_body]
+#
+# SECURITY: all inputs (method, path, body) are passed via environment
+# variables, NOT interpolated into the Node source. The Node script below is
+# a STATIC string — no user-controlled value ever becomes code. The body,
+# when provided, must already be a JSON string (we do NOT eval it).
 confighub_request() {
     local method="$1"
     local path="$2"
     local body="$3"
 
-    local node_script="
-const http = require('http');
+    # Static Node script — never templated with user data.
+    local node_script='
+const http = require("http");
+const method = process.env.CH_METHOD;
+const path = process.env.CH_PATH;
+const body = process.env.CH_BODY || "";
 const options = {
-    hostname: 'localhost',
+    hostname: "localhost",
     port: 4000,
-    path: '${path}',
-    method: '${method}',
-    headers: { 'Content-Type': 'application/json' }
+    path: path,
+    method: method,
+    headers: { "Content-Type": "application/json" }
 };
 const req = http.request(options, (res) => {
-    let data = '';
-    res.on('data', (chunk) => data += chunk);
-    res.on('end', () => {
-        process.stdout.write(res.statusCode.toString());
-    });
+    res.on("data", () => {});
+    res.on("end", () => { process.stdout.write(String(res.statusCode)); });
 });
-req.on('error', (e) => {
-    process.stderr.write(e.message);
-    process.exit(1);
-});
-"
-    if [ -n "$body" ]; then
-        node_script+="req.write(JSON.stringify(${body}));
-"
-    fi
-    node_script+="req.end();"
+req.on("error", (e) => { process.stderr.write(e.message); process.exit(1); });
+if (body.length > 0) { req.write(body); }
+req.end();
+'
 
-    docker exec "$CONFIGHUB_CONTAINER" node -e "$node_script" 2>/dev/null
+    docker exec \
+        -e CH_METHOD="$method" \
+        -e CH_PATH="$path" \
+        -e CH_BODY="$body" \
+        "$CONFIGHUB_CONTAINER" node -e "$node_script" 2>/dev/null
 }
 
 # Wait for ConfigHub container to be ready
@@ -118,12 +122,28 @@ fi
 echo ""
 echo -e "${BLUE}Setting environment variables...${NC}"
 
-# Build the JSON payload as a Node.js object (avoids shell escaping nightmares)
-ENV_BODY="{
-    \"environment/cdn\": \"${CDN_URL}\",
-    \"environment/confighub\": JSON.stringify({url: \"${CONFIGHUB_EXTERNAL_URL}\", internalUrl: \"${CONFIGHUB_INTERNAL_URL}\"}),
-    \"environment/datacatalog\": JSON.stringify({url: \"${DATACATALOG_URL}\"})
-}"
+# Build the JSON payload via `node` inside the container so that URL values
+# get properly JSON-escaped without shell-string interpolation into code.
+# All URL values are passed via environment vars; the Node script below is
+# static and never embeds user-controlled text.
+ENV_BODY=$(docker exec \
+    -e CDN_URL="$CDN_URL" \
+    -e CONFIGHUB_EXTERNAL_URL="$CONFIGHUB_EXTERNAL_URL" \
+    -e CONFIGHUB_INTERNAL_URL="$CONFIGHUB_INTERNAL_URL" \
+    -e DATACATALOG_URL="$DATACATALOG_URL" \
+    "$CONFIGHUB_CONTAINER" node -e '
+const payload = {
+    "environment/cdn": process.env.CDN_URL,
+    "environment/confighub": JSON.stringify({
+        url: process.env.CONFIGHUB_EXTERNAL_URL,
+        internalUrl: process.env.CONFIGHUB_INTERNAL_URL
+    }),
+    "environment/datacatalog": JSON.stringify({
+        url: process.env.DATACATALOG_URL
+    })
+};
+process.stdout.write(JSON.stringify(payload));
+')
 
 HTTP_CODE=$(confighub_request "POST" "/environments" "$ENV_BODY")
 
@@ -139,13 +159,19 @@ fi
 echo ""
 echo -e "${BLUE}Creating scheduler...${NC}"
 
-SCHED_BODY="{
-    name: \"Scheduler 1\",
-    url: \"${SCHEDULER_URL}\",
-    logServerUrl: \"${LOGGER_URL}\",
-    color: \"lightskyblue\",
+SCHED_BODY=$(docker exec \
+    -e SCHEDULER_URL="$SCHEDULER_URL" \
+    -e LOGGER_URL="$LOGGER_URL" \
+    "$CONFIGHUB_CONTAINER" node -e '
+const payload = {
+    name: "Scheduler 1",
+    url: process.env.SCHEDULER_URL,
+    logServerUrl: process.env.LOGGER_URL,
+    color: "lightskyblue",
     isDefault: true
-}"
+};
+process.stdout.write(JSON.stringify(payload));
+')
 
 HTTP_CODE=$(confighub_request "POST" "/schedulers" "$SCHED_BODY")
 

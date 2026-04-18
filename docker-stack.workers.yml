@@ -447,7 +447,12 @@ services:
       - KEYCLOAK_REALM=industream
       - KEYCLOAK_CLIENT_ID=worker-manager
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount the docker socket read-only. Worker-manager only inspects
+      # container/service state to report worker status. Any container
+      # lifecycle action (start/stop/restart) must be routed through a
+      # privileged control-plane API — granting RW here turns an auth bypass
+      # in this web-exposed service into full root on the Swarm manager.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${ENV}-worker-manager-data:/data
     networks:
       - traefik-public
@@ -468,6 +473,7 @@ services:
         - traefik.http.routers.${ENV}-worker-manager-secure.rule=Host(`workers.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-worker-manager-secure.tls=true
         - traefik.http.routers.${ENV}-worker-manager-secure.service=${ENV}-worker-manager
+        - traefik.http.routers.${ENV}-worker-manager-secure.middlewares=traefik-auth@file,rate-limit@file,security-headers@file
         - traefik.http.routers.${ENV}-worker-manager.entrypoints=web
         - traefik.http.routers.${ENV}-worker-manager.rule=Host(`workers.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-worker-manager.middlewares=redirect-to-https@file

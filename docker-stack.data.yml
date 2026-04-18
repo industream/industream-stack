@@ -46,6 +46,7 @@ services:
       - traefik.http.routers.${ENV}-influxdb-secure.rule=Host(`influxdb.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-influxdb-secure.tls=true
       - traefik.http.routers.${ENV}-influxdb-secure.service=${ENV}-influxdb
+      - traefik.http.routers.${ENV}-influxdb-secure.middlewares=security-headers@file
       - traefik.http.services.${ENV}-influxdb.loadbalancer.server.port=8086
       resources:
         limits:
@@ -81,7 +82,11 @@ services:
     depends_on:
     - influxdb
     healthcheck:
-      test: ["NONE"]
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       labels:
       - traefik.enable=true
@@ -89,7 +94,7 @@ services:
       - traefik.http.routers.${ENV}-databridge-secure.rule=Host(`databridge.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge-secure.tls=true
       - traefik.http.routers.${ENV}-databridge-secure.service=${ENV}-databridge
-      - traefik.http.routers.${ENV}-databridge-secure.middlewares=
+      - traefik.http.routers.${ENV}-databridge-secure.middlewares=security-headers@file
       - traefik.http.routers.${ENV}-databridge.entrypoints=web
       - traefik.http.routers.${ENV}-databridge.rule=Host(`databridge.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge.middlewares=redirect-to-https@file
@@ -143,7 +148,7 @@ services:
       - traefik.http.routers.${ENV}-datacatalog-api-secure.rule=Host(`datacatalog.${INDUSTREAM_DOMAIN:-localhost}`) || Host(`datacatalog-api.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-datacatalog-api-secure.tls=true
       - traefik.http.routers.${ENV}-datacatalog-api-secure.service=${ENV}-datacatalog-api
-      - traefik.http.routers.${ENV}-datacatalog-api-secure.middlewares=
+      - traefik.http.routers.${ENV}-datacatalog-api-secure.middlewares=security-headers@file
       - traefik.http.routers.${ENV}-datacatalog-api.entrypoints=web
       - traefik.http.routers.${ENV}-datacatalog-api.rule=Host(`datacatalog.${INDUSTREAM_DOMAIN:-localhost}`) || Host(`datacatalog-api.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-datacatalog-api.middlewares=redirect-to-https@file
@@ -153,7 +158,7 @@ services:
       - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.rule=Host(`datacatalog-ui.${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/api/`)
       - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.tls=true
       - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.service=${ENV}-datacatalog-api
-      - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.middlewares=${ENV}-datacatalog-api-strip-api
+      - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.middlewares=${ENV}-datacatalog-api-strip-api,security-headers@file
       - traefik.http.middlewares.${ENV}-datacatalog-api-strip-api.stripprefix.prefixes=/api
       resources:
         limits:
@@ -230,7 +235,11 @@ services:
     secrets:
     - ${ENV}_databridge_pg_password
     healthcheck:
-      test: ["NONE"]
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       labels:
       - traefik.enable=true
@@ -238,7 +247,7 @@ services:
       - traefik.http.routers.${ENV}-databridge-pg-secure.rule=Host(`databridge-pg.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge-pg-secure.tls=true
       - traefik.http.routers.${ENV}-databridge-pg-secure.service=${ENV}-databridge-pg
-      - traefik.http.routers.${ENV}-databridge-pg-secure.middlewares=
+      - traefik.http.routers.${ENV}-databridge-pg-secure.middlewares=security-headers@file
       - traefik.http.routers.${ENV}-databridge-pg.entrypoints=web
       - traefik.http.routers.${ENV}-databridge-pg.rule=Host(`databridge-pg.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge-pg.middlewares=redirect-to-https@file
@@ -276,7 +285,11 @@ services:
     secrets:
     - ${ENV}_timescaledb_password
     healthcheck:
-      test: ["NONE"]
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       labels:
       - traefik.enable=true
@@ -284,7 +297,7 @@ services:
       - traefik.http.routers.${ENV}-databridge-tsdb-secure.rule=Host(`databridge-tsdb.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge-tsdb-secure.tls=true
       - traefik.http.routers.${ENV}-databridge-tsdb-secure.service=${ENV}-databridge-tsdb
-      - traefik.http.routers.${ENV}-databridge-tsdb-secure.middlewares=
+      - traefik.http.routers.${ENV}-databridge-tsdb-secure.middlewares=security-headers@file
       - traefik.http.routers.${ENV}-databridge-tsdb.entrypoints=web
       - traefik.http.routers.${ENV}-databridge-tsdb.rule=Host(`databridge-tsdb.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge-tsdb.middlewares=redirect-to-https@file
@@ -330,6 +343,7 @@ services:
       - traefik.http.routers.${ENV}-datacatalog-ui-secure.rule=Host(`datacatalog-ui.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-datacatalog-ui-secure.tls=true
       - traefik.http.routers.${ENV}-datacatalog-ui-secure.service=${ENV}-datacatalog-ui
+      - traefik.http.routers.${ENV}-datacatalog-ui-secure.middlewares=security-headers@file
       - traefik.http.routers.${ENV}-datacatalog-ui.entrypoints=web
       - traefik.http.routers.${ENV}-datacatalog-ui.rule=Host(`datacatalog-ui.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-datacatalog-ui.middlewares=redirect-to-https@file
@@ -337,7 +351,7 @@ services:
       resources:
         limits:
           cpus: '0.1'
-          memory: 64M
+          memory: 128M
         reservations:
           cpus: '0.02'
           memory: 32M

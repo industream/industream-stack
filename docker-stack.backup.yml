@@ -42,7 +42,7 @@ services:
   # BACKUP JOBS
   # ==========================================
   backup-postgres:
-    image: postgres:${POSTGRES_VERSION:-17.4}
+    image: postgres:${POSTGRES_VERSION:-18-alpine}
     entrypoint: ["/bin/bash", "/scripts/backup-postgres.sh"]
     environment:
       - BACKUP_DIR=/backups/postgres
@@ -68,6 +68,12 @@ services:
     deploy:
       mode: replicated
       replicas: 0
+      # Pin to the manager so the `backup-data` volume is shared with
+      # backup-monitor (same placement below). On a multi-node swarm this
+      # prevents the monitor from seeing an empty local volume.
+      placement:
+        constraints:
+          - node.role == manager
       resources:
         limits:
           cpus: '0.25'
@@ -88,13 +94,31 @@ services:
     environment:
       - BACKUP_DIR=/backups/volumes
       - RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
+      # Volume-to-path mapping consumed by backup-volumes.sh. Each *_DATA
+      # variable points at a read-only mount of the source volume below.
       - GRAFANA_DATA=/data/grafana
+      - MINIO_DATA=/data/minio
+      - FLOWMAKER_LAUNCHER_DATA=/data/flowmaker-launcher
+      - FLOWMAKER_CONFIGHUB_DATA=/data/flowmaker-confighub
+      - NTFY_DATA=/data/ntfy
+      - ALERTMANAGER_DATA=/data/alertmanager
+      - CDN_SERVER_STORAGE=/data/cdn-server-storage
+      - IRONSTREAM_POSTGRES_DATA=/data/ironstream-postgres
       - NTFY_URL=http://ntfy:80
       - NTFY_TOPIC=${NTFY_TOPIC:-industream-backups}
     volumes:
       - ./scripts/backups/backup-volumes.sh:/scripts/backup-volumes.sh:ro
       - ${ENV}-backup-data:/backups
+      # Source volumes are mounted read-only so the backup job can never
+      # corrupt live data even on script bugs.
       - ${ENV}-grafana-data:/data/grafana:ro
+      - ${ENV}-minio-data:/data/minio:ro
+      - ${ENV}-flowmaker-launcher-data:/data/flowmaker-launcher:ro
+      - ${ENV}-flowmaker-confighub-data:/data/flowmaker-confighub:ro
+      - ${ENV}-ntfy-data:/data/ntfy:ro
+      - ${ENV}-alertmanager-data:/data/alertmanager:ro
+      - ${ENV}-cdn-server-storage:/data/cdn-server-storage:ro
+      - ${ENV}-ironstream-postgres-data:/data/ironstream-postgres:ro
     networks:
       - ${ENV}-platform
     depends_on:
@@ -102,6 +126,12 @@ services:
     deploy:
       mode: replicated
       replicas: 0
+      # Co-locate with backup-postgres + backup-monitor so the shared
+      # backup-data volume is populated on the same node that the monitor
+      # reads from.
+      placement:
+        constraints:
+          - node.role == manager
       resources:
         limits:
           cpus: '0.25'
@@ -117,7 +147,7 @@ services:
         - swarm.cronjob.skip-running=true
 
   backup-influxdb:
-    image: influxdb:${INFLUXDB_VERSION:-2.7}
+    image: influxdb:${INFLUXDB_VERSION:-2.7.12}
     entrypoint: ["/bin/bash", "/scripts/backup-influxdb.sh"]
     environment:
       - BACKUP_DIR=/backups/influxdb
@@ -139,6 +169,9 @@ services:
     deploy:
       mode: replicated
       replicas: 0
+      placement:
+        constraints:
+          - node.role == manager
       resources:
         limits:
           cpus: '0.25'
@@ -177,6 +210,13 @@ services:
     deploy:
       mode: replicated
       replicas: 1
+      # Must sit on the same node as backup-postgres / backup-volumes /
+      # backup-influxdb (all pinned to manager) so the monitor sees the
+      # populated backup-data volume rather than an empty local copy on a
+      # worker node.
+      placement:
+        constraints:
+          - node.role == manager
       resources:
         limits:
           cpus: '0.25'
@@ -194,7 +234,7 @@ services:
         - traefik.http.routers.${ENV}-backup-monitor-swarm.rule=Host(`backups.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-backup-monitor-swarm.entrypoints=websecure
         - traefik.http.routers.${ENV}-backup-monitor-swarm.tls=true
-        - traefik.http.routers.${ENV}-backup-monitor-swarm.middlewares=backup-ratelimit@file,backup-security-headers@file
+        - traefik.http.routers.${ENV}-backup-monitor-swarm.middlewares=backup-ratelimit@file,backup-security-headers@file,security-headers@file
         - traefik.http.services.${ENV}-backup-monitor-swarm.loadbalancer.server.port=3000
         - traefik.http.routers.${ENV}-backup-monitor-swarm-http.rule=Host(`backups.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-backup-monitor-swarm-http.entrypoints=web
@@ -214,7 +254,24 @@ networks:
 # =============================================================================
 volumes:
   ${ENV}-backup-data:
+  # All source volumes below are created by other stacks; they are referenced
+  # here as `external: true` so the backup stack can mount them read-only
+  # without racing stack-deploy order.
   ${ENV}-grafana-data:
+    external: true
+  ${ENV}-minio-data:
+    external: true
+  ${ENV}-flowmaker-launcher-data:
+    external: true
+  ${ENV}-flowmaker-confighub-data:
+    external: true
+  ${ENV}-ntfy-data:
+    external: true
+  ${ENV}-alertmanager-data:
+    external: true
+  ${ENV}-cdn-server-storage:
+    external: true
+  ${ENV}-ironstream-postgres-data:
     external: true
 
 # =============================================================================

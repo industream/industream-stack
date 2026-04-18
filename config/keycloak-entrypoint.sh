@@ -1,13 +1,18 @@
 #!/bin/bash
 # Keycloak Entrypoint Wrapper for Docker Secrets
+#
+# Keycloak 26 supports `*_FILE` env vars natively. We point those at the
+# mounted Docker Secret files instead of `cat`-ing them and re-exporting the
+# plaintext password — which would otherwise leak via /proc/<pid>/environ
+# and `docker inspect`.
 set -e
 
-# Read secrets and export as environment variables
-# Support both legacy (keycloak_*) and new multi-env (ENV_keycloak_*) secret names
+# Locate the mounted secret files.
+# Support both multi-env layout (prod_keycloak_*, dev_keycloak_*, …)
+# and the legacy flat layout (keycloak_*).
 ADMIN_SECRET=""
 DB_SECRET=""
 
-# Try multi-env format first (prod_keycloak_*, dev_keycloak_*, etc.)
 for secret_file in /run/secrets/*_keycloak_admin_password; do
     if [ -f "$secret_file" ]; then
         ADMIN_SECRET="$secret_file"
@@ -22,21 +27,25 @@ for secret_file in /run/secrets/*_keycloak_db_password; do
     fi
 done
 
-# Fallback to legacy format
+# Fallback to legacy flat secret names.
 [ -z "$ADMIN_SECRET" ] && [ -f "/run/secrets/keycloak_admin_password" ] && ADMIN_SECRET="/run/secrets/keycloak_admin_password"
 [ -z "$DB_SECRET" ] && [ -f "/run/secrets/keycloak_db_password" ] && DB_SECRET="/run/secrets/keycloak_db_password"
 
-# Export admin password
+# Point Keycloak at the file directly. KC_BOOTSTRAP_ADMIN_PASSWORD_FILE is
+# only honored on first boot (initial admin user); after that the hash lives
+# in the DB and rotations go through scripts/utils/rotate-keycloak-password.sh.
 if [ -n "$ADMIN_SECRET" ]; then
-    export KEYCLOAK_ADMIN_PASSWORD="$(cat "$ADMIN_SECRET")"
-    export KC_BOOTSTRAP_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD"
-    echo "✓ Loaded KEYCLOAK_ADMIN_PASSWORD from $ADMIN_SECRET"
+    export KC_BOOTSTRAP_ADMIN_PASSWORD_FILE="$ADMIN_SECRET"
+    echo "✓ KC_BOOTSTRAP_ADMIN_PASSWORD_FILE → $ADMIN_SECRET"
+else
+    echo "⚠ No keycloak_admin_password secret mounted — bootstrap admin will not be created"
 fi
 
-# Export DB password
 if [ -n "$DB_SECRET" ]; then
-    export KC_DB_PASSWORD="$(cat "$DB_SECRET")"
-    echo "✓ Loaded KC_DB_PASSWORD from $DB_SECRET"
+    export KC_DB_PASSWORD_FILE="$DB_SECRET"
+    echo "✓ KC_DB_PASSWORD_FILE → $DB_SECRET"
+else
+    echo "⚠ No keycloak_db_password secret mounted — DB connection will fail"
 fi
 
 # Wait for PostgreSQL to be ready
@@ -62,7 +71,6 @@ wait_for_postgres() {
     return 1
 }
 
-# Wait for PostgreSQL before starting Keycloak
 wait_for_postgres
 
 # Execute the original Keycloak entrypoint

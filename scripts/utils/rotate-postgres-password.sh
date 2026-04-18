@@ -63,7 +63,15 @@ STACK_NAME="industream-${ENV}"
 SERVICE_NAME="${STACK_NAME}_postgres"
 SECRET_NAME="${ENV}_postgres_admin_password"
 SECRETS_DIR="${INDUSTREAM_SECRETS_DIR:-$HOME/industream-platform/secrets}"
-ADMIN_PW_FILE="$SECRETS_DIR/postgres_admin_password"
+# Prefer the per-env layout (secrets/<env>/postgres_admin_password); fall
+# back to the legacy flat layout (secrets/postgres_admin_password) for
+# installs that predate the per-env migration.
+ADMIN_PW_FILE="$SECRETS_DIR/$ENV/postgres_admin_password"
+LEGACY_ADMIN_PW_FILE="$SECRETS_DIR/postgres_admin_password"
+if [ ! -f "$ADMIN_PW_FILE" ] && [ -f "$LEGACY_ADMIN_PW_FILE" ]; then
+    echo -e "${YELLOW}⚠ Using legacy secrets path '$LEGACY_ADMIN_PW_FILE' (deprecated, migrate to '$ADMIN_PW_FILE')${NC}"
+    ADMIN_PW_FILE="$LEGACY_ADMIN_PW_FILE"
+fi
 
 # =============================================================================
 # 1. Find Postgres container
@@ -80,6 +88,43 @@ echo -e "${GREEN}✓ Postgres container: $CONTAINER_NAME${NC}"
 
 ADMIN_USER=$(docker exec "$POSTGRES_CONTAINER" printenv POSTGRES_USER 2>/dev/null || echo "postgres")
 echo -e "${GREEN}✓ Admin user: $ADMIN_USER${NC}"
+
+# =============================================================================
+# Helpers: run psql inside the container using a transient .pgpass file.
+#
+# Rationale: `docker exec -e PGPASSWORD=...` exposes the password via
+# `docker inspect <exec-id>` for the lifetime of the exec. Writing a 0600
+# .pgpass inside the container and using `psql -w` avoids that leak.
+# =============================================================================
+
+# Seed a temp .pgpass inside the running container. Prints the pgpass path.
+container_write_pgpass() {
+    local container="$1"
+    local pw="$2"
+    local pgpass_path="/tmp/.pgpass_rotate_$$"
+    # Write via stdin so the password never appears in `ps` / `docker inspect`.
+    # The 0600 chmod is critical — psql refuses to use a world-readable pgpass.
+    printf '*:*:*:%s:%s\n' "$ADMIN_USER" "$pw" \
+        | docker exec -i "$container" sh -c "umask 077 && cat > '$pgpass_path' && chmod 600 '$pgpass_path'"
+    printf '%s' "$pgpass_path"
+}
+
+container_rm_pgpass() {
+    local container="$1"
+    local pgpass_path="$2"
+    [ -z "$pgpass_path" ] && return 0
+    docker exec "$container" rm -f "$pgpass_path" 2>/dev/null || true
+}
+
+# Run `psql -w` inside the container with PGPASSFILE pointing at the temp
+# pgpass. Extra args are forwarded to psql.
+container_psql() {
+    local container="$1"
+    local pgpass_path="$2"
+    shift 2
+    docker exec -i "$container" env PGPASSFILE="$pgpass_path" \
+        psql -w -v ON_ERROR_STOP=1 -U "$ADMIN_USER" -d postgres "$@"
+}
 
 # =============================================================================
 # 2. Load OLD admin password
@@ -120,8 +165,11 @@ fi
 # 4. Verify the OLD password works
 # =============================================================================
 echo -e "${BLUE}Verifying current password against running Postgres...${NC}"
-if ! docker exec -i -e PGPASSWORD="$OLD_PASSWORD" "$POSTGRES_CONTAINER" \
-        psql -v ON_ERROR_STOP=1 -U "$ADMIN_USER" -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+PGPASS_OLD=$(container_write_pgpass "$POSTGRES_CONTAINER" "$OLD_PASSWORD")
+# Make sure the transient pgpass is removed even if the script exits early.
+trap 'container_rm_pgpass "$POSTGRES_CONTAINER" "$PGPASS_OLD"; [ -n "${PGPASS_NEW:-}" ] && container_rm_pgpass "$POSTGRES_CONTAINER" "$PGPASS_NEW"; [ -n "${PGPASS_NEW_CONTAINER:-}" ] && [ -n "${NEW_CONTAINER:-}" ] && container_rm_pgpass "$NEW_CONTAINER" "$PGPASS_NEW_CONTAINER"' EXIT
+
+if ! container_psql "$POSTGRES_CONTAINER" "$PGPASS_OLD" -c "SELECT 1" >/dev/null 2>&1; then
     echo -e "${RED}✗ Authentication with the current password failed${NC}"
     echo "  The password in $ADMIN_PW_FILE does not match the live database."
     echo "  Resolve the drift before attempting rotation."
@@ -132,19 +180,22 @@ echo -e "${GREEN}✓ Current password verified${NC}"
 # =============================================================================
 # 5. ALTER USER inside Postgres
 # =============================================================================
+# Pass the new password via psql variable binding (`-v`) so special chars
+# (quotes, dollar, backslash) are escaped by psql rather than interpreted
+# by the shell heredoc → prevents SQL injection through crafted passwords.
 echo -e "${BLUE}Updating password in Postgres (ALTER USER)...${NC}"
-docker exec -i -e PGPASSWORD="$OLD_PASSWORD" "$POSTGRES_CONTAINER" \
-  psql -v ON_ERROR_STOP=1 -U "$ADMIN_USER" -d postgres <<EOF
-ALTER USER "$ADMIN_USER" WITH ENCRYPTED PASSWORD '$NEW_PASSWORD';
-EOF
+container_psql "$POSTGRES_CONTAINER" "$PGPASS_OLD" \
+    -v "user=$ADMIN_USER" \
+    -v "pw=$NEW_PASSWORD" \
+    -c 'ALTER USER :"user" WITH ENCRYPTED PASSWORD :'"'"'pw'"'"';'
 echo -e "${GREEN}✓ Password changed in pg_authid${NC}"
 
 # =============================================================================
 # 6. Verify the NEW password works
 # =============================================================================
 echo -e "${BLUE}Verifying new password against running Postgres...${NC}"
-if ! docker exec -i -e PGPASSWORD="$NEW_PASSWORD" "$POSTGRES_CONTAINER" \
-        psql -v ON_ERROR_STOP=1 -U "$ADMIN_USER" -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+PGPASS_NEW=$(container_write_pgpass "$POSTGRES_CONTAINER" "$NEW_PASSWORD")
+if ! container_psql "$POSTGRES_CONTAINER" "$PGPASS_NEW" -c "SELECT 1" >/dev/null 2>&1; then
     echo -e "${RED}✗ Authentication with the NEW password failed after ALTER USER${NC}"
     echo ""
     echo -e "${YELLOW}  IMPORTANT: the database now expects the new password but the${NC}"
@@ -164,6 +215,8 @@ echo -e "${GREEN}✓ New password verified against live DB${NC}"
 echo -e "${BLUE}Updating local secrets file...${NC}"
 # Write through a temp file in the same directory to keep the swap atomic
 # and avoid leaving a half-written password file on a crash.
+mkdir -p "$(dirname "$ADMIN_PW_FILE")"
+chmod 700 "$(dirname "$ADMIN_PW_FILE")" 2>/dev/null || true
 TMP_FILE=$(mktemp "${ADMIN_PW_FILE}.XXXXXX")
 printf '%s' "$NEW_PASSWORD" > "$TMP_FILE"
 chmod 600 "$TMP_FILE"
@@ -259,10 +312,17 @@ echo -e "${GREEN}✓ New container: $(docker inspect --format '{{.Name}}' "$NEW_
 # 10. Final verification — wait until Postgres accepts connections
 # =============================================================================
 echo -e "${BLUE}Waiting for Postgres to accept connections with the new password...${NC}"
+# The container was recreated after scale 0→1 so we need a fresh pgpass
+# inside the NEW container (PGPASS_NEW above lives in the old container
+# which is gone). Retry the write until the new container is responsive.
+PGPASS_NEW_CONTAINER=""
 AUTH_OK=0
 for _ in $(seq 1 30); do
-    if docker exec -i -e PGPASSWORD="$NEW_PASSWORD" "$NEW_CONTAINER" \
-            psql -v ON_ERROR_STOP=1 -U "$ADMIN_USER" -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+    if [ -z "$PGPASS_NEW_CONTAINER" ]; then
+        PGPASS_NEW_CONTAINER=$(container_write_pgpass "$NEW_CONTAINER" "$NEW_PASSWORD" 2>/dev/null || true)
+        [ -z "$PGPASS_NEW_CONTAINER" ] && { sleep 2; continue; }
+    fi
+    if container_psql "$NEW_CONTAINER" "$PGPASS_NEW_CONTAINER" -c "SELECT 1" >/dev/null 2>&1; then
         AUTH_OK=1
         break
     fi

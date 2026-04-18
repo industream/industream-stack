@@ -12,7 +12,10 @@ services:
   # ==========================================
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:latest
-    privileged: true
+    # `privileged: true` is NOT required: the proxy only reads a Unix socket
+    # already granted via the bind mount below. If the proxy fails to start
+    # on some older kernels / odd AppArmor profiles, reintroducing the flag
+    # is a known workaround — but the default here must be the least-priv one.
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
@@ -124,7 +127,11 @@ services:
     ports:
     - 80:80
     - 443:443
-    - 8080:8080
+    # Bind the Traefik entrypoint 8080 (API/dashboard) to loopback only so it
+    # stays reachable from the manager host but not from the LAN. Dashboard
+    # traffic from operators goes through Traefik's own reverse-proxy router
+    # (traefik.<domain>) with authentication.
+    - "127.0.0.1:8080:8080"
     volumes:
     - ./certs:/etc/certs:ro
     - ./traefik-dynamic:/etc/traefik/dynamic:ro

@@ -22,6 +22,8 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,6 +42,7 @@ cd "$PROJECT_DIR"
 EXCLUDE_SERVICES=""
 COMMUNITY_MODE=false
 SKIP_MEMORY_CHECK=false
+SHOW_CREDENTIALS=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env)
@@ -70,6 +73,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_MEMORY_CHECK=true
             shift
             ;;
+        --show-credentials)
+            SHOW_CREDENTIALS=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 --env <prod|dev|staging> [OPTIONS]"
             echo ""
@@ -81,6 +88,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --with-ironstream  Include IronStream business services"
             echo "  --cleanup-legacy       Remove legacy worker services (after flow migration)"
             echo "  --skip-memory-check    Skip system memory validation"
+            echo "  --show-credentials     Print admin credentials to stdout (default: path only)"
             echo "  --help, -h             Show this help message"
             echo ""
             echo "Prerequisites:"
@@ -426,7 +434,7 @@ try:
         cfg = json.load(f)
 except:
     cfg = {}
-cfg['metrics-addr'] = '0.0.0.0:9323'
+cfg['metrics-addr'] = '127.0.0.1:9323'
 cfg['experimental'] = True
 print(json.dumps(cfg, indent=2))
 " 2>/dev/null)
@@ -435,12 +443,12 @@ print(json.dumps(cfg, indent=2))
             fi
         else
             sudo mkdir -p /etc/docker
-            echo '{"metrics-addr": "0.0.0.0:9323", "experimental": true}' | sudo tee "$DAEMON_JSON" > /dev/null
+            echo '{"metrics-addr": "127.0.0.1:9323", "experimental": true}' | sudo tee "$DAEMON_JSON" > /dev/null
         fi
         echo -e "${YELLOW}⚠ Docker daemon metrics enabled - Docker restart may be needed${NC}"
     else
         echo -e "${YELLOW}⚠ Skipping Docker metrics (no sudo access). Enable manually:${NC}"
-        echo -e "${YELLOW}  sudo tee /etc/docker/daemon.json <<< '{\"metrics-addr\":\"0.0.0.0:9323\",\"experimental\":true}'${NC}"
+        echo -e "${YELLOW}  sudo tee /etc/docker/daemon.json <<< '{\"metrics-addr\":\"127.0.0.1:9323\",\"experimental\":true}'${NC}"
     fi
 fi
 
@@ -1065,39 +1073,55 @@ if [ "${TLS_MODE:-selfsigned}" = "selfsigned" ]; then
 fi
 
 # Show credentials (from secrets directory)
-SECRETS_DIR="$(pwd)/secrets"
+# By default, only the path is printed. Passwords are shown only when
+# --show-credentials is passed (prevents secrets leaking into deploy logs,
+# CI output, terminal scrollback, etc.).
+SECRETS_DIR="$(pwd)/secrets/${ENV}"
+if [ ! -d "$SECRETS_DIR" ]; then
+    # Fallback to legacy flat layout
+    SECRETS_DIR="$(pwd)/secrets"
+fi
+
 if [ -d "$SECRETS_DIR" ]; then
-    echo -e "${RED}╔══════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║  ⚠  CREDENTIALS - KEEP THESE SAFE, DO NOT SHARE OR COMMIT!     ║${NC}"
-    echo -e "${RED}╚══════════════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-    echo -e "  ${BLUE}PostgreSQL${NC}"
-    echo -e "    User:     ${BOLD}${POSTGRES_ADMIN_USER:-postgres}${NC}"
-    echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/postgres_admin_password" 2>/dev/null || echo 'N/A')${NC}"
-    echo ""
-    echo -e "  ${BLUE}Keycloak${NC}"
-    echo -e "    User:     ${BOLD}${KEYCLOAK_ADMIN:-admin}${NC}"
-    echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/keycloak_admin_password" 2>/dev/null || echo 'N/A')${NC}"
-    echo ""
-    echo -e "  ${BLUE}Grafana${NC}"
-    echo -e "    User:     ${BOLD}${GRAFANA_ADMIN_USER:-admin}${NC}"
-    echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/grafana_admin_password" 2>/dev/null || echo 'N/A')${NC}"
-    echo ""
-    echo -e "  ${BLUE}InfluxDB${NC}"
-    echo -e "    User:     ${BOLD}${INFLUX_ADMIN_USERNAME:-admin}${NC}"
-    echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/influx_admin_password" 2>/dev/null || echo 'N/A')${NC}"
-    echo -e "    Token:    ${BOLD}$(cat "$SECRETS_DIR/influx_admin_token" 2>/dev/null || echo 'N/A')${NC}"
-    echo ""
-    echo -e "  ${BLUE}MinIO${NC}"
-    echo -e "    User:     ${BOLD}$(cat "$SECRETS_DIR/minio_root_user" 2>/dev/null || echo 'admin')${NC}"
-    echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/minio_root_password" 2>/dev/null || echo 'N/A')${NC}"
-    echo ""
-    echo -e "  ${BLUE}CloudBeaver${NC}"
-    echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/cloudbeaver_admin_password" 2>/dev/null || echo 'N/A')${NC}"
-    echo ""
-    echo -e "  ${YELLOW}Secrets stored in: ${SECRETS_DIR}/${NC}"
-    echo -e "  ${YELLOW}To regenerate: ./scripts/setup/create-secrets.sh --env ${ENV} --regenerate${NC}"
-    echo ""
+    if [ "$SHOW_CREDENTIALS" = "true" ]; then
+        echo -e "${RED}╔══════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║  ⚠  CREDENTIALS - KEEP THESE SAFE, DO NOT SHARE OR COMMIT!     ║${NC}"
+        echo -e "${RED}╚══════════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "  ${BLUE}PostgreSQL${NC}"
+        echo -e "    User:     ${BOLD}${POSTGRES_ADMIN_USER:-postgres}${NC}"
+        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/postgres_admin_password" 2>/dev/null || echo 'N/A')${NC}"
+        echo ""
+        echo -e "  ${BLUE}Keycloak${NC}"
+        echo -e "    User:     ${BOLD}${KEYCLOAK_ADMIN:-admin}${NC}"
+        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/keycloak_admin_password" 2>/dev/null || echo 'N/A')${NC}"
+        echo ""
+        echo -e "  ${BLUE}Grafana${NC}"
+        echo -e "    User:     ${BOLD}${GRAFANA_ADMIN_USER:-admin}${NC}"
+        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/grafana_admin_password" 2>/dev/null || echo 'N/A')${NC}"
+        echo ""
+        echo -e "  ${BLUE}InfluxDB${NC}"
+        echo -e "    User:     ${BOLD}${INFLUX_ADMIN_USERNAME:-admin}${NC}"
+        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/influx_admin_password" 2>/dev/null || echo 'N/A')${NC}"
+        echo -e "    Token:    ${BOLD}$(cat "$SECRETS_DIR/influx_admin_token" 2>/dev/null || echo 'N/A')${NC}"
+        echo ""
+        echo -e "  ${BLUE}MinIO${NC}"
+        echo -e "    User:     ${BOLD}$(cat "$SECRETS_DIR/minio_root_user" 2>/dev/null || echo 'admin')${NC}"
+        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/minio_root_password" 2>/dev/null || echo 'N/A')${NC}"
+        echo ""
+        echo -e "  ${BLUE}CloudBeaver${NC}"
+        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/cloudbeaver_admin_password" 2>/dev/null || echo 'N/A')${NC}"
+        echo ""
+        echo -e "  ${YELLOW}Secrets stored in: ${SECRETS_DIR}/${NC}"
+        echo -e "  ${YELLOW}To regenerate: ./scripts/setup/create-secrets.sh --env ${ENV} --regenerate${NC}"
+        echo ""
+    else
+        echo -e "${BLUE}Admin credentials${NC}"
+        echo -e "  Saved at: ${BOLD}${SECRETS_DIR}/${NC} (chmod 600)"
+        echo -e "  ${DIM}Re-run with --show-credentials to print them to stdout${NC}"
+        echo -e "  ${DIM}Or read individual files, e.g.: cat ${SECRETS_DIR}/keycloak_admin_password${NC}"
+        echo ""
+    fi
 fi
 
 # =============================================================================

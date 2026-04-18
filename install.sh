@@ -131,7 +131,13 @@ bolt_say "Grabbing the latest deployment files..."
 
 if [ -d "$INSTALL_DIR/.git" ]; then
     echo -e "${YELLOW}  Existing installation found — updating...${NC}"
-    git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || true
+    if ! git -C "$INSTALL_DIR" pull --ff-only; then
+        echo ""
+        echo -e "${RED}  ✗ Cannot fast-forward update; local changes or diverged history.${NC}"
+        echo -e "${YELLOW}  Investigate: cd $INSTALL_DIR && git status${NC}"
+        echo -e "${YELLOW}  Then stash/reset as appropriate and re-run the installer.${NC}"
+        exit 1
+    fi
 else
     git clone --quiet "$REPO_URL" "$INSTALL_DIR"
 fi

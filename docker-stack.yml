@@ -18,7 +18,7 @@ services:
   # POSTGRESQL - Database
   # ==========================================
   postgres:
-    image: postgres:${POSTGRES_VERSION:-17.4}
+    image: postgres:${POSTGRES_VERSION:-18-alpine}
     hostname: postgres
     environment:
       POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
@@ -53,10 +53,10 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 256M
+          memory: 1G
         reservations:
           cpus: '0.08'
-          memory: 128M
+          memory: 512M
       restart_policy:
         condition: any
         delay: 5s
@@ -96,7 +96,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 90s
+      start_period: 300s
     secrets:
     - ${ENV}_keycloak_db_password
     - ${ENV}_keycloak_admin_password
@@ -107,6 +107,7 @@ services:
       - traefik.http.routers.${ENV}-keycloak-secure.rule=Host(`${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/auth`)
       - traefik.http.routers.${ENV}-keycloak-secure.tls=true
       - traefik.http.routers.${ENV}-keycloak-secure.service=${ENV}-keycloak
+      - traefik.http.routers.${ENV}-keycloak-secure.middlewares=security-headers@file
       - traefik.http.routers.${ENV}-keycloak.entrypoints=web
       - traefik.http.routers.${ENV}-keycloak.rule=Host(`${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/auth`)
       - traefik.http.routers.${ENV}-keycloak.middlewares=redirect-to-https@file
@@ -153,6 +154,7 @@ services:
       - traefik.http.routers.${ENV}-uifusion-ui-secure.rule=Host(`${INDUSTREAM_DOMAIN:-localhost}`) && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)
       - traefik.http.routers.${ENV}-uifusion-ui-secure.tls=true
       - traefik.http.routers.${ENV}-uifusion-ui-secure.service=${ENV}-uifusion-ui
+      - traefik.http.routers.${ENV}-uifusion-ui-secure.middlewares=security-headers@file
       - traefik.http.routers.${ENV}-uifusion-ui.entrypoints=web
       - traefik.http.routers.${ENV}-uifusion-ui.rule=Host(`${INDUSTREAM_DOMAIN:-localhost}`) && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)
       - traefik.http.routers.${ENV}-uifusion-ui.middlewares=redirect-to-https@file
@@ -160,7 +162,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 64M
+          memory: 128M
         reservations:
           cpus: '0.03'
           memory: 32M
@@ -198,7 +200,7 @@ services:
       - traefik.http.routers.${ENV}-uifusion-api-secure.rule=Host(`${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/api/uifusion`)
       - traefik.http.routers.${ENV}-uifusion-api-secure.tls=true
       - traefik.http.routers.${ENV}-uifusion-api-secure.service=${ENV}-uifusion-api
-      - traefik.http.routers.${ENV}-uifusion-api-secure.middlewares=${ENV}-uifusion-api-stripprefix
+      - traefik.http.routers.${ENV}-uifusion-api-secure.middlewares=${ENV}-uifusion-api-stripprefix,security-headers@file
       - traefik.http.routers.${ENV}-uifusion-api.entrypoints=web
       - traefik.http.routers.${ENV}-uifusion-api.rule=Host(`${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/api/uifusion`)
       - traefik.http.routers.${ENV}-uifusion-api.middlewares=redirect-to-https@file
@@ -209,6 +211,7 @@ services:
       - traefik.http.routers.${ENV}-uifusion-uploads-secure.rule=Host(`${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/api/uploads`)
       - traefik.http.routers.${ENV}-uifusion-uploads-secure.tls=true
       - traefik.http.routers.${ENV}-uifusion-uploads-secure.service=${ENV}-uifusion-api
+      - traefik.http.routers.${ENV}-uifusion-uploads-secure.middlewares=security-headers@file
       resources:
         limits:
           cpus: '0.25'
@@ -257,6 +260,7 @@ services:
       - traefik.http.routers.${ENV}-minio-api-secure.rule=Host(`s3.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-minio-api-secure.tls=true
       - traefik.http.routers.${ENV}-minio-api-secure.service=${ENV}-minio-api
+      - traefik.http.routers.${ENV}-minio-api-secure.middlewares=security-headers@file
       - traefik.http.services.${ENV}-minio-api.loadbalancer.server.port=9000
       # Minio Console
       - traefik.http.routers.${ENV}-minio-console-secure.entrypoints=websecure
@@ -264,10 +268,11 @@ services:
       - traefik.http.routers.${ENV}-minio-console-secure.tls=true
       - traefik.http.routers.${ENV}-minio-console-secure.service=${ENV}-minio-console
       - traefik.http.services.${ENV}-minio-console.loadbalancer.server.port=9001
-      # Allow iframe embedding in UIFusion
-      - traefik.http.middlewares.${ENV}-minio-headers.headers.customresponseheaders.X-Frame-Options=
-      - traefik.http.middlewares.${ENV}-minio-headers.headers.customresponseheaders.Content-Security-Policy=
-      - traefik.http.routers.${ENV}-minio-console-secure.middlewares=${ENV}-minio-headers
+      # Allow iframe embedding by UIFusion while keeping clickjacking defence:
+      # use CSP frame-ancestors (modern, allowlist-based) instead of stripping
+      # X-Frame-Options which would allow any origin to embed the console.
+      - traefik.http.middlewares.${ENV}-minio-headers.headers.contentsecuritypolicy=frame-ancestors 'self' https://${INDUSTREAM_DOMAIN:-localhost} https://*.${INDUSTREAM_DOMAIN:-localhost}
+      - traefik.http.routers.${ENV}-minio-console-secure.middlewares=${ENV}-minio-headers,security-headers@file
       resources:
         limits:
           cpus: 1.0

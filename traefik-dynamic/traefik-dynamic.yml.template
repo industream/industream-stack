@@ -55,13 +55,18 @@ http:
         customFrameOptionsValue: "ALLOWALL"
         contentSecurityPolicy: "frame-ancestors 'self' https://${INDUSTREAM_DOMAIN} https://*.${INDUSTREAM_DOMAIN}"
 
-    # Basic auth for Traefik dashboard
-    # Default credentials: admin / industream (change in production!)
-    # Generate new password: htpasswd -nb admin newpassword | sed -e 's/\$/\$\$/g'
+    # Basic auth for Traefik dashboard.
+    # TRAEFIK_AUTH_HTPASSWD is injected at deploy time by envsubst, and is
+    # populated by scripts/setup/create-secrets.sh (one unique hash per
+    # install). Dollars in the bcrypt hash are escaped to `$$` so the YAML
+    # reads as single `$` after envsubst.
+    # If the variable is empty, Traefik will fail to load this middleware —
+    # we do NOT fall back to a shared default because that was the exact
+    # security issue this template change fixes.
     traefik-auth:
       basicAuth:
         users:
-          - "admin:$$apr1$$ruca84Hq$$mbjdMZBAG.KWn7vfN/SNK/"
+          - "${TRAEFIK_AUTH_HTPASSWD}"
 
     # Rate limiting middleware
     rate-limit:
