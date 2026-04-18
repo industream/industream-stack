@@ -177,6 +177,11 @@ services:
     - POSTGRES_USER=${TIMESCALEDB_ADMIN_USER:-postgres}
     - POSTGRES_PASSWORD_FILE=/run/secrets/${ENV}_timescaledb_password
     - POSTGRES_DB=industream
+    # Pin PGDATA inside the mounted volume to guard against Postgres 18+
+    # changing the default path (the image's default moved from
+    # /var/lib/postgresql/data to /var/lib/postgresql/<N>/docker, which
+    # silently bypasses the mount and wipes data on restart).
+    - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
     - ${ENV}-timescaledb-data:/var/lib/postgresql/data
     networks:

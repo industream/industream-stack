@@ -19,6 +19,10 @@ services:
       POSTGRES_USER: ${IRONSTREAM_DB_USER:-ironstream}
       POSTGRES_PASSWORD_FILE: /run/secrets/${ENV}_ironstream_db_password
       POSTGRES_DB: ironstream_demo
+      # Postgres 18 changed PGDATA to /var/lib/postgresql/18/docker. Pin it
+      # inside the mounted volume so data persists across restarts regardless
+      # of the image's major version default.
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
     - ${ENV}-ironstream-postgres-data:/var/lib/postgresql/data
     networks:

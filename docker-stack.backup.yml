@@ -50,7 +50,9 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_ADMIN_USER:-postgres}
-      - DATABASES=keycloak industream DataCatalog
+      - ENV=${ENV:-prod}
+      # DATABASES auto-discovered by backup-postgres.sh when unset. Set
+      # explicitly (space-separated) to restrict the backup to a subset.
       - NTFY_URL=http://ntfy:80
       - NTFY_TOPIC=${NTFY_TOPIC:-industream-backups}
     volumes:

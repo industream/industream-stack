@@ -12,7 +12,16 @@ RETENTION_DAYS="${RETENTION_DAYS:-7}"
 POSTGRES_HOST="${POSTGRES_HOST:-postgres}"
 POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
-DATABASES="${DATABASES:-keycloak industream DataCatalog}"
+# Auto-discover all non-template user databases unless DATABASES is set
+# explicitly. Prevents silent drift when a new DB is added to
+# POSTGRES_MULTIPLE_DATABASES but the backup list is forgotten.
+if [ -z "${DATABASES:-}" ]; then
+    DATABASES=$(PGPASSWORD="$(cat "/run/secrets/${ENV:-prod}_postgres_admin_password" 2>/dev/null || true)" \
+        psql -h "${POSTGRES_HOST}" -p "${POSTGRES_PORT}" -U "${POSTGRES_USER}" -d postgres -tAc \
+        "SELECT datname FROM pg_database WHERE datistemplate = false AND datname NOT IN ('postgres');" 2>/dev/null \
+        | tr '\n' ' ')
+fi
+DATABASES="${DATABASES:-keycloak industream DataCatalog DataBridge}"
 
 # Ntfy notification settings
 NTFY_URL="${NTFY_URL:-http://ntfy:80}"
