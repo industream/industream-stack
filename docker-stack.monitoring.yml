@@ -37,7 +37,11 @@ services:
     - GF_DATABASE_NAME=${GRAFANA_DB_NAME:-industream}
     - GF_DATABASE_USER=${GRAFANA_DB_USER:-dashboard}
     - GF_DATABASE_PASSWORD__FILE=/run/secrets/${ENV}_grafana_db_password
-    - GF_DATABASE_SSL_MODE=${GF_DATABASE_SSL_MODE:-require}
+    # Default `disable` is correct for the BUNDLED Postgres which does not
+    # ship with TLS configured. Connections stay on the encrypted overlay
+    # network anyway. Override to `require` via .env when pointing Grafana
+    # at an external Postgres that serves TLS.
+    - GF_DATABASE_SSL_MODE=${GF_DATABASE_SSL_MODE:-disable}
     - GF_AUTH_GENERIC_OAUTH_ENABLED=${GRAFANA_OAUTH_ENABLED:-true}
     - GF_AUTH_GENERIC_OAUTH_NAME=Keycloak
     - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OAUTH_CLIENT_ID:-uifusion}
@@ -46,7 +50,11 @@ services:
     - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=http://keycloak:8080/auth/realms/industream/protocol/openid-connect/token
     - GF_AUTH_GENERIC_OAUTH_API_URL=http://keycloak:8080/auth/realms/industream/protocol/openid-connect/userinfo
     - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(realm_access.roles[*], 'grafanaadmin') && 'GrafanaAdmin' || contains(realm_access.roles[*], 'admin') && 'Admin' || contains(realm_access.roles[*], 'editor') && 'Editor' || 'Viewer'
-    - GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE=${GF_OAUTH_TLS_SKIP_VERIFY:-false}
+    # Default `true` because the BUNDLED Keycloak ships with self-signed
+    # certs (or HTTP on the internal overlay). Flip to `false` via .env when
+    # the Keycloak endpoint terminates TLS with a CA-signed certificate that
+    # Grafana's container trusts.
+    - GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE=${GF_OAUTH_TLS_SKIP_VERIFY:-true}
     - GF_AUTH_GENERIC_OAUTH_USE_PKCE=true
     - GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN=true
     - GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
