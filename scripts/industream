@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+# =============================================================================
+# INDUSTREAM - MAIN DISPATCHER (bash-first, TypeScript optional)
+# =============================================================================
+# Routes commands between two paths:
+#   - FAST PATH : direct bash scripts (0 Node overhead, ~5ms startup)
+#   - SLOW PATH : Node/Ink TS binary for interactive UX (~150ms startup)
+#
+# See: industream-cli/docs/RUNTIME-STRATEGY.md (section 3.3)
+#      industream-cli/docs/INTEGRATION-PLAN.md (section 2)
+# =============================================================================
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Path resolution (robust to symlinks and arbitrary cwd)
+# -----------------------------------------------------------------------------
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SCRIPT_SOURCE" ]; do
+    SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+    SCRIPT_SOURCE="$(readlink "$SCRIPT_SOURCE")"
+    [[ "$SCRIPT_SOURCE" != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR/$SCRIPT_SOURCE"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+PLATFORM_DIR="${SCRIPT_DIR%/scripts}"
+TS_CLI_ENTRY="$PLATFORM_DIR/industream-cli/dist/index.js"
+COMPOSE_DIR="$SCRIPT_DIR/compose"
+
+# -----------------------------------------------------------------------------
+# Error helpers
+# -----------------------------------------------------------------------------
+die() {
+    printf 'industream: %s\n' "$1" >&2
+    exit "${2:-1}"
+}
+
+require_script() {
+    local script_path="$1"
+    local hint="${2:-}"
+    if [ ! -f "$script_path" ]; then
+        printf 'industream: required script not found: %s\n' "$script_path" >&2
+        if [ -n "$hint" ]; then
+            printf '  hint: %s\n' "$hint" >&2
+        fi
+        exit 1
+    fi
+    if [ ! -x "$script_path" ]; then
+        printf 'industream: script is not executable: %s\n' "$script_path" >&2
+        printf '  hint: run `chmod +x %s`\n' "$script_path" >&2
+        exit 1
+    fi
+}
+
+require_ts_cli() {
+    if [ ! -f "$TS_CLI_ENTRY" ]; then
+        printf 'industream: TS CLI not installed (missing %s)\n' "$TS_CLI_ENTRY" >&2
+        printf '  run: cd industream-cli && npm install && npm run build\n' >&2
+        exit 1
+    fi
+    if ! command -v node >/dev/null 2>&1; then
+        die "node is required for UX commands but was not found in PATH"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# Help
+# -----------------------------------------------------------------------------
+print_help() {
+    cat <<'EOF'
+industream — unified Swarm + Compose CLI
+
+USAGE
+  industream <command> [args...]
+
+FAST PATH (bash direct, 0 Node overhead)
+  industream dev <cmd> [args]      Compose dev instances (create, up, down, list, ...)
+                                     → scripts/compose/fm-<cmd>.sh
+  industream caddy:<cmd> [args]    Local Caddy reverse proxy control
+                                     → scripts/compose/fm-caddy.sh <cmd>
+  industream deploy [flags]        Swarm production deploy
+                                     → scripts/deploy-swarm.sh
+  industream down [flags]          Swarm stack teardown
+                                     → scripts/down-swarm.sh (fallback: docker stack rm)
+  industream logs [service]        Service logs
+                                     → scripts/docker-logs.sh (fallback: TS CLI)
+  industream ps [service]          Service listing
+                                     → scripts/docker-ps.sh (fallback: TS CLI)
+
+SLOW PATH (Node/Ink UX, ~150ms startup)
+  industream                       Interactive menu
+  industream status                Status dashboard
+  industream install               Guided installation
+  industream license               License management
+  industream config                Configuration
+  industream update                Platform update
+  industream secrets               Secrets management
+  industream worker                External worker management
+
+GENERAL
+  industream --help | -h           Show this help
+  industream <anything-else>       Delegated to TS CLI for handling/help
+
+See industream-cli/docs/RUNTIME-STRATEGY.md §3.3 for design rationale.
+EOF
+}
+
+# -----------------------------------------------------------------------------
+# Command routing
+# -----------------------------------------------------------------------------
+main() {
+    local cmd="${1:-}"
+
+    # Handle empty invocation: open Ink menu via TS CLI
+    if [ -z "$cmd" ]; then
+        require_ts_cli
+        exec node "$TS_CLI_ENTRY"
+    fi
+
+    # Top-level help flags handled locally (avoid spinning up Node)
+    case "$cmd" in
+        --help|-h|help)
+            print_help
+            exit 0
+            ;;
+    esac
+
+    # Handle caddy:<subcmd> early (colon-namespaced fast path)
+    case "$cmd" in
+        caddy:*)
+            local caddy_sub="${cmd#caddy:}"
+            shift
+            local caddy_script="$COMPOSE_DIR/fm-caddy.sh"
+            require_script "$caddy_script" \
+                "This command requires the compose scripts — see scripts/compose/README.md"
+            exec "$caddy_script" "$caddy_sub" "$@"
+            ;;
+    esac
+
+    case "$cmd" in
+        # === FAST PATH ======================================================
+
+        dev)
+            shift
+            local sub="${1:-help}"
+            if [ "$#" -gt 0 ]; then
+                shift
+            fi
+            local dev_script="$COMPOSE_DIR/fm-${sub}.sh"
+            require_script "$dev_script" \
+                "This command requires the compose scripts — see scripts/compose/README.md"
+            exec "$dev_script" "$@"
+            ;;
+
+        deploy)
+            shift
+            local deploy_script="$SCRIPT_DIR/deploy-swarm.sh"
+            require_script "$deploy_script" \
+                "The Swarm deploy script is part of industream-stack — re-clone the repo if missing."
+            exec "$deploy_script" "$@"
+            ;;
+
+        down)
+            shift
+            local down_script="$SCRIPT_DIR/down-swarm.sh"
+            if [ -f "$down_script" ] && [ -x "$down_script" ]; then
+                exec "$down_script" "$@"
+            fi
+            # Fallback: delegate to TS CLI which knows the stack name per env.
+            require_ts_cli
+            exec node "$TS_CLI_ENTRY" down "$@"
+            ;;
+
+        logs)
+            shift
+            local logs_script="$SCRIPT_DIR/docker-logs.sh"
+            if [ -f "$logs_script" ] && [ -x "$logs_script" ]; then
+                exec "$logs_script" "$@"
+            fi
+            require_ts_cli
+            exec node "$TS_CLI_ENTRY" logs "$@"
+            ;;
+
+        ps)
+            shift
+            local ps_script="$SCRIPT_DIR/docker-ps.sh"
+            if [ -f "$ps_script" ] && [ -x "$ps_script" ]; then
+                exec "$ps_script" "$@"
+            fi
+            require_ts_cli
+            exec node "$TS_CLI_ENTRY" ps "$@"
+            ;;
+
+        # === SLOW PATH (TS CLI UX) ==========================================
+
+        status|menu|install|license|config|update|secrets|worker)
+            require_ts_cli
+            exec node "$TS_CLI_ENTRY" "$@"
+            ;;
+
+        # === UNKNOWN ========================================================
+
+        *)
+            # Delegate unknown arguments to the TS CLI so Commander can show
+            # its own help / suggest the closest command.
+            require_ts_cli
+            exec node "$TS_CLI_ENTRY" "$@"
+            ;;
+    esac
+}
+
+main "$@"
