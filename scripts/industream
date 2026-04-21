@@ -23,7 +23,7 @@ while [ -L "$SCRIPT_SOURCE" ]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 PLATFORM_DIR="${SCRIPT_DIR%/scripts}"
-TS_CLI_ENTRY="$PLATFORM_DIR/industream-cli/dist/index.js"
+TS_CLI_ENTRY="$PLATFORM_DIR/industream-cli/dist/index.mjs"
 COMPOSE_DIR="$SCRIPT_DIR/compose"
 
 # -----------------------------------------------------------------------------
