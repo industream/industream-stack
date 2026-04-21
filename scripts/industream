@@ -141,14 +141,12 @@ main() {
 
         dev)
             shift
-            local sub="${1:-help}"
-            if [ "$#" -gt 0 ]; then
-                shift
-            fi
-            local dev_script="$COMPOSE_DIR/fm-${sub}.sh"
-            require_script "$dev_script" \
+            # Route through the fm compat wrapper which dispatches to the
+            # thematic split (fm-instance.sh, fm-caddy.sh, fm-sync.sh, ...).
+            local fm_wrapper="$COMPOSE_DIR/fm"
+            require_script "$fm_wrapper" \
                 "This command requires the compose scripts — see scripts/compose/README.md"
-            exec "$dev_script" "$@"
+            exec "$fm_wrapper" "$@"
             ;;
 
         deploy)
