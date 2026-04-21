@@ -14,6 +14,8 @@ Complete Docker Swarm deployment of the Industream platform with multi-environme
 - [Maintenance](#maintenance)
 - [Troubleshooting](#troubleshooting)
 
+> **Notice (April 2026)** — Community (BSL 1.1) images have moved to a new public Harbor at `39t88114.c1.gra9.container-registry.ovh.net` with anonymous pull. The legacy Harbor `842775dh.c1.gra9.container-registry.ovh.net` still hosts premium add-ons. See [`industream-cli/docs/HARBOR-MIGRATION.md`](../industream-cli/docs/HARBOR-MIGRATION.md) for the full inventory, exclusions and consumer rewiring status. Existing `.env` files keep working until producers are flipped.
+
 ## Overview
 
 This deployment provides a complete Industream ecosystem with support for multiple isolated environments (production, development, staging) on the same machine.
@@ -332,6 +334,9 @@ The platform uses layered configuration:
 **Base `.env`:**
 ```bash
 # Docker Registry
+# Legacy Harbor — hosts premium add-ons; community BSL images are moving to
+# 39t88114.c1.gra9.container-registry.ovh.net (anonymous pull). See
+# industream-cli/docs/HARBOR-MIGRATION.md.
 DOCKER_REGISTRY=842775dh.c1.gra9.container-registry.ovh.net
 
 # Service versions
