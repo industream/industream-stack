@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# =============================================================================
+# fm — compat wrapper for the monolithic industream-flowmaker/deployment/fm
+#
+# Routes every legacy subcommand to the matching thematic sub-script so that
+# existing muscle memory (`./fm up dev`, `./fm caddy:rebuild`, ...) keeps
+# working after the split.
+# =============================================================================
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+case "${1:-help}" in
+  create|up|down|ps|logs|list|delete)
+    exec "$SCRIPT_DIR/fm-instance.sh" "$@"
+    ;;
+  caddy:*)
+    sub="${1#caddy:}"
+    shift
+    exec "$SCRIPT_DIR/fm-caddy.sh" "$sub" "$@"
+    ;;
+  init|sync)
+    exec "$SCRIPT_DIR/fm-sync.sh" "$@"
+    ;;
+  launch-worker|cdn-reset)
+    exec "$SCRIPT_DIR/fm-worker.sh" "$@"
+    ;;
+  hosts)
+    exec "$SCRIPT_DIR/fm-hosts.sh"
+    ;;
+  help|--help|-h|"")
+    cat <<'EOF'
+FlowMaker compose wrapper — see scripts/compose/README.md
+
+Usage: fm <command> [args...]
+
+Instance : create | up | down | ps | logs | list | delete
+Caddy    : caddy:rebuild | caddy:stop | caddy:delete | caddy:logs | caddy:ca
+Sync     : init | sync
+Workers  : launch-worker | cdn-reset
+Utility  : hosts
+EOF
+    ;;
+  *)
+    echo "Unknown: $1" >&2
+    exit 1
+    ;;
+esac
