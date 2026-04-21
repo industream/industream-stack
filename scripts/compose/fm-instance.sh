@@ -10,6 +10,10 @@ COMPOSE_ROOT="${COMPOSE_ROOT:-$(cd "$SCRIPT_DIR/../../../industream-flowmaker/de
 INSTANCES_DIR="${FM_INSTANCES_DIR:-$COMPOSE_ROOT/instances}"
 mkdir -p "$INSTANCES_DIR"
 
+# Public community Harbor — BSL 1.1 images, anonymous pull.
+# Override with FM_COMMUNITY_REGISTRY=... if you host your own mirror.
+COMMUNITY_REGISTRY="${FM_COMMUNITY_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}"
+
 cmd_create() {
   local name="${1:-}"
 
@@ -155,13 +159,14 @@ EOF
   echo ""
   echo "Start with:"
   echo "  ./fm up $name                        # Core services only"
-  echo "  ./fm up $name --workers              # Core + workers"
+  echo "  ./fm up $name --workers              # Core + workers (premium included)"
+  echo "  ./fm up $name --workers --community  # Core + workers, community edition (public Harbor)"
   echo "  ./fm up $name --workers --uimaker    # Core + workers + UIMaker"
 }
 
 cmd_up() {
   local name="${1:-}"
-  [[ -z "$name" ]] && log_error "Usage: fm up <instance> [--workers] [--uimaker]" && exit 1
+  [[ -z "$name" ]] && log_error "Usage: fm up <instance> [--workers] [--uimaker] [--community] [--local]" && exit 1
 
   local instance_dir="$INSTANCES_DIR/$name"
   [[ ! -d "$instance_dir" ]] && log_error "Instance '$name' not found" && exit 1
@@ -169,15 +174,17 @@ cmd_up() {
   shift
   local with_workers=false
   local with_uimaker=false
+  local community=false
   local profiles=()
 
   local no_pull=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --workers) with_workers=true ;;
-      --uimaker) with_uimaker=true; profiles+=(--profile uimaker) ;;
-      --local) no_pull=true ;;
+      --workers)   with_workers=true ;;
+      --uimaker)   with_uimaker=true; profiles+=(--profile uimaker) ;;
+      --community) community=true ;;
+      --local)     no_pull=true ;;
       *) log_warn "Unknown option: $1" ;;
     esac
     shift
@@ -192,6 +199,21 @@ cmd_up() {
   # Add workers compose if requested
   [[ "$with_workers" == true ]] && compose_files+=(-f "$COMPOSE_ROOT/docker-compose.workers.yml")
 
+  # Community / premium handling:
+  #   - community mode appends the community override file and pulls from the
+  #     public Harbor; premium workers stay out because their profile is NOT
+  #     activated below.
+  #   - non-community mode activates the "premium" profile so that existing
+  #     premium workers (opc-ua, rtsp) keep starting as before.
+  local registry_override=()
+  if [[ "$community" == true ]]; then
+    compose_files+=(-f "$COMPOSE_ROOT/docker-compose.community.yml")
+    registry_override=(env "DOCKER_REGISTRY=$COMMUNITY_REGISTRY")
+    log_info "Community mode: using public Harbor $COMMUNITY_REGISTRY (premium workers excluded)"
+  elif [[ "$with_workers" == true ]]; then
+    profiles+=(--profile premium)
+  fi
+
   # Add instance override if exists
   [[ -f "$instance_dir/docker-compose.override.yml" ]] && \
     compose_files+=(-f "$instance_dir/docker-compose.override.yml")
@@ -202,7 +224,7 @@ cmd_up() {
   local pull_policy=()
   [[ "$no_pull" == true ]] && pull_policy=(--pull never)
 
-  docker compose -p "fm-$name" "${env_files[@]}" "${compose_files[@]}" "${profiles[@]}" up -d "${pull_policy[@]}"
+  "${registry_override[@]}" docker compose -p "fm-$name" "${env_files[@]}" "${compose_files[@]}" "${profiles[@]}" up -d "${pull_policy[@]}"
 
   # Get domain and protocol from instance .env
   local domain protocol
@@ -246,8 +268,10 @@ cmd_down() {
 
   log_info "Stopping instance: $name"
 
-  # Stop all services together
-  docker compose -p "fm-$name" "${env_files[@]}" "${compose_files[@]}" --profile uimaker down
+  # Stop all services together — activate both optional profiles so that
+  # containers from either premium (opc-ua, rtsp) or uimaker are reaped too.
+  docker compose -p "fm-$name" "${env_files[@]}" "${compose_files[@]}" \
+    --profile uimaker --profile premium down
 
   log_success "Instance '$name' stopped"
 }
