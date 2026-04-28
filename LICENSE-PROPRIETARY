@@ -1,6 +1,6 @@
 Industream Proprietary License
 
-Copyright (c) 2021-2026 Industream S.a r.l. All rights reserved.
+Copyright (c) 2026 Industream S.a r.l. All rights reserved.
 
 NOTICE: This software and associated documentation files (the "Software")
 contain proprietary modules of the Industream Platform.
@@ -37,26 +37,25 @@ contain proprietary modules of the Industream Platform.
 
 3. PROPRIETARY MODULES
 
-   The following module categories are covered by this license:
+   This License covers all proprietary modules of the Industream
+   Platform, including, without limitation, those listed in the
+   MODULES.md file distributed alongside this License, as well as any
+   module — whether released before or after this License — that falls
+   within the following categories:
 
-   - OPC-UA, Siemens S7, RTSP, GStreamer, Audio, Leneda, OSIsoft PI,
-     SAP, ODOO, and MS SQL Server connectors
-   - ONNX runtime, AutoML, Anomaly Detection, Pattern Recognition,
-     Virtual Sensor, Golden Batch, Root Cause Analysis, and other
-     advanced analytics libraries
-   - Video Processing, Sound Processing, SPC libraries
-   - AI Studio and all AI Studio modules
-   - Edge AI inference engine and AI model registry
-   - FlowMaker Designer (visual editor)
-   - Worker Manager (dynamic worker deployment)
-   - IronStream, ArcStream, and all domain process packages
-   - FlowGuard (OEE/TRS monitoring)
-   - MCP servers (FlowMaker, Visualization, Industream, DataCatalog)
-   - Advanced report generation
-   - SimBridge (digital twin simulation)
+   - Industrial protocol connectors (PLC, SCADA, historians, ERPs,
+     industry-specific data sources)
+   - AI/ML inference and analytics (training, inference, model
+     registry, advanced analytics)
+   - Signal processing libraries (video, audio, statistical, advanced
+     signal processing)
+   - Domain monitoring packages (vertical packages targeting specific
+     industrial processes)
+   - Platform tooling (visual editors, worker orchestration, MCP
+     servers, report generation, digital twin simulation)
 
-   For the complete and up-to-date module list, see:
-   https://industream.com/modules
+   The MODULES.md file distributed with each release of the Software is
+   the authoritative list of named proprietary modules for that release.
 
 4. INTELLECTUAL PROPERTY
 
