@@ -2,7 +2,7 @@ Business Source License 1.1
 
 Licensor:  Industream S.a r.l.
 Licensed Work:  Industream Platform
-                The Licensed Work is (c) 2021-2026 Industream S.a r.l.
+                The Licensed Work is (c) 2026 Industream S.a r.l.
 
 Additional Use Grant:
   You may use the Licensed Work without a commercial license if ANY of the
@@ -32,18 +32,26 @@ Third-Party Workers and External Modules:
 
   (a) Such third-party workers are developed independently and do NOT
       copy, derive from, reverse engineer, or otherwise circumvent any
-      proprietary modules of the Industream Platform, including but not
-      limited to:
-        - OPC-UA, Siemens S7, RTSP, GStreamer, Audio, Lenada, OSIsoft PI,
-          SAP, ODOO, and MS SQL Server connectors
-        - AI Studio, ONNX Runtime, AutoML, Anomaly Detection, Pattern
-          Recognition, Virtual Sensor, Golden Batch, Root Cause Analysis
-        - Video Processing, Sound Processing, SPC, Advanced Signal
-          Processing libraries
-        - Tuyere Monitoring, IR Hot Spot Detection, Free Roll Monitoring
-        - FlowGuard, IronStream, ArcStream, and all domain process packages
-        - MCP servers (FlowMaker, Visualization, Industream, DataCatalog)
-        - FlowMaker Designer, Worker Manager, Edge AI Inference Engine
+      proprietary module of the Industream Platform. Proprietary modules
+      include, without limitation, those listed in the MODULES.md file
+      distributed alongside this License, as well as any module — whether
+      released before or after this License — that falls within the
+      following categories:
+
+        - Industrial protocol connectors (PLC, SCADA, historians,
+          ERPs, industry-specific data sources)
+        - AI/ML inference and analytics (training, inference, model
+          registry, advanced analytics)
+        - Signal processing libraries (video, audio, statistical,
+          advanced signal processing)
+        - Domain monitoring packages (vertical packages targeting
+          specific industrial processes)
+        - Platform tooling (visual editors, worker orchestration,
+          MCP servers, report generation, digital twin simulation)
+
+      The MODULES.md file distributed with each release of the Licensed
+      Work is the authoritative list of named proprietary modules for
+      that release.
 
   (b) You do not use the Licensed Work or any third-party workers
       deployed on it to build a competing industrial data platform,
