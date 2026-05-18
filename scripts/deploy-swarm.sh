@@ -43,6 +43,7 @@ EXCLUDE_SERVICES=""
 COMMUNITY_MODE=false
 SKIP_MEMORY_CHECK=false
 SHOW_CREDENTIALS=false
+NO_CUSTOM=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env)
@@ -64,6 +65,10 @@ while [[ $# -gt 0 ]]; do
         --exclude)
             EXCLUDE_SERVICES="$2"
             shift 2
+            ;;
+        --no-custom)
+            NO_CUSTOM=true
+            shift
             ;;
         --community)
             COMMUNITY_MODE=true
@@ -89,6 +94,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --cleanup-legacy       Remove legacy worker services (after flow migration)"
             echo "  --skip-memory-check    Skip system memory validation"
             echo "  --show-credentials     Print admin credentials to stdout (default: path only)"
+            echo "  --no-custom            Skip auto-discovery of custom stack files (debug)"
             echo "  --help, -h             Show this help message"
             echo ""
             echo "Prerequisites:"
@@ -497,7 +503,15 @@ fi
 echo ""
 echo -e "${BLUE}Resolving docker-compose variables...${NC}"
 
-# Define stack files based on environment
+# Define stack files based on environment.
+#
+# Custom stack files (client overrides / extensions) are auto-discovered later
+# in this block, after the conditional stacks. Two conventions are supported:
+#   1. Files matching `docker-stack.custom*.yml` at the repo root (alphabetical).
+#   2. Any `*.yml` / `*.yaml` file inside a `custom/` directory (alphabetical).
+# Each discovered file is validated with `docker compose -f <file> config -q`
+# before the deployment proceeds. See `custom/README.md` for usage details.
+# The auto-discovery can be disabled at runtime with `--no-custom`.
 STACK_FILES=(
     "docker-stack.yml"
     "docker-stack.flowmaker.yml"
@@ -545,6 +559,55 @@ if [ "$DEPLOY_IRONSTREAM" = "true" ]; then
     else
         echo -e "${YELLOW}  \u26a0 docker-stack.ironstream.yml not found, skipping${NC}"
         DEPLOY_IRONSTREAM=false
+    fi
+fi
+
+# =============================================================================
+# Auto-discover custom stack files (client overrides / extensions)
+# =============================================================================
+# Convention 1: `docker-stack.custom*.yml` at the repo root.
+# Convention 2: `*.yml` / `*.yaml` inside the `custom/` directory.
+# Each discovered file is validated with `docker compose config -q` and any
+# failure aborts the deployment. Disable with `--no-custom`.
+if [ "$NO_CUSTOM" = "true" ]; then
+    echo -e "${YELLOW}  Skipping custom stack auto-discovery (--no-custom)${NC}"
+else
+    CUSTOM_CANDIDATES=()
+
+    # Convention 1: root-level docker-stack.custom*.yml (alphabetical, glob).
+    # `shopt -s nullglob` ensures the loop is silent when no file matches.
+    shopt -s nullglob
+    for f in docker-stack.custom*.yml; do
+        CUSTOM_CANDIDATES+=("$f")
+    done
+    shopt -u nullglob
+
+    # Convention 2: any .yml / .yaml inside custom/ (alphabetical, recursive=no).
+    if [ -d "custom" ]; then
+        shopt -s nullglob
+        for f in custom/*.yml custom/*.yaml; do
+            CUSTOM_CANDIDATES+=("$f")
+        done
+        shopt -u nullglob
+    fi
+
+    # Sort alphabetically for deterministic ordering across machines.
+    if [ ${#CUSTOM_CANDIDATES[@]} -gt 0 ]; then
+        IFS=$'\n' CUSTOM_CANDIDATES=($(sort <<< "${CUSTOM_CANDIDATES[*]}"))
+        unset IFS
+
+        for custom_file in "${CUSTOM_CANDIDATES[@]}"; do
+            # Validate the custom stack file before adding it to the deployment.
+            if ! VALIDATION_OUTPUT=$(docker compose -f "$custom_file" config -q 2>&1); then
+                echo ""
+                echo -e "${RED}\u2717 Invalid custom stack file: ${custom_file}${NC}"
+                echo -e "${RED}${VALIDATION_OUTPUT}${NC}"
+                echo -e "${RED}Deployment aborted. Fix the file or run with --no-custom.${NC}"
+                exit 1
+            fi
+            STACK_FILES+=("$custom_file")
+            echo -e "${GREEN}  \u2713 Custom stack file detected: ${custom_file}${NC}"
+        done
     fi
 fi
 
