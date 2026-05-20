@@ -20,3 +20,4 @@ client-setup/
 config/worker-versions.json
 config/uifusion/config.json
 config/cloudbeaver/data-sources.json
+industream-cli/
