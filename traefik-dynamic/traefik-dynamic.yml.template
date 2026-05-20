@@ -49,9 +49,21 @@ http:
         contentTypeNosniff: true
         browserXssFilter: true
 
-    # Allow iframe embedding for UIFusion portal
+    # Allow iframe embedding for services consumed by the UIFusion portal.
+    # Same hardening as security-headers (HSTS, nosniff, XSS), but the frame
+    # policy is relaxed to "ALLOWALL" + CSP frame-ancestors limited to
+    # ${INDUSTREAM_DOMAIN} and its subdomains. Everything embedded in
+    # UIFusion (Grafana, DataCatalog, DataBridge, InfluxDB, ntfy, MinIO
+    # console, etc.) should use this middleware instead of security-headers.
     allow-iframe:
       headers:
+        sslRedirect: true
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        browserXssFilter: true
         customFrameOptionsValue: "ALLOWALL"
         contentSecurityPolicy: "frame-ancestors 'self' https://${INDUSTREAM_DOMAIN} https://*.${INDUSTREAM_DOMAIN}"
 
