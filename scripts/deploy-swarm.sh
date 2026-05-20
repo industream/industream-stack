@@ -331,6 +331,30 @@ if [ $MISSING_SECRETS -gt 0 ]; then
 fi
 
 # =============================================================================
+# Postgres major-version pre-flight
+# =============================================================================
+# Detects PG_VERSION inside the existing ${ENV}-postgres-data volume and
+# refuses to deploy if a major-version migration is needed (e.g. PG17 → PG18).
+# Skipped for fresh installs (no volume yet). Bypassable via env var.
+if [ "${SKIP_PG_MIGRATION:-false}" != "true" ] && [ -x "${SCRIPT_DIR}/setup/migrate-postgres.sh" ]; then
+    echo ""
+    echo -e "${BLUE}Checking PostgreSQL major version vs target...${NC}"
+    set +e
+    "${SCRIPT_DIR}/setup/migrate-postgres.sh" --env "$ENV" --check-only
+    PG_CHECK=$?
+    set -e
+    if [ $PG_CHECK -eq 2 ]; then
+        echo -e "${YELLOW}A major-version migration is required.${NC}"
+        echo "Run: ./scripts/setup/migrate-postgres.sh --env $ENV"
+        echo "Or bypass with: SKIP_PG_MIGRATION=true ./scripts/deploy-swarm.sh --env $ENV"
+        exit 1
+    elif [ $PG_CHECK -ne 0 ]; then
+        echo -e "${RED}Postgres pre-flight failed (exit $PG_CHECK).${NC}"
+        exit 1
+    fi
+fi
+
+# =============================================================================
 # Auto-detect server IP for dnsmasq DNS resolution
 # =============================================================================
 detect_server_ip() {
@@ -459,30 +483,6 @@ print(json.dumps(cfg, indent=2))
 fi
 
 # =============================================================================
-# Generate UIFusion configuration
-# =============================================================================
-echo ""
-echo -e "${BLUE}Generating UIFusion configuration...${NC}"
-if [ -f "scripts/generate/generate-uifusion-config.sh" ]; then
-    UIFUSION_ARGS="--env $ENV"
-    [ "$DEPLOY_IRONSTREAM" = "true" ] && UIFUSION_ARGS="$UIFUSION_ARGS --with-ironstream"
-    bash scripts/generate/generate-uifusion-config.sh $UIFUSION_ARGS
-else
-    echo -e "${YELLOW}⚠ UIFusion config generator not found, skipping${NC}"
-fi
-
-# =============================================================================
-# Generate CloudBeaver configuration
-# =============================================================================
-echo ""
-echo -e "${BLUE}Generating CloudBeaver configuration...${NC}"
-if [ -f "scripts/generate/generate-cloudbeaver-config.sh" ]; then
-    bash scripts/generate/generate-cloudbeaver-config.sh
-else
-    echo -e "${YELLOW}⚠ CloudBeaver config generator not found, skipping${NC}"
-fi
-
-# =============================================================================
 # Generate legacy worker services (multi-version support)
 # =============================================================================
 echo ""
@@ -597,13 +597,23 @@ else
         unset IFS
 
         for custom_file in "${CUSTOM_CANDIDATES[@]}"; do
-            # Validate the custom stack file before adding it to the deployment.
-            if ! VALIDATION_OUTPUT=$(docker compose -f "$custom_file" config -q 2>&1); then
-                echo ""
-                echo -e "${RED}\u2717 Invalid custom stack file: ${custom_file}${NC}"
-                echo -e "${RED}${VALIDATION_OUTPUT}${NC}"
-                echo -e "${RED}Deployment aborted. Fix the file or run with --no-custom.${NC}"
-                exit 1
+            # Lightweight YAML-only sanity check. We can't run a full
+            # `docker compose config -q` here because:
+            #   1) Stack files use `${ENV}-volume-name` for top-level volume
+            #      keys; Compose does not expand variables in mapping keys
+            #      until envsubst has run (later in this script).
+            #   2) Override-only files (no image:/build:) fail standalone
+            #      Compose validation, but they're valid as part of a merge.
+            # The actual `docker compose config` after envsubst (line ~640)
+            # is the real validator; a syntax error there aborts the deploy.
+            if command -v python3 &>/dev/null; then
+                if ! VALIDATION_OUTPUT=$(python3 -c "import yaml,sys; yaml.safe_load(open('$custom_file'))" 2>&1); then
+                    echo ""
+                    echo -e "${RED}\u2717 Invalid YAML in custom stack file: ${custom_file}${NC}"
+                    echo -e "${RED}${VALIDATION_OUTPUT}${NC}"
+                    echo -e "${RED}Deployment aborted. Fix the file or run with --no-custom.${NC}"
+                    exit 1
+                fi
             fi
             STACK_FILES+=("$custom_file")
             echo -e "${GREEN}  \u2713 Custom stack file detected: ${custom_file}${NC}"
@@ -639,6 +649,43 @@ if [ -d "external-workers" ]; then
         echo -e "${GREEN}  ✓ ${EXTERNAL_COUNT} external worker(s) included${NC}"
     fi
 fi
+
+# =============================================================================
+# Generate UIFusion configuration
+# =============================================================================
+# We run this AFTER STACK_FILES is finalised so the generator can introspect
+# the actual list of services that will be deployed and skip nav entries that
+# point at services not present in this deployment.
+echo ""
+echo -e "${BLUE}Generating UIFusion configuration...${NC}"
+if [ -f "scripts/generate/generate-uifusion-config.sh" ]; then
+    UIFUSION_ARGS="--force --env $ENV"
+    [ "$DEPLOY_IRONSTREAM" = "true" ] && UIFUSION_ARGS="$UIFUSION_ARGS --with-ironstream"
+    UIFUSION_STACK_FILES="${STACK_FILES[*]}" \
+        bash scripts/generate/generate-uifusion-config.sh $UIFUSION_ARGS
+else
+    echo -e "${YELLOW}⚠ UIFusion config generator not found, skipping${NC}"
+fi
+
+# =============================================================================
+# Compose profiles — pick the backup jobs that match the deployment
+# =============================================================================
+# TIMESERIES_BACKEND drives which timeseries backup job is enabled
+# (ts-influx vs ts-timescale). OFFSITE_ENABLED gates backup-offsite.
+case "${TIMESERIES_BACKEND:-influx}" in
+    influx|influxdb) TS_PROFILE="ts-influx" ;;
+    timescale|timescaledb) TS_PROFILE="ts-timescale" ;;
+    *)
+        echo -e "${YELLOW}⚠ Unknown TIMESERIES_BACKEND='${TIMESERIES_BACKEND}', defaulting to influx${NC}"
+        TS_PROFILE="ts-influx"
+        ;;
+esac
+ACTIVE_PROFILES="${TS_PROFILE}"
+if [ "${OFFSITE_ENABLED:-false}" = "true" ]; then
+    ACTIVE_PROFILES="${ACTIVE_PROFILES},offsite"
+fi
+export COMPOSE_PROFILES="${ACTIVE_PROFILES}"
+echo -e "${BLUE}Compose profiles: ${GREEN}${COMPOSE_PROFILES}${NC}"
 
 # =============================================================================
 # Pre-process stack files with envsubst (for ${ENV} in secrets/volumes/networks)
@@ -1105,7 +1152,7 @@ echo "  DataCatalog:    https://datacatalog.${INDUSTREAM_DOMAIN}"
 echo ""
 echo -e "${BLUE}/etc/hosts (copy-paste on your workstation):${NC}"
 SERVER_IP="${INDUSTREAM_SERVER_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
-HOSTS_SUBDOMAINS="dashboard grafana flowmaker confighub scheduler logger datacatalog datacatalog-api datacatalog-ui databridge databridge-pg keycloak traefik influxdb timeseries prometheus alertmanager ntfy npm cdn cloudbeaver minio s3 db ironstream backups workers"
+HOSTS_SUBDOMAINS="dashboard grafana flowmaker confighub scheduler logger datacatalog datacatalog-api datacatalog-ui databridge databridge-pg keycloak traefik influxdb timeseries prometheus alertmanager ntfy npm cdn minio s3 ironstream backups workers"
 HOSTS_LINE="${SERVER_IP} ${INDUSTREAM_DOMAIN}"
 for sub in $HOSTS_SUBDOMAINS; do
     HOSTS_LINE="${HOSTS_LINE} ${sub}.${INDUSTREAM_DOMAIN}"
@@ -1171,9 +1218,6 @@ if [ -d "$SECRETS_DIR" ]; then
         echo -e "  ${BLUE}MinIO${NC}"
         echo -e "    User:     ${BOLD}$(cat "$SECRETS_DIR/minio_root_user" 2>/dev/null || echo 'admin')${NC}"
         echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/minio_root_password" 2>/dev/null || echo 'N/A')${NC}"
-        echo ""
-        echo -e "  ${BLUE}CloudBeaver${NC}"
-        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/cloudbeaver_admin_password" 2>/dev/null || echo 'N/A')${NC}"
         echo ""
         echo -e "  ${YELLOW}Secrets stored in: ${SECRETS_DIR}/${NC}"
         echo -e "  ${YELLOW}To regenerate: ./scripts/setup/create-secrets.sh --env ${ENV} --regenerate${NC}"
