@@ -272,7 +272,7 @@ services:
       # use CSP frame-ancestors (modern, allowlist-based) instead of stripping
       # X-Frame-Options which would allow any origin to embed the console.
       - traefik.http.middlewares.${ENV}-minio-headers.headers.contentsecuritypolicy=frame-ancestors 'self' https://${INDUSTREAM_DOMAIN:-localhost} https://*.${INDUSTREAM_DOMAIN:-localhost}
-      - traefik.http.routers.${ENV}-minio-console-secure.middlewares=${ENV}-minio-headers,security-headers@file
+      - traefik.http.routers.${ENV}-minio-console-secure.middlewares=${ENV}-minio-headers,allow-iframe@file
       resources:
         limits:
           cpus: 1.0
@@ -286,9 +286,6 @@ services:
         max_attempts: 0
         window: 120s
 
-  # ==========================================
-  # CLOUDBEAVER - Database Administration
-  # ==========================================
 # =============================================================================
 # NETWORKS
 # =============================================================================

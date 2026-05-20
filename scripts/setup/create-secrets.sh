@@ -139,7 +139,6 @@ BASE_SECRETS=(
     "influx_admin_token"
     "minio_root_user"
     "minio_root_password"
-    "cloudbeaver_admin_password"
     "ironstream_db_password"
     "timescaledb_password"
     "databridge_pg_password"
