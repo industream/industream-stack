@@ -100,7 +100,11 @@ services:
       - traefik.http.routers.${ENV}-grafana-secure.rule=Host(`dashboard.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-grafana-secure.tls=true
       - traefik.http.routers.${ENV}-grafana-secure.service=${ENV}-grafana
-      - traefik.http.routers.${ENV}-grafana-secure.middlewares=security-headers@file
+      # Grafana is embedded inside UIFusion (cross-subdomain iframe). The
+      # default security-headers middleware sets X-Frame-Options=SAMEORIGIN
+      # which blocks that. allow-iframe@file replaces it with ALLOWALL +
+      # CSP frame-ancestors limited to *.${INDUSTREAM_DOMAIN}.
+      - traefik.http.routers.${ENV}-grafana-secure.middlewares=allow-iframe@file
       - traefik.http.routers.${ENV}-grafana.entrypoints=web
       - traefik.http.routers.${ENV}-grafana.rule=Host(`dashboard.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-grafana.middlewares=redirect-to-https@file
@@ -188,7 +192,7 @@ services:
         - traefik.http.routers.${ENV}-prometheus-secure.rule=Host(`prometheus.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-prometheus-secure.tls=true
         - traefik.http.routers.${ENV}-prometheus-secure.service=${ENV}-prometheus
-        - traefik.http.routers.${ENV}-prometheus-secure.middlewares=traefik-auth@file,rate-limit@file,security-headers@file
+        - traefik.http.routers.${ENV}-prometheus-secure.middlewares=traefik-auth@file,rate-limit@file,allow-iframe@file
         - traefik.http.routers.${ENV}-prometheus.entrypoints=web
         - traefik.http.routers.${ENV}-prometheus.rule=Host(`prometheus.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-prometheus.middlewares=redirect-to-https@file
@@ -294,7 +298,7 @@ services:
         - traefik.http.routers.${ENV}-alertmanager-secure.rule=Host(`alertmanager.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-alertmanager-secure.tls=true
         - traefik.http.routers.${ENV}-alertmanager-secure.service=${ENV}-alertmanager
-        - traefik.http.routers.${ENV}-alertmanager-secure.middlewares=traefik-auth@file,rate-limit@file,security-headers@file
+        - traefik.http.routers.${ENV}-alertmanager-secure.middlewares=traefik-auth@file,rate-limit@file,allow-iframe@file
         - traefik.http.routers.${ENV}-alertmanager.entrypoints=web
         - traefik.http.routers.${ENV}-alertmanager.rule=Host(`alertmanager.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-alertmanager.middlewares=redirect-to-https@file
@@ -343,7 +347,7 @@ services:
         - traefik.http.routers.${ENV}-ntfy-secure.rule=Host(`ntfy.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-ntfy-secure.tls=true
         - traefik.http.routers.${ENV}-ntfy-secure.service=${ENV}-ntfy
-        - traefik.http.routers.${ENV}-ntfy-secure.middlewares=security-headers@file
+        - traefik.http.routers.${ENV}-ntfy-secure.middlewares=allow-iframe@file
         - traefik.http.routers.${ENV}-ntfy.entrypoints=web
         - traefik.http.routers.${ENV}-ntfy.rule=Host(`ntfy.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-ntfy.middlewares=redirect-to-https@file
