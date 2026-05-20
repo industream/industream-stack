@@ -34,16 +34,25 @@ done
 # Point Keycloak at the file directly. KC_BOOTSTRAP_ADMIN_PASSWORD_FILE is
 # only honored on first boot (initial admin user); after that the hash lives
 # in the DB and rotations go through scripts/utils/rotate-keycloak-password.sh.
+# Keycloak 26.1.0 does NOT honor KC_BOOTSTRAP_ADMIN_PASSWORD_FILE — native
+# _FILE support for this specific var arrived in a later 26.x patch. Until
+# the image is bumped, read the secret and export the cleartext.
+# This bootstrap credential is consumed ONCE on first boot to materialise the
+# initial admin user in the DB; after that, rotations go through
+# scripts/utils/rotate-keycloak-password.sh.
 if [ -n "$ADMIN_SECRET" ]; then
-    export KC_BOOTSTRAP_ADMIN_PASSWORD_FILE="$ADMIN_SECRET"
-    echo "✓ KC_BOOTSTRAP_ADMIN_PASSWORD_FILE → $ADMIN_SECRET"
+    export KC_BOOTSTRAP_ADMIN_PASSWORD="$(cat "$ADMIN_SECRET")"
+    echo "✓ KC_BOOTSTRAP_ADMIN_PASSWORD loaded from $ADMIN_SECRET"
 else
     echo "⚠ No keycloak_admin_password secret mounted — bootstrap admin will not be created"
 fi
 
 if [ -n "$DB_SECRET" ]; then
-    export KC_DB_PASSWORD_FILE="$DB_SECRET"
-    echo "✓ KC_DB_PASSWORD_FILE → $DB_SECRET"
+    # KC_DB_PASSWORD_FILE is also not honored in 26.1.0 (SCRAM auth fails with
+    # "no password was provided"). Export the cleartext same as the bootstrap
+    # password — Keycloak only reads it on startup to open the JDBC pool.
+    export KC_DB_PASSWORD="$(cat "$DB_SECRET")"
+    echo "✓ KC_DB_PASSWORD loaded from $DB_SECRET"
 else
     echo "⚠ No keycloak_db_password secret mounted — DB connection will fail"
 fi
