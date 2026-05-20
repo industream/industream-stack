@@ -63,6 +63,24 @@ fi
 
 DOMAIN=${INDUSTREAM_DOMAIN:-industream.platform.lan}
 
+# -----------------------------------------------------------------------------
+# Service introspection
+# -----------------------------------------------------------------------------
+# The caller (deploy-swarm.sh) sets UIFUSION_STACK_FILES to the space-separated
+# list of docker-stack.*.yml files that will actually be deployed. We grep
+# them to detect which services exist so the nav only contains live links.
+#
+# If the env var is unset (someone runs the generator manually), we fall back
+# to scanning every docker-stack.*.yml in the repo root — best-effort coverage.
+UIFUSION_STACK_FILES="${UIFUSION_STACK_FILES:-$(ls docker-stack.*.yml 2>/dev/null | tr '\n' ' ')}"
+
+has_service() {
+    local service="$1"
+    [ -n "$UIFUSION_STACK_FILES" ] || return 1
+    # Match "  <service>:" at column 2 (Compose service definition).
+    grep -qE "^  ${service}:[[:space:]]*$" $UIFUSION_STACK_FILES 2>/dev/null
+}
+
 # Check if config exists and skip unless forced
 CONFIG_FILE="config/uifusion/config.json"
 if [ -f "$CONFIG_FILE" ] && [ "$FORCE" = false ]; then
@@ -117,8 +135,18 @@ cat << HEADEREOF
   "applications": {
 HEADEREOF
 
-# --- Core applications (always included) ---
-cat << COREEOF
+# -----------------------------------------------------------------------------
+# Collect every nav entry into a temp file. We omit a trailing comma here and
+# add them via `paste`/`sed` at the end so conditional sections stay clean.
+# -----------------------------------------------------------------------------
+APPS_TMP=$(mktemp)
+trap 'rm -f "$APPS_TMP"' EXIT
+
+emit() { cat >> "$APPS_TMP"; }
+
+# --- Main Group ---
+if has_service grafana; then
+    emit << EOF
     "01-01-dashboards": {
       "url": "https://dashboard.${DOMAIN}?auth_token=\$TOKEN",
       "label": "Dashboards",
@@ -127,7 +155,12 @@ cat << COREEOF
       "iconClass": "leaderboard",
       "sideNavGroup": "01-grp",
       "route": "dashboards"
-    },
+    }
+EOF
+fi
+
+if has_service flowmaker-frontend; then
+    emit << EOF
     "01-02-flowmaker": {
       "url": "https://flowmaker.${DOMAIN}",
       "label": "FlowMaker",
@@ -136,7 +169,12 @@ cat << COREEOF
       "iconClass": "account_tree",
       "sideNavGroup": "01-grp",
       "route": "flowmaker"
-    },
+    }
+EOF
+fi
+
+if has_service datacatalog-ui; then
+    emit << EOF
     "01-04-datacatalog": {
       "url": "https://datacatalog-ui.${DOMAIN}",
       "label": "DataCatalog",
@@ -145,12 +183,13 @@ cat << COREEOF
       "iconClass": "storage",
       "sideNavGroup": "01-grp",
       "route": "datacatalog"
-    },
-COREEOF
+    }
+EOF
+fi
 
-# --- IronStream (only with --with-ironstream) ---
-if [ "$WITH_IRONSTREAM" = "true" ]; then
-cat << IRONEOF
+# IronStream is opt-in via --with-ironstream AND must exist in the deployed stack.
+if [ "$WITH_IRONSTREAM" = "true" ] && has_service ironstream-demo; then
+    emit << EOF
     "01-05-ironstream": {
       "url": "https://ironstream.${DOMAIN}",
       "label": "IronStream",
@@ -159,12 +198,13 @@ cat << IRONEOF
       "iconClass": "precision_manufacturing",
       "sideNavGroup": "01-grp",
       "route": "ironstream"
-    },
-IRONEOF
+    }
+EOF
 fi
 
-# --- Monitoring applications (always included) ---
-cat << MONEOF
+# --- Monitoring ---
+if has_service prometheus; then
+    emit << EOF
     "02-01-prometheus": {
       "url": "https://prometheus.${DOMAIN}",
       "label": "Prometheus",
@@ -173,7 +213,13 @@ cat << MONEOF
       "sideNavGroup": "02-mon",
       "route": "prometheus",
       "rolesRequired": ["admin"]
-    },
+    }
+EOF
+fi
+
+# Grafana dashboards depend on both grafana AND cadvisor/node-exporter for data.
+if has_service grafana && has_service cadvisor; then
+    emit << EOF
     "02-02-grafana-containers": {
       "url": "https://dashboard.${DOMAIN}/d/docker-cadvisor/docker-container-monitoring-cadvisor",
       "label": "Container Metrics",
@@ -182,7 +228,12 @@ cat << MONEOF
       "sideNavGroup": "02-mon",
       "route": "container-metrics",
       "rolesRequired": ["admin"]
-    },
+    }
+EOF
+fi
+
+if has_service grafana; then
+    emit << EOF
     "02-03-grafana-swarm": {
       "url": "https://dashboard.${DOMAIN}/d/docker-swarm-services/docker-swarm-services",
       "label": "Swarm Services",
@@ -191,7 +242,12 @@ cat << MONEOF
       "sideNavGroup": "02-mon",
       "route": "swarm-services",
       "rolesRequired": ["admin"]
-    },
+    }
+EOF
+fi
+
+if has_service grafana && has_service node-exporter; then
+    emit << EOF
     "02-04-grafana-node": {
       "url": "https://dashboard.${DOMAIN}/d/node-exporter-full/node-exporter-full",
       "label": "Node Metrics",
@@ -200,7 +256,12 @@ cat << MONEOF
       "sideNavGroup": "02-mon",
       "route": "node-metrics",
       "rolesRequired": ["admin"]
-    },
+    }
+EOF
+fi
+
+if has_service alertmanager; then
+    emit << EOF
     "02-05-alertmanager": {
       "url": "https://alertmanager.${DOMAIN}",
       "label": "Alertmanager",
@@ -209,7 +270,12 @@ cat << MONEOF
       "sideNavGroup": "02-mon",
       "route": "alertmanager",
       "rolesRequired": ["admin"]
-    },
+    }
+EOF
+fi
+
+if has_service ntfy; then
+    emit << EOF
     "02-06-ntfy": {
       "url": "https://ntfy.${DOMAIN}/industream-backups",
       "label": "Notifications",
@@ -219,12 +285,13 @@ cat << MONEOF
       "sideNavGroup": "02-mon",
       "route": "notifications",
       "rolesRequired": ["admin"]
-    },
-MONEOF
+    }
+EOF
+fi
 
-# --- Backup Monitor (only for production) ---
-if [ "$DEPLOY_ENV" = "prod" ]; then
-cat << BACKUPEOF
+# Backup monitor only ships in prod stacks AND must be actually deployed.
+if [ "$DEPLOY_ENV" = "prod" ] && has_service backup-monitor; then
+    emit << EOF
     "02-07-backups": {
       "url": "https://backups.${DOMAIN}?token=\$TOKEN",
       "label": "Backup Monitor",
@@ -234,12 +301,13 @@ cat << BACKUPEOF
       "sideNavGroup": "02-mon",
       "route": "backups",
       "rolesRequired": ["admin"]
-    },
-BACKUPEOF
+    }
+EOF
 fi
 
-# --- Admin applications (always included, last entry has no trailing comma) ---
-cat << ADMINEOF
+# --- Admin ---
+if has_service datacatalog-api; then
+    emit << EOF
     "03-01-datacatalog-api": {
       "url": "https://datacatalog.${DOMAIN}/openapi",
       "label": "DataCatalog API",
@@ -248,16 +316,28 @@ cat << ADMINEOF
       "sideNavGroup": "03-ext",
       "route": "datacatalogapi",
       "rolesRequired": ["admin"]
-    },
+    }
+EOF
+fi
+
+# DataBridge service was historically called "timeseries-api"; we keep the
+# legacy route label to avoid breaking bookmarks but check the new name.
+if has_service databridge; then
+    emit << EOF
     "03-02-timeseries-api": {
       "url": "https://databridge.${DOMAIN}/swagger",
-      "label": "Timeseries API",
+      "label": "DataBridge API",
       "loading": { "instanceId": "angular-instance-6" },
       "iconClass": "api",
       "sideNavGroup": "03-ext",
       "route": "timeseriesapi",
       "rolesRequired": ["admin"]
-    },
+    }
+EOF
+fi
+
+if has_service influxdb; then
+    emit << EOF
     "03-03-influxdb": {
       "url": "https://influxdb.${DOMAIN}",
       "label": "InfluxDB",
@@ -267,17 +347,14 @@ cat << ADMINEOF
       "sideNavGroup": "03-ext",
       "route": "influxdb",
       "rolesRequired": ["admin"]
-    },
-    "03-04-cloudbeaver": {
-      "url": "https://db.${DOMAIN}",
-      "label": "CloudBeaver",
-      "appShort": "DBVR",
-      "loading": { "instanceId": "angular-instance-21" },
-      "iconClass": "database",
-      "sideNavGroup": "03-ext",
-      "route": "cloudbeaver",
-      "rolesRequired": ["admin"]
-    },
+    }
+EOF
+fi
+
+# Keycloak is always part of the platform stack — but check anyway in case
+# someone runs a stripped-down deployment.
+if has_service keycloak; then
+    emit << EOF
     "03-05-keycloak": {
       "url": "https://${DOMAIN}/auth/admin/master/console",
       "label": "Keycloak Admin",
@@ -286,7 +363,12 @@ cat << ADMINEOF
       "sideNavGroup": "03-ext",
       "route": "keycloakadmin",
       "rolesRequired": ["admin"]
-    },
+    }
+EOF
+fi
+
+if has_service minio; then
+    emit << EOF
     "03-06-minio": {
       "url": "https://minio.${DOMAIN}",
       "label": "Minio Console",
@@ -297,7 +379,23 @@ cat << ADMINEOF
       "route": "minio",
       "rolesRequired": ["admin"]
     }
-ADMINEOF
+EOF
+fi
+
+# -----------------------------------------------------------------------------
+# Insert "," between entries (each entry ends with '}\n' here, except trailing
+# whitespace). Sed adds comma to every '}' line except the LAST occurrence,
+# yielding valid JSON regardless of which conditional blocks were emitted.
+# -----------------------------------------------------------------------------
+awk '
+    { lines[NR] = $0; if ($0 == "    }") last = NR }
+    END {
+        for (i = 1; i <= NR; i++) {
+            line = lines[i]
+            if (line == "    }" && i != last) print line ","; else print line
+        }
+    }
+' "$APPS_TMP"
 
 # Footer
 cat << 'FOOTEREOF'
