@@ -107,7 +107,7 @@ services:
   # FLOWMAKER LOGGING
   # ==========================================
   flowmaker-logging:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/flowmaker-logger:${FLOWMAKER_CORE_VERSION:-2.0.2}
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/flowmaker-logger:${FLOWMAKER_LOGGER_VERSION:-2.0.2}
     networks:
     - traefik-public
     - ${ENV}-platform

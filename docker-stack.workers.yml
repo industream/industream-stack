@@ -161,7 +161,7 @@ services:
         window: 120s
 
   worker-timeseries:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-timeseries-workers:${WORKER_TIMESERIES_VERSION:-2.0.3}
+    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-timeseries-workers:${WORKER_TIMESERIES_VERSION:-2.1.0-dev}
     environment:
     - FM_WORKER_ID=worker-timeseries001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -473,7 +473,7 @@ services:
         - traefik.http.routers.${ENV}-worker-manager-secure.rule=Host(`workers.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-worker-manager-secure.tls=true
         - traefik.http.routers.${ENV}-worker-manager-secure.service=${ENV}-worker-manager
-        - traefik.http.routers.${ENV}-worker-manager-secure.middlewares=traefik-auth@file,rate-limit@file,security-headers@file
+        - traefik.http.routers.${ENV}-worker-manager-secure.middlewares=traefik-auth@file,rate-limit@file,allow-iframe@file
         - traefik.http.routers.${ENV}-worker-manager.entrypoints=web
         - traefik.http.routers.${ENV}-worker-manager.rule=Host(`workers.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-worker-manager.middlewares=redirect-to-https@file
