@@ -1,0 +1,27 @@
+# =============================================================================
+# CUSTOM STACK - Grafana plugins
+# =============================================================================
+# Auto-discovered by deploy-swarm.sh and merged on top of the core stacks.
+# See custom/README.md for the full convention + merge caveats.
+#
+# Installs additional Grafana plugins via GF_INSTALL_PLUGINS. The Grafana
+# image downloads them into the persistent ${ENV}-grafana-data volume on
+# first boot. Subsequent restarts are no-ops unless the volume is recreated
+# or GF_INSTALL_PLUGINS_FORCE_REINSTALL=true is also set.
+#
+# Requires outbound HTTPS to grafana.com at first boot.
+#
+# To disable: rename to *.yml.disabled (auto-discovery only matches *.yml/*.yaml).
+# =============================================================================
+
+services:
+  grafana:
+    environment:
+      # IMPORTANT: docker-stack.monitoring.yml ALREADY sets GF_INSTALL_PLUGINS
+      # with the platform defaults (yesoreyeram-infinity-datasource,
+      # marcusolsson-json-datasource). Compose merges `environment` BY KEY,
+      # so a custom file declaring the same key REPLACES the core value
+      # entirely — list-style env entries are NOT appended.
+      # Therefore, the full plugin list lives here, including the core ones.
+      # Last entry: volkovlabs-echarts-panel (Apache ECharts), requested by DSD.
+      - GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource,marcusolsson-json-datasource,volkovlabs-echarts-panel
