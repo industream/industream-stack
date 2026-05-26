@@ -71,7 +71,7 @@ services:
   # DATABRIDGE API
   # ==========================================
   databridge:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/timeseries/api:${DATABRIDGE_API_VERSION:-2.3.0-dev}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/timeseries/api:${DATABRIDGE_API_VERSION:-2.3.0-dev}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
@@ -124,7 +124,7 @@ services:
   # DATACATALOG API
   # ==========================================
   datacatalog-api:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/datacatalog/api:${DATACATALOG_API_VERSION:-1.0.0}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/datacatalog/api:${DATACATALOG_API_VERSION:-1.0.0}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataCatalog.Api.dll"]
     environment:
@@ -226,7 +226,7 @@ services:
   # DATABRIDGE API - POSTGRESQL
   # ==========================================
   databridge-postgresql:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/timeseries/api:${DATABRIDGE_API_VERSION:-2.3.0-dev}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/timeseries/api:${DATABRIDGE_API_VERSION:-2.3.0-dev}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
@@ -277,7 +277,7 @@ services:
   # DATABRIDGE API - TIMESCALEDB
   # ==========================================
   databridge-timescaledb:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/timeseries/api:${DATABRIDGE_API_VERSION:-2.3.0-dev}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/timeseries/api:${DATABRIDGE_API_VERSION:-2.3.0-dev}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
@@ -328,7 +328,7 @@ services:
   # DATACATALOG UI
   # ==========================================
   datacatalog-ui:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/datacatalog/ui:${DATACATALOG_UI_VERSION:-1.0.0}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/datacatalog/ui:${DATACATALOG_UI_VERSION:-1.0.0}
     environment:
     - NODE_ENV=production
     - DATACATALOG_API_URL=${DATACATALOG_API_URL:-https://datacatalog.${INDUSTREAM_DOMAIN:-localhost}}

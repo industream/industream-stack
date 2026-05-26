@@ -129,7 +129,7 @@ services:
   # UIFUSION - Main Portal
   # ==========================================
   uifusion:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/uifusion/ui:${UIFUSION_VERSION:-1.0.8}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/uifusion/ui:${UIFUSION_VERSION:-1.0.8}
     environment:
     - NODE_ENV=production
     - UF_CONFIG_URL=https://${INDUSTREAM_DOMAIN:-localhost}/api/uifusion/api/config
@@ -173,7 +173,7 @@ services:
         window: 120s
 
   uifusion-api:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/uifusion/api:${UIFUSION_API_VERSION:-1.0.6}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/uifusion/api:${UIFUSION_API_VERSION:-1.0.6}
     environment:
     - CONFIG_PATH=/app/data/config.json
     volumes:

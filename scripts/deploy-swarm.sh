@@ -282,7 +282,7 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 if [ "$COMMUNITY_MODE" = "true" ]; then
-    echo -e "${GREEN}✓ Community mode enabled — using public flowmaker.community project${NC}"
+    echo -e "${GREEN}✓ Community mode enabled — using COMMUNITY_REGISTRY=${COMMUNITY_REGISTRY:-ghcr.io/industream}${NC}"
 fi
 
 # Ensure ENV and STACK_NAME are from command line
@@ -752,18 +752,24 @@ with open('$RESOLVED_FILE', 'w') as f:
     echo -e "${GREEN}✓ Premium services excluded${NC}"
 fi
 
-# Rewrite image paths to point to flowmaker.community in community mode
+# In community mode, route every BSL image through COMMUNITY_REGISTRY.
+# Stack files already reference ${COMMUNITY_REGISTRY} / ${ENTERPRISE_REGISTRY}
+# directly (per industream-cli/docs/REGISTRY-ARCHITECTURE.md), so no path
+# rewriting is needed — the resolved file already points at the public GHCR
+# location. We only sanity-check that the resolved file has no leftover
+# enterprise references in stacks that should not be loaded.
 if [ "$COMMUNITY_MODE" = "true" ]; then
     echo ""
-    echo -e "${BLUE}Rewriting image paths to flowmaker.community...${NC}"
-    REGISTRY_HOST="${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}"
-    # List of source projects whose images live under flowmaker.community/
-    # Order matters: longer prefixes first to avoid partial matches
-    for project in flowmaker.core flowmaker.boxes flowmaker.infra datacatalog grafana uifusion timeseries monitoring; do
-        # Replace ${REGISTRY}/${project}/ with ${REGISTRY}/flowmaker.community/${project}/
-        sed -i "s|${REGISTRY_HOST}/${project}/|${REGISTRY_HOST}/flowmaker.community/${project}/|g" "$RESOLVED_FILE"
-    done
-    echo -e "${GREEN}✓ Image paths rewritten${NC}"
+    echo -e "${BLUE}Community mode — verifying registry routing...${NC}"
+    ENTERPRISE_HOST="${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}"
+    # workers-premium.yml is excluded earlier (line ~525). Ironstream is opt-in
+    # via --with-ironstream and should never be combined with --community.
+    if grep -q "${ENTERPRISE_HOST}/ironstream/" "$RESOLVED_FILE" 2>/dev/null; then
+        echo -e "${RED}✗ Community mode cannot include IronStream services${NC}"
+        echo -e "${RED}  Remove --with-ironstream or drop --community${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ BSL images route to COMMUNITY_REGISTRY=${COMMUNITY_REGISTRY:-ghcr.io/industream}${NC}"
 fi
 
 # =============================================================================
@@ -778,8 +784,9 @@ if [ -f "$HOME/.docker/config.json" ] && grep -q "$REGISTRY" "$HOME/.docker/conf
 fi
 
 if [ "$COMMUNITY_MODE" = "true" ]; then
-    # Community mode: pull check is done implicitly by the main pull below
-    echo -e "${GREEN}✓ Community mode — using public flowmaker.community project${NC}"
+    # Community mode pulls anonymously from COMMUNITY_REGISTRY (GHCR).
+    # No login required; pull check happens implicitly in the main pull below.
+    echo -e "${GREEN}✓ Community mode — anonymous pulls from ${COMMUNITY_REGISTRY:-ghcr.io/industream}${NC}"
 elif [ "$REGISTRY_CREDS_EXIST" = "true" ]; then
     # Credentials exist — verify they actually work with a test pull
     echo -e "${BLUE}Verifying registry access to ${REGISTRY}...${NC}"
