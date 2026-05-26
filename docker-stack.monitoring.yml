@@ -12,7 +12,7 @@ services:
   # GRAFANA DASHBOARD
   # ==========================================
   grafana:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/grafana/grafana-industream:${GRAFANA_VERSION:-latest}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/grafana/grafana-industream:${GRAFANA_VERSION:-latest}
     environment:
     - TERM=linux
     - GF_DEFAULT_APP_MODE=${GF_APP_MODE:-production}
@@ -239,7 +239,7 @@ services:
         window: 120s
 
   cadvisor:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/monitoring/cadvisor:${CADVISOR_VERSION:-v0.56.2}
+    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/monitoring/cadvisor:${CADVISOR_VERSION:-v0.56.2}
     command:
       - --housekeeping_interval=30s
       - --disable_metrics=disk,diskIO,tcp,udp,percpu,sched,process
