@@ -1,0 +1,164 @@
+name: Sync community mirror
+
+# -----------------------------------------------------------------------------
+# Mirrors BSL 1.1 community images from the legacy premium Harbor to:
+#   - the premium Harbor's `flowmaker.community/*` sub-project (legacy mirror)
+#   - the new community Harbor (39t88114.c1.gra9.container-registry.ovh.net)
+#
+# Triggered every night at 03:00 UTC, or on demand via the Actions UI.
+# Required repository secrets:
+#   PREMIUM_HARBOR_USER     pull from source + push to legacy mirror
+#   PREMIUM_HARBOR_PASS
+#   COMMUNITY_HARBOR_USER   push to new community Harbor
+#   COMMUNITY_HARBOR_PASS
+# Optional:
+#   NTFY_URL                base URL (e.g. https://ntfy.industream.io)
+#   NTFY_TOPIC              topic, defaults to `industream-mirror-sync`
+#
+# All workflow_dispatch inputs are passed through env vars to avoid
+# command-injection risk via templated expressions in run: blocks.
+# -----------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run only (no copies)"
+        type: boolean
+        default: false
+      include_dev:
+        description: "Include dev / pre-release tags (latest, *-dev, *-alpha, *-beta, *-rc)"
+        type: boolean
+        default: false
+      repo_filter:
+        description: "Restrict to repos matching this substring (e.g. flow-box-timer)"
+        type: string
+        default: ""
+  schedule:
+    # 03:00 UTC every day. Avoids the 02:00 backup window on prod hosts.
+    - cron: "0 3 * * *"
+
+concurrency:
+  group: sync-community-mirror
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Mirror BSL images
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CRANE_VERSION: "v0.20.2"
+      PREMIUM_USER: ${{ secrets.PREMIUM_HARBOR_USER }}
+      PREMIUM_PASS: ${{ secrets.PREMIUM_HARBOR_PASS }}
+      COMMUNITY_USER: ${{ secrets.COMMUNITY_HARBOR_USER }}
+      COMMUNITY_PASS: ${{ secrets.COMMUNITY_HARBOR_PASS }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # industream-cli is a separate repo; sync script falls back to its
+          # baked-in BSL list when modules.json is absent.
+          submodules: false
+
+      - name: Install crane
+        env:
+          CRANE_DOWNLOAD_URL: "https://github.com/google/go-containerregistry/releases/download"
+        run: |
+          set -euo pipefail
+          install_dir="$HOME/.local/bin"
+          mkdir -p "$install_dir"
+          url="${CRANE_DOWNLOAD_URL}/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz"
+          curl -fsSL "$url" | tar -xz -C "$install_dir" crane
+          chmod +x "$install_dir/crane"
+          echo "$install_dir" >> "$GITHUB_PATH"
+          "$install_dir/crane" version
+
+      - name: Validate required secrets
+        run: |
+          set -eu
+          missing=0
+          for var in PREMIUM_USER PREMIUM_PASS COMMUNITY_USER COMMUNITY_PASS; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::Missing required secret for $var"
+              missing=1
+            fi
+          done
+          [ $missing -eq 0 ]
+
+      - name: Run sync script
+        id: sync
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_INCLUDE_DEV: ${{ inputs.include_dev }}
+          INPUT_REPO_FILTER: ${{ inputs.repo_filter }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            if [ "${INPUT_DRY_RUN}" = "true" ]; then
+              args+=(--dry-run)
+            fi
+            if [ "${INPUT_INCLUDE_DEV}" = "true" ]; then
+              args+=(--include-dev)
+            fi
+            if [ -n "${INPUT_REPO_FILTER}" ]; then
+              args+=(--repo "${INPUT_REPO_FILTER}")
+            fi
+          fi
+          echo "Running: scripts/ops/sync-community-mirror.sh ${args[*]:-}"
+          # ${args[@]+"${args[@]}"} expands to nothing when args is unset/empty,
+          # avoiding an accidental literal "" argument under `set -u`.
+          bash scripts/ops/sync-community-mirror.sh ${args[@]+"${args[@]}"}
+
+      - name: Notify success
+        if: success()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          RUN_NUMBER: ${{ github.run_number }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          if [ -z "${NTFY_URL:-}" ]; then
+            echo "NTFY_URL not configured — skipping notification"
+            exit 0
+          fi
+          topic="${NTFY_TOPIC:-industream-mirror-sync}"
+          body="Run #${RUN_NUMBER} (${EVENT_NAME}) finished successfully. See ${RUN_URL}"
+          curl -fsS \
+            -H "Title: Community mirror sync OK" \
+            -H "Priority: default" \
+            -H "Tags: white_check_mark,docker" \
+            -d "$body" \
+            "${NTFY_URL%/}/${topic}" >/dev/null \
+            || echo "Ntfy notification failed (non-fatal)"
+
+      - name: Notify failure
+        if: failure()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          RUN_NUMBER: ${{ github.run_number }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          if [ -z "${NTFY_URL:-}" ]; then
+            echo "NTFY_URL not configured — skipping notification"
+            exit 0
+          fi
+          topic="${NTFY_TOPIC:-industream-mirror-sync}"
+          body="Run #${RUN_NUMBER} (${EVENT_NAME}) failed. See ${RUN_URL}"
+          curl -fsS \
+            -H "Title: Community mirror sync FAILED" \
+            -H "Priority: high" \
+            -H "Tags: rotating_light,docker" \
+            -d "$body" \
+            "${NTFY_URL%/}/${topic}" >/dev/null \
+            || echo "Ntfy notification failed (non-fatal)"
