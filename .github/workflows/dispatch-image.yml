@@ -1,0 +1,311 @@
+name: Dispatch image
+
+# -----------------------------------------------------------------------------
+# Promotes images from the internal staging Harbor (842775dh…) to either:
+#   - ghcr.io/industream/<path>:<tag>           (BSL 1.1 / community modules)
+#   - 39t88114.c1.gra9.container-registry.ovh.net/<path>:<tag>   (proprietary
+#                                                                 / enterprise
+#                                                                 variants)
+#
+# Classification source of truth: industream-cli/modules.json.
+#   - module.license == "bsl"          AND path matches module.imagePattern   -> ghcr
+#   - module.license == "proprietary"  AND path matches module.imagePattern   -> 39t88114
+#   - path matches module.enterpriseVariant (regardless of license)           -> 39t88114
+#
+# Triggers:
+#   - workflow_dispatch (manual): inputs source_image + module_id
+#   - repository_dispatch (from worker repos): event type "image-built",
+#       payload { "source_image": "...", "module_id": "..." }
+#
+# Required repository secrets:
+#   STAGING_HARBOR_USER     pull from 842775dh… (staging)
+#   STAGING_HARBOR_PASS
+#   ENTERPRISE_HARBOR_USER  push to 39t88114… (enterprise destination)
+#   ENTERPRISE_HARBOR_PASS
+#   GHCR_TOKEN              PAT with `write:packages` for ghcr.io/industream
+#                           (the built-in GITHUB_TOKEN cannot publish to a
+#                            different org, which is why a PAT is required)
+# Optional:
+#   NTFY_URL                e.g. https://ntfy.industream.io
+#   NTFY_TOPIC              defaults to `industream-dispatcher`
+#
+# Security: every templated input is funneled through env: before being used
+# in run: blocks to defuse the classic GitHub-Actions command-injection vector.
+# -----------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_image:
+        description: "Staging image ref, e.g. 842775dh.c1.gra9.container-registry.ovh.net/flowmaker.boxes/flow-box-timer:2.0.3"
+        type: string
+        required: true
+      module_id:
+        description: "modules.json id, e.g. worker-timer"
+        type: string
+        required: true
+  repository_dispatch:
+    types: [image-built]
+
+concurrency:
+  # One dispatch per image:tag at a time. Different images promote in parallel.
+  group: dispatch-image-${{ github.event.inputs.source_image || github.event.client_payload.source_image }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  dispatch:
+    name: Promote staging image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      STAGING_REGISTRY: 842775dh.c1.gra9.container-registry.ovh.net
+      GHCR_REGISTRY: ghcr.io
+      GHCR_NAMESPACE: industream
+      ENTERPRISE_REGISTRY: 39t88114.c1.gra9.container-registry.ovh.net
+      CRANE_VERSION: v0.20.2
+      # Defuse command injection: copy every template expression into env first.
+      INPUT_SOURCE_IMAGE: ${{ github.event.inputs.source_image || github.event.client_payload.source_image }}
+      INPUT_MODULE_ID:    ${{ github.event.inputs.module_id    || github.event.client_payload.module_id }}
+    steps:
+      - name: Validate inputs
+        run: |
+          set -eu
+          if [ -z "${INPUT_SOURCE_IMAGE:-}" ]; then
+            echo "::error::source_image is required"; exit 1
+          fi
+          if [ -z "${INPUT_MODULE_ID:-}" ]; then
+            echo "::error::module_id is required"; exit 1
+          fi
+          case "$INPUT_SOURCE_IMAGE" in
+            "${STAGING_REGISTRY}"/*:*) : ;;
+            *)
+              echo "::error::source_image must start with ${STAGING_REGISTRY}/ and contain a :<tag> suffix"
+              exit 1
+              ;;
+          esac
+          # Reject suspicious characters that could escape into the shell.
+          case "$INPUT_SOURCE_IMAGE$INPUT_MODULE_ID" in
+            *[\`\$\(\)\;\&\|\<\>\"\'\\]*)
+              echo "::error::input contains forbidden shell metacharacters"; exit 1
+              ;;
+          esac
+
+      - name: Checkout industream-cli (modules.json)
+        uses: actions/checkout@v4
+        with:
+          repository: industream/industream-cli
+          path: cli
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Classify module
+        id: classify
+        env:
+          MODULES_JSON: cli/modules.json
+        run: |
+          set -euo pipefail
+          src="${INPUT_SOURCE_IMAGE}"
+          rest="${src#${STAGING_REGISTRY}/}"
+          tag="${rest##*:}"
+          src_path="${rest%:*}"
+
+          if [ ! -r "$MODULES_JSON" ]; then
+            echo "::error::modules.json not found at $MODULES_JSON"; exit 1
+          fi
+
+          module_json=$(jq -r --arg id "$INPUT_MODULE_ID" \
+            '.modules[] | select(.id == $id)' "$MODULES_JSON")
+          if [ -z "$module_json" ] || [ "$module_json" = "null" ]; then
+            echo "::error::module_id '$INPUT_MODULE_ID' not found in modules.json"
+            exit 1
+          fi
+
+          license=$(echo "$module_json"            | jq -r '.license // "bsl"')
+          image_pattern=$(echo "$module_json"      | jq -r '.imagePattern // ""')
+          enterprise_variant=$(echo "$module_json" | jq -r '.enterpriseVariant // ""')
+
+          dest_registry=""
+          auth=""
+
+          if [ -n "$enterprise_variant" ] && [ "$src_path" = "$enterprise_variant" ]; then
+            dest_registry="${ENTERPRISE_REGISTRY}"
+            auth="enterprise"
+          elif [ -n "$image_pattern" ] && [ "$src_path" = "$image_pattern" ]; then
+            if [ "$license" = "bsl" ]; then
+              dest_registry="${GHCR_REGISTRY}/${GHCR_NAMESPACE}"
+              auth="ghcr"
+            else
+              dest_registry="${ENTERPRISE_REGISTRY}"
+              auth="enterprise"
+            fi
+          else
+            echo "::error::source path '$src_path' does not match module '$INPUT_MODULE_ID' (imagePattern='$image_pattern', enterpriseVariant='$enterprise_variant')"
+            exit 1
+          fi
+
+          dest="${dest_registry}/${src_path}:${tag}"
+          echo "src_path=$src_path"           >> "$GITHUB_OUTPUT"
+          echo "tag=$tag"                     >> "$GITHUB_OUTPUT"
+          echo "license=$license"             >> "$GITHUB_OUTPUT"
+          echo "dest_registry=$dest_registry" >> "$GITHUB_OUTPUT"
+          echo "destination=$dest"            >> "$GITHUB_OUTPUT"
+          echo "auth=$auth"                   >> "$GITHUB_OUTPUT"
+          {
+            echo "### Promotion plan"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Module | \`$INPUT_MODULE_ID\` |"
+            echo "| License | \`$license\` |"
+            echo "| Source | \`$src\` |"
+            echo "| Destination | \`$dest\` |"
+            echo "| Auth | \`$auth\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate required secrets
+        env:
+          STAGING_USER: ${{ secrets.STAGING_HARBOR_USER }}
+          STAGING_PASS: ${{ secrets.STAGING_HARBOR_PASS }}
+          GHCR_TOKEN:   ${{ secrets.GHCR_TOKEN }}
+          ENT_USER:     ${{ secrets.ENTERPRISE_HARBOR_USER }}
+          ENT_PASS:     ${{ secrets.ENTERPRISE_HARBOR_PASS }}
+          AUTH: ${{ steps.classify.outputs.auth }}
+        run: |
+          set -eu
+          missing=0
+          check() { if [ -z "${!1:-}" ]; then echo "::error::Missing secret $1"; missing=1; fi; }
+          check STAGING_USER
+          check STAGING_PASS
+          if [ "$AUTH" = "ghcr" ]; then
+            check GHCR_TOKEN
+          else
+            check ENT_USER
+            check ENT_PASS
+          fi
+          [ $missing -eq 0 ]
+
+      - name: Login to staging Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: 842775dh.c1.gra9.container-registry.ovh.net
+          username: ${{ secrets.STAGING_HARBOR_USER }}
+          password: ${{ secrets.STAGING_HARBOR_PASS }}
+
+      - name: Login to GHCR
+        if: steps.classify.outputs.auth == 'ghcr'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: industream-bot
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Login to enterprise Harbor
+        if: steps.classify.outputs.auth == 'enterprise'
+        uses: docker/login-action@v3
+        with:
+          registry: 39t88114.c1.gra9.container-registry.ovh.net
+          username: ${{ secrets.ENTERPRISE_HARBOR_USER }}
+          password: ${{ secrets.ENTERPRISE_HARBOR_PASS }}
+
+      - name: Install crane
+        env:
+          CRANE_DOWNLOAD_URL: https://github.com/google/go-containerregistry/releases/download
+        run: |
+          set -euo pipefail
+          install_dir="$HOME/.local/bin"
+          mkdir -p "$install_dir"
+          url="${CRANE_DOWNLOAD_URL}/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz"
+          curl -fsSL "$url" | tar -xz -C "$install_dir" crane
+          chmod +x "$install_dir/crane"
+          echo "$install_dir" >> "$GITHUB_PATH"
+          "$install_dir/crane" version
+
+      - name: Promote image (crane copy)
+        env:
+          SRC: ${{ env.INPUT_SOURCE_IMAGE }}
+          DEST: ${{ steps.classify.outputs.destination }}
+        run: |
+          set -euo pipefail
+          echo "Copying $SRC -> $DEST"
+          crane copy --all-tags=false "$SRC" "$DEST"
+          echo "OK promoted $DEST"
+
+      - name: Ensure GHCR package is public
+        if: steps.classify.outputs.auth == 'ghcr'
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          SRC_PATH: ${{ steps.classify.outputs.src_path }}
+        run: |
+          set -euo pipefail
+          # GHCR packages are private by default on first push. Flip the package
+          # visibility to public (idempotent). API:
+          # https://docs.github.com/en/rest/packages/packages
+          encoded="${SRC_PATH//\//%2F}"
+          url="/orgs/${GHCR_NAMESPACE}/packages/container/${encoded}"
+          if visibility=$(gh api "$url" --jq '.visibility' 2>/dev/null); then
+            if [ "$visibility" = "public" ]; then
+              echo "Package $SRC_PATH already public"
+              exit 0
+            fi
+          else
+            # First push may need a beat for the package to register.
+            sleep 5
+          fi
+          if gh api -X PATCH "$url" -f visibility=public >/dev/null 2>&1; then
+            echo "Package $SRC_PATH set to public"
+          else
+            echo "::warning::Could not flip $SRC_PATH to public via API — set it manually in the GH UI"
+          fi
+
+      - name: Notify success (Ntfy)
+        if: success()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          RUN_NUMBER: ${{ github.run_number }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DEST: ${{ steps.classify.outputs.destination }}
+        run: |
+          set -eu
+          if [ -z "${NTFY_URL:-}" ]; then
+            echo "NTFY_URL not configured — skipping notification"
+            exit 0
+          fi
+          topic="${NTFY_TOPIC:-industream-dispatcher}"
+          body="Promoted ${INPUT_SOURCE_IMAGE} -> ${DEST} (run #${RUN_NUMBER}, ${EVENT_NAME}). ${RUN_URL}"
+          curl -fsS \
+            -H "Title: Image dispatch OK" \
+            -H "Priority: default" \
+            -H "Tags: white_check_mark,docker" \
+            -d "$body" \
+            "${NTFY_URL%/}/${topic}" >/dev/null \
+            || echo "Ntfy notification failed (non-fatal)"
+
+      - name: Notify failure (Ntfy)
+        if: failure()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          RUN_NUMBER: ${{ github.run_number }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          if [ -z "${NTFY_URL:-}" ]; then
+            echo "NTFY_URL not configured — skipping notification"
+            exit 0
+          fi
+          topic="${NTFY_TOPIC:-industream-dispatcher}"
+          body="Dispatch FAILED for ${INPUT_SOURCE_IMAGE} (module=${INPUT_MODULE_ID}, run #${RUN_NUMBER}, ${EVENT_NAME}). ${RUN_URL}"
+          curl -fsS \
+            -H "Title: Image dispatch FAILED" \
+            -H "Priority: high" \
+            -H "Tags: rotating_light,docker" \
+            -d "$body" \
+            "${NTFY_URL%/}/${topic}" >/dev/null \
+            || echo "Ntfy notification failed (non-fatal)"
