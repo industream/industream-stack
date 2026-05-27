@@ -243,7 +243,12 @@ services:
         window: 120s
 
   cadvisor:
-    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/monitoring/cadvisor:${CADVISOR_VERSION:-v0.56.2}
+    # Upstream cadvisor moved from gcr.io/cadvisor/cadvisor to ghcr.io/google/cadvisor
+    # in v0.56+. v0.57.0+ should include the bug fixes that motivated the
+    # previous homemade mirror — to be confirmed in practice. Set CADVISOR_IMAGE
+    # to a private mirror if regressions appear (legacy patches lived at
+    # 39t88114.../monitoring/cadvisor).
+    image: ${CADVISOR_IMAGE:-ghcr.io/google/cadvisor}:${CADVISOR_VERSION:-v0.57.0}
     command:
       - --housekeeping_interval=30s
       - --disable_metrics=disk,diskIO,tcp,udp,percpu,sched,process

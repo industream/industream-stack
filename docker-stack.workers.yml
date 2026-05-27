@@ -435,7 +435,7 @@ services:
   # WORKER MANAGER
   # ==========================================
   worker-manager:
-    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.infra/flowmaker-worker-manager:latest
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.infra/flowmaker-worker-manager:${WORKER_MANAGER_VERSION:-1.0.0}
     environment:
       - NODE_ENV=production
       - DATA_DIR=/data
