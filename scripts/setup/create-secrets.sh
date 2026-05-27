@@ -130,8 +130,6 @@ echo ""
 # =============================================================================
 BASE_SECRETS=(
     "postgres_admin_password"
-    "keycloak_admin_password"
-    "keycloak_db_password"
     "grafana_admin_password"
     "grafana_db_password"
     "datacatalog_db_password"
@@ -144,6 +142,8 @@ BASE_SECRETS=(
     "databridge_pg_password"
     "traefik_auth_htpasswd"
     "backup_monitor_htpasswd"
+    "hub_backend_admin_user"
+    "hub_backend_admin_password"
 )
 
 # =============================================================================
@@ -247,11 +247,10 @@ create_secrets_for_env() {
                     echo -e "${RED}✗ Cannot rotate '$docker_secret' — currently used by service(s): $services_csv${NC}"
                     echo ""
                     echo -e "${YELLOW}  Docker Swarm secrets are immutable while mounted by a service."
-                    echo -e "  For stateful services (postgres, keycloak), use the dedicated"
+                    echo -e "  For stateful services (postgres), use the dedicated"
                     echo -e "  rotation scripts that update the password IN the database first:${NC}"
                     echo ""
                     echo "    ./scripts/utils/rotate-postgres-password.sh"
-                    echo "    ./scripts/utils/rotate-keycloak-password.sh"
                     echo ""
                     echo -e "${YELLOW}  For other secrets, stop the service first, then rerun --regenerate.${NC}"
                     exit 1

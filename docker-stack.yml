@@ -23,7 +23,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
       POSTGRES_PASSWORD_FILE: /run/secrets/${ENV}_postgres_admin_password
-      POSTGRES_MULTIPLE_DATABASES: keycloak:keycloak:FROM_SECRET,industream:dashboard:FROM_SECRET,DataCatalog:datacatalog:FROM_SECRET,DataBridge:databridge:FROM_SECRET
+      POSTGRES_MULTIPLE_DATABASES: industream:dashboard:FROM_SECRET,DataCatalog:datacatalog:FROM_SECRET,DataBridge:databridge:FROM_SECRET
       # Postgres 18 changed PGDATA from /var/lib/postgresql/data to
       # /var/lib/postgresql/18/docker. Pin it to a subdir of the mounted
       # volume so the data actually persists across restarts regardless of
@@ -45,7 +45,6 @@ services:
       start_period: 30s
     secrets:
     - ${ENV}_postgres_admin_password
-    - ${ENV}_keycloak_db_password
     - ${ENV}_grafana_db_password
     - ${ENV}_datacatalog_db_password
     - ${ENV}_databridge_pg_password
@@ -64,69 +63,7 @@ services:
         window: 120s
 
   # ==========================================
-  # KEYCLOAK - Identity & Access Management
-  # ==========================================
-  keycloak:
-    image: keycloak/keycloak:${KEYCLOAK_VERSION:-26.1.0}
-    hostname: keycloak-service
-    environment:
-    - KC_DB=postgres
-    - KC_DB_USERNAME=keycloak
-    - KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
-    - KC_DB_PASSWORD_FILE=/run/secrets/${ENV}_keycloak_db_password
-    - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN:-admin}
-    - KC_BOOTSTRAP_ADMIN_PASSWORD_FILE=/run/secrets/${ENV}_keycloak_admin_password
-    - KC_HTTP_RELATIVE_PATH=/auth
-    - KC_PROXY_HEADERS=xforwarded
-    - KC_HTTP_ENABLED=true
-    volumes:
-    - ./keycloak-realms:/opt/keycloak/data/import:ro
-    - ./config/keycloak-entrypoint.sh:/opt/keycloak/custom-entrypoint.sh:ro
-    entrypoint: ["/bin/bash", "/opt/keycloak/custom-entrypoint.sh"]
-    networks:
-    - traefik-public
-    - ${ENV}-platform
-    depends_on:
-    - postgres
-    command: start --hostname=${INDUSTREAM_DOMAIN:-localhost} --hostname-strict=false --import-realm
-    healthcheck:
-      test:
-      - CMD-SHELL
-      - bash -c 'exec 3<>/dev/tcp/localhost/8080' || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 300s
-    secrets:
-    - ${ENV}_keycloak_db_password
-    - ${ENV}_keycloak_admin_password
-    deploy:
-      labels:
-      - traefik.enable=true
-      - traefik.http.routers.${ENV}-keycloak-secure.entrypoints=websecure
-      - traefik.http.routers.${ENV}-keycloak-secure.rule=Host(`${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/auth`)
-      - traefik.http.routers.${ENV}-keycloak-secure.tls=true
-      - traefik.http.routers.${ENV}-keycloak-secure.service=${ENV}-keycloak
-      - traefik.http.routers.${ENV}-keycloak-secure.middlewares=security-headers@file
-      - traefik.http.routers.${ENV}-keycloak.entrypoints=web
-      - traefik.http.routers.${ENV}-keycloak.rule=Host(`${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/auth`)
-      - traefik.http.routers.${ENV}-keycloak.middlewares=redirect-to-https@file
-      - traefik.http.services.${ENV}-keycloak.loadbalancer.server.port=8080
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 1G
-        reservations:
-          cpus: '0.15'
-          memory: 512M
-      restart_policy:
-        condition: any
-        delay: 5s
-        max_attempts: 0
-        window: 120s
-
-  # ==========================================
-  # UIFUSION - Main Portal
+  # UIFUSION - Main Portal (auth via uifusion-api hub-backend mode)
   # ==========================================
   uifusion:
     image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/uifusion/ui:${UIFUSION_VERSION:-2.1.0}
@@ -137,7 +74,6 @@ services:
     - traefik-public
     - ${ENV}-platform
     depends_on:
-    - keycloak
     - uifusion-api
     healthcheck:
       test:
@@ -176,11 +112,35 @@ services:
     image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/uifusion/api:${UIFUSION_API_VERSION:-2.1.0}
     environment:
     - CONFIG_PATH=/app/data/config.json
+    # Hub-backend mode (community): exposes /auth/jwks for downstream JWT
+    # validation by FlowMaker / DataCatalog / DataBridge / Grafana wrapper.
+    # EE deployments swap this for Logto via the EE overlay.
+    - IH_PUBLIC_PORT=3050
+    - IH_INTERNAL_PORT=3051
+    - IH_AUTH_METHOD=BASIC
+    - IH_USERNAME_FILE=/run/secrets/${ENV}_hub_backend_admin_user
+    - IH_PASSWORD_FILE=/run/secrets/${ENV}_hub_backend_admin_password
+    - IH_EMAIL=admin@${INDUSTREAM_DOMAIN:-localhost}
+    - IH_FIRSTNAME=Admin
+    - IH_LASTNAME=User
+    - IH_ROLE=admin
+    - IH_ACCOUNT_NAME=industream
+    - IH_ISSUER=${HUB_AUTH_ISSUER:-hub-backend}
+    - IH_AUDIENCE=${HUB_AUTH_AUDIENCE:-industream-hub}
+    - IH_ACCESS_TOKEN_TTL_SECONDS=900
+    - IH_REFRESH_TOKEN_TTL_SECONDS=2592000
+    - IH_BACKEND_ORIGIN=https://${INDUSTREAM_DOMAIN:-localhost}
+    - HUB_DATA_PATH=/app/data/hub
     volumes:
     - ./config/uifusion:/app/data
     networks:
-    - traefik-public
-    - ${ENV}-platform
+      traefik-public: {}
+      ${ENV}-platform:
+        aliases:
+        - industream-hub-backend
+    secrets:
+    - ${ENV}_hub_backend_admin_user
+    - ${ENV}_hub_backend_admin_password
     healthcheck:
       test:
       - CMD
@@ -188,11 +148,11 @@ services:
       - --no-verbose
       - --tries=1
       - --spider
-      - http://localhost:3001/health
+      - http://localhost:3050/auth/jwks
       interval: 30s
       timeout: 3s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     deploy:
       labels:
       - traefik.enable=true
@@ -205,7 +165,7 @@ services:
       - traefik.http.routers.${ENV}-uifusion-api.rule=Host(`${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/api/uifusion`)
       - traefik.http.routers.${ENV}-uifusion-api.middlewares=redirect-to-https@file
       - traefik.http.middlewares.${ENV}-uifusion-api-stripprefix.stripprefix.prefixes=/api/uifusion
-      - traefik.http.services.${ENV}-uifusion-api.loadbalancer.server.port=3001
+      - traefik.http.services.${ENV}-uifusion-api.loadbalancer.server.port=3050
       # Uploads route (no prefix strip - API handles /api/uploads directly)
       - traefik.http.routers.${ENV}-uifusion-uploads-secure.entrypoints=websecure
       - traefik.http.routers.${ENV}-uifusion-uploads-secure.rule=Host(`${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/api/uploads`)
@@ -310,10 +270,6 @@ volumes:
 secrets:
   ${ENV}_postgres_admin_password:
     external: true
-  ${ENV}_keycloak_admin_password:
-    external: true
-  ${ENV}_keycloak_db_password:
-    external: true
   ${ENV}_grafana_admin_password:
     external: true
   ${ENV}_grafana_db_password:
@@ -331,6 +287,10 @@ secrets:
   ${ENV}_databridge_pg_password:
     external: true
   ${ENV}_timescaledb_password:
+    external: true
+  ${ENV}_hub_backend_admin_user:
+    external: true
+  ${ENV}_hub_backend_admin_password:
     external: true
 
 # =============================================================================
