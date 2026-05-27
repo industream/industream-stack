@@ -8,6 +8,10 @@
 > stack; auth now goes through the hub-backend (uifusion-api in JWKS mode).
 > See README.md and the V2-AUTH-MIGRATION plan in industream-cli.
 
+> **SUPERSEDED (2026-05-27)** — Keycloak has been removed from the community
+> stack; auth now goes through the hub-backend (uifusion-api in JWKS mode).
+> See README.md and the V2-AUTH-MIGRATION plan in industream-cli.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an opt-in JWT authentication mode to the FlowMaker stack via a dedicated Docker overlay, so the platform can be deployed with the legacy 2.0.2 (no auth) or the upcoming 2.0.3-dev (JWT via UIFusion-as-hub-backend) without forking the base stack files.
