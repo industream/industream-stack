@@ -293,6 +293,18 @@ STACK_NAME="${SAVED_STACK_NAME}"
 export ENV
 export STACK_NAME
 
+# Inject hub-backend admin creds from secrets/ into env vars (uifusion-api
+# 2.1.0 does not support *_FILE suffix; we read the secret files here and
+# export IH_USERNAME/IH_PASSWORD via HUB_BACKEND_ADMIN_* for compose interp).
+HUB_USER_FILE="secrets/${ENV}/hub_backend_admin_user"
+HUB_PASS_FILE="secrets/${ENV}/hub_backend_admin_password"
+if [ -f "${HUB_USER_FILE}" ] && [ -f "${HUB_PASS_FILE}" ]; then
+    export HUB_BACKEND_ADMIN_USER
+    export HUB_BACKEND_ADMIN_PASSWORD
+    HUB_BACKEND_ADMIN_USER=$(cat "${HUB_USER_FILE}")
+    HUB_BACKEND_ADMIN_PASSWORD=$(cat "${HUB_PASS_FILE}")
+fi
+
 echo -e "${GREEN}✓ Environment: ENV=${ENV}${NC}"
 echo -e "${GREEN}✓ Domain: INDUSTREAM_DOMAIN=${INDUSTREAM_DOMAIN:-not set}${NC}"
 

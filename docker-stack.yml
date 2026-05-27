@@ -118,8 +118,12 @@ services:
     - IH_PUBLIC_PORT=3050
     - IH_INTERNAL_PORT=3051
     - IH_AUTH_METHOD=BASIC
-    - IH_USERNAME_FILE=/run/secrets/${ENV}_hub_backend_admin_user
-    - IH_PASSWORD_FILE=/run/secrets/${ENV}_hub_backend_admin_password
+    # NOTE: uifusion-api 2.1.0 does NOT support *_FILE suffix for these.
+    # The deploy-swarm.sh injects HUB_BACKEND_ADMIN_USER/PASSWORD by reading
+    # secrets/${ENV}/hub_backend_admin_{user,password} into .env before
+    # `docker stack deploy`. Long-term: PR upstream to honour *_FILE.
+    - IH_USERNAME=${HUB_BACKEND_ADMIN_USER:-admin}
+    - IH_PASSWORD=${HUB_BACKEND_ADMIN_PASSWORD:-admin}
     - IH_EMAIL=admin@${INDUSTREAM_DOMAIN:-localhost}
     - IH_FIRSTNAME=Admin
     - IH_LASTNAME=User
@@ -138,9 +142,8 @@ services:
       ${ENV}-platform:
         aliases:
         - industream-hub-backend
-    secrets:
-    - ${ENV}_hub_backend_admin_user
-    - ${ENV}_hub_backend_admin_password
+    # NOTE: secrets removed — uifusion-api doesn't read *_FILE env vars.
+    # IH_USERNAME/PASSWORD injected via .env (read from secrets/ at deploy time).
     healthcheck:
       test:
       - CMD
