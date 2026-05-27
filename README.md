@@ -222,26 +222,28 @@ This deploys the shared infrastructure (Traefik, DNS, socket-proxy).
 - **Configuration**: `traefik-dynamic.yml`
 
 #### PostgreSQL (Shared)
-- **Role**: Centralized database for Keycloak, Grafana, and DataCatalog
+- **Role**: Centralized database for Grafana, DataCatalog, and DataBridge
 - **Databases**:
-  - `keycloak` - Keycloak configuration
   - `industream` - Grafana configuration
   - `DataCatalog` - DataCatalog metadata
+  - `DataBridge` - DataBridge state
 - **Initialization**: `init-postgres.sh` (auto-creates databases and users)
 
-#### Keycloak
-- **Role**: Single Sign-On and Identity Management
-- **Path**: `/auth`
-- **Database**: `keycloak` (in shared PostgreSQL)
+#### Hub Backend (UIFusion-API)
+- **Role**: Identity Provider in JWT/JWKS mode for community deployments
+- **Path**: `/api/uifusion` (REST + `/auth/jwks` for downstream JWT validation)
+- **Network alias**: `industream-hub-backend` on port 3050
+- **EE override**: a separate overlay swaps this for Logto (see EE docs)
 
 ### Data & Analytics
 
 #### Grafana Dashboard
 - **Role**: Data visualization and dashboards
 - **Path**: `/dashboard`
+- **Image**: `grafana/grafana-oss` (vanilla upstream — no custom build)
 - **Database**: `industream` (in shared PostgreSQL)
 - **Features**:
-  - OAuth integration with Keycloak
+  - JWT auth via the Hub Backend (when grafana-hub-wrapper is enabled)
   - Image renderer for PDF exports
   - Custom Industream plugins
 
@@ -340,16 +342,17 @@ The platform uses layered configuration:
 DOCKER_REGISTRY=842775dh.c1.gra9.container-registry.ovh.net
 
 # Service versions
-UIFUSION_VERSION=1.0.8
-KEYCLOAK_VERSION=26.1.0
-POSTGRES_VERSION=17.2
-FLOWMAKER_CORE_VERSION=1.6.11-rc1
+UIFUSION_VERSION=2.1.0
+UIFUSION_API_VERSION=2.1.0
+POSTGRES_VERSION=18-alpine
+FLOWMAKER_CORE_VERSION=2.1.0
 
 # PostgreSQL
 POSTGRES_ADMIN_USER=postgres
 
-# Keycloak
-KEYCLOAK_ADMIN=admin
+# Hub Backend (JWT auth)
+HUB_AUTH_ISSUER=hub-backend
+HUB_AUTH_AUDIENCE=industream-hub
 
 # Grafana
 GRAFANA_ADMIN_USER=admin
@@ -383,8 +386,8 @@ docker secret ls
 
 # Secrets naming convention
 ${ENV}_postgres_admin_password
-${ENV}_keycloak_admin_password
-${ENV}_keycloak_db_password
+${ENV}_hub_backend_admin_user
+${ENV}_hub_backend_admin_password
 ${ENV}_grafana_admin_password
 ${ENV}_grafana_db_password
 ${ENV}_influx_admin_password
@@ -447,7 +450,7 @@ docker ps | grep postgres
 docker exec industream-prod_postgres.1.xxx pg_dumpall -U postgres > backup_$(date +%Y%m%d).sql
 
 # Backup specific database
-docker exec industream-prod_postgres.1.xxx pg_dump -U postgres keycloak > keycloak_backup_$(date +%Y%m%d).sql
+docker exec industream-prod_postgres.1.xxx pg_dump -U postgres industream > grafana_backup_$(date +%Y%m%d).sql
 ```
 
 #### Manual InfluxDB Backup
@@ -475,7 +478,7 @@ docker image prune
 ```bash
 # View service logs
 docker service logs industream-prod_postgres
-docker service logs industream-prod_keycloak -f
+docker service logs industream-prod_uifusion-api -f
 
 # View last 100 lines
 docker service logs --tail=100 industream-prod_uifusion
@@ -597,13 +600,13 @@ docker service logs traefik-shared_traefik 2>&1 | grep -i tls
 **Solution**:
 ```bash
 # Check service status and errors
-docker service ps industream-prod_keycloak --no-trunc
+docker service ps industream-prod_uifusion-api --no-trunc
 
 # Check service logs
-docker service logs industream-prod_keycloak
+docker service logs industream-prod_uifusion-api
 
 # Force update the service
-docker service update --force industream-prod_keycloak
+docker service update --force industream-prod_uifusion-api
 ```
 
 ### Health Checks

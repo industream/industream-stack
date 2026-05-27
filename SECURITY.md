@@ -53,7 +53,7 @@ The `.env` file manages the following credentials:
 - `DATACATALOG_DB_PASSWORD` - DataCatalog database password
 
 ### Keycloak
-- `KEYCLOAK_ADMIN_PASSWORD` - Keycloak admin console password
+- `HUB_BACKEND_ADMIN_PASSWORD` - Keycloak admin console password
 - `KC_DB_PASSWORD` - Keycloak database password
 
 ### Grafana
@@ -98,7 +98,7 @@ vim .env
 docker-compose exec postgres psql -U postgres -c "ALTER USER postgres PASSWORD '$NEW_PASSWORD';"
 
 # For Keycloak:
-docker-compose restart keycloak
+docker-compose restart uifusion-api
 
 # For Grafana:
 docker-compose restart grafana
@@ -158,7 +158,7 @@ Before going to production, verify:
 |----------|-------------|---------|
 | `INDUSTREAM_DOMAIN` | Main domain | `industream.platform.lan` |
 | `POSTGRES_ADMIN_PASSWORD` | PostgreSQL superuser password | `(random)` |
-| `KEYCLOAK_ADMIN_PASSWORD` | Keycloak admin password | `(random)` |
+| `HUB_BACKEND_ADMIN_PASSWORD` | Keycloak admin password | `(random)` |
 | `KC_DB_PASSWORD` | Keycloak DB password | `(random)` |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana admin password | `(random)` |
 | `GRAFANA_DB_PASSWORD` | Grafana DB password | `(random)` |

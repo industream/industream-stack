@@ -48,8 +48,8 @@ The Industream stack uses Docker Secrets for sensitive data management. This app
 | Secret Name | Used By | Description |
 |-------------|---------|-------------|
 | `postgres_admin_password` | postgres, postgres-exporter, backup-postgres | PostgreSQL admin password |
-| `keycloak_admin_password` | keycloak | Keycloak admin console password |
-| `keycloak_db_password` | keycloak, postgres | Keycloak database password |
+| `hub_backend_admin_password` | keycloak | Keycloak admin console password |
+| `hub_backend_admin_user` | keycloak, postgres | Keycloak database password |
 | `grafana_admin_password` | grafana | Grafana admin password |
 | `grafana_db_password` | grafana, postgres | Grafana database password |
 | `datacatalog_db_password` | datacatalog-api, postgres | DataCatalog database password |
@@ -86,7 +86,7 @@ echo -n "your-secure-password" | docker secret create postgres_admin_password -
 
 # Create from file
 echo -n "your-secure-password" > /tmp/secret.txt
-docker secret create keycloak_admin_password /tmp/secret.txt
+docker secret create hub_backend_admin_password /tmp/secret.txt
 rm /tmp/secret.txt
 
 # List existing secrets
@@ -148,7 +148,7 @@ docker secret rm postgres_admin_password
 ```bash
 # 1. Create new admin password secret
 NEW_PASS=$(openssl rand -base64 32)
-echo -n "$NEW_PASS" | docker secret create keycloak_admin_password_v2 -
+echo -n "$NEW_PASS" | docker secret create hub_backend_admin_password_v2 -
 
 # 2. Update Keycloak via Admin API (before changing secret)
 # Login to Keycloak admin console and change password manually
@@ -158,7 +158,7 @@ echo -n "$NEW_PASS" | docker secret create keycloak_admin_password_v2 -
 docker stack deploy -c docker-stack-resolved.yml industream
 
 # 4. Remove old secret
-docker secret rm keycloak_admin_password
+docker secret rm hub_backend_admin_password
 ```
 
 ### InfluxDB Token Rotation
@@ -254,8 +254,8 @@ A helper script is provided at `scripts/create-secrets.sh`:
 
 SECRETS=(
   "postgres_admin_password"
-  "keycloak_admin_password"
-  "keycloak_db_password"
+  "hub_backend_admin_password"
+  "hub_backend_admin_user"
   "grafana_admin_password"
   "grafana_db_password"
   "datacatalog_db_password"

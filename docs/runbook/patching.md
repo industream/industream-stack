@@ -86,7 +86,7 @@ docker compose \
   config | less
 
 # Or, on the live service
-docker service inspect industream-prod_keycloak --pretty | grep -i KC_LOG_LEVEL
+docker service inspect industream-prod_uifusion-api --pretty | grep -i KC_LOG_LEVEL
 ```
 
 ### 4. Skipping custom files (debug)
