@@ -28,6 +28,11 @@
 #   --include-dev        Include dev / pre-release tags
 #                          (latest, *-dev*, *-alpha*, *-beta*, *-rc*).
 #                          Default: skip.
+#   --keep-latest <N>    Per module, keep only the N most recent stable
+#                          semver tags (X.Y.Z). The `official` tag is
+#                          always kept when present. All other non-semver
+#                          tags (dev, *-secure, etc.) are dropped.
+#                          Default: keep all stable tags.
 #   --modules-json <p>   Path to modules.json (override).
 #   -h, --help           Show help.
 #
@@ -73,10 +78,11 @@ DEFAULT_MODULES_JSON="${REPO_ROOT}/industream-cli/modules.json"
 DRY_RUN=false
 INCLUDE_DEV=false
 REPO_FILTER=""
+KEEP_LATEST=""
 MODULES_JSON="${DEFAULT_MODULES_JSON}"
 
 print_help() {
-  sed -n '2,60p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,65p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -84,11 +90,17 @@ while [[ $# -gt 0 ]]; do
     --dry-run)       DRY_RUN=true; shift ;;
     --include-dev)   INCLUDE_DEV=true; shift ;;
     --repo)          REPO_FILTER="${2:-}"; shift 2 ;;
+    --keep-latest)   KEEP_LATEST="${2:-}"; shift 2 ;;
     --modules-json)  MODULES_JSON="${2:-}"; shift 2 ;;
     -h|--help)       print_help; exit 0 ;;
     *)               echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+if [[ -n "${KEEP_LATEST}" ]] && ! [[ "${KEEP_LATEST}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "${RED}--keep-latest must be a positive integer (got: ${KEEP_LATEST})${NC}" >&2
+  exit 2
+fi
 
 # --- Pre-flight ---------------------------------------------------------------
 command -v crane >/dev/null || {
@@ -126,6 +138,40 @@ is_dev_tag() {
   esac
 }
 
+is_stable_semver() {
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+# select_tags: read raw tags on stdin, emit the filtered list on stdout.
+#   - drops dev/pre-release unless INCLUDE_DEV=true
+#   - if KEEP_LATEST is set, keeps only top N stable semver tags
+#     (plus `official` if present)
+#   - otherwise emits all non-dev tags unchanged
+select_tags() {
+  local raw stable other
+  raw="$(cat)"
+
+  if [[ -z "${KEEP_LATEST}" ]]; then
+    if [[ "${INCLUDE_DEV}" == "true" ]]; then
+      printf '%s\n' "${raw}"
+    else
+      while IFS= read -r t; do
+        [[ -z "$t" ]] && continue
+        is_dev_tag "$t" || printf '%s\n' "$t"
+      done <<< "${raw}"
+    fi
+    return 0
+  fi
+
+  # --keep-latest mode: emit top N stable semver + `official` (if present)
+  stable="$(printf '%s\n' "${raw}" \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -V -r \
+    | head -n "${KEEP_LATEST}" || true)"
+  other="$(printf '%s\n' "${raw}" | grep -E '^official$' || true)"
+  printf '%s\n%s\n' "${stable}" "${other}" | grep -v '^$' | sort -u
+}
+
 # --- Banner -------------------------------------------------------------------
 echo "${BLUE}==================================================${NC}"
 echo "${BLUE}  Industream bulk promotion${NC}"
@@ -136,6 +182,7 @@ echo "Prop -> Harbor : ${ENTERPRISE_REGISTRY}/<path>"
 echo "modules.json   : ${MODULES_JSON}"
 echo "Mode           : $([[ ${DRY_RUN} == true ]] && echo 'DRY-RUN' || echo 'LIVE')"
 echo "Include dev    : ${INCLUDE_DEV}"
+echo "Keep latest    : ${KEEP_LATEST:-all stable}"
 [[ -n "${REPO_FILTER}" ]] && echo "Filter         : ${REPO_FILTER}"
 echo ""
 
@@ -272,20 +319,16 @@ for task in "${TASKS[@]}"; do
 
   echo "${BLUE}>>> ${src_path} (${license}) -> ${dest_kind}${NC}"
 
-  if ! tags=$(crane ls "${src_repo}" 2>/dev/null); then
+  if ! raw_tags=$(crane ls "${src_repo}" 2>/dev/null); then
     echo "  ${YELLOW}SKIP${NC} cannot list tags on source (repo missing?)"
     continue
   fi
 
+  selected=$(printf '%s\n' "${raw_tags}" | select_tags)
+
   while IFS= read -r tag; do
     [[ -z "${tag}" ]] && continue
     TOTAL_TAGS=$((TOTAL_TAGS + 1))
-
-    if [[ "${INCLUDE_DEV}" != "true" ]] && is_dev_tag "${tag}"; then
-      echo "  SKIP ${tag} (dev/pre-release; pass --include-dev to mirror)"
-      SKIPPED=$((SKIPPED + 1))
-      continue
-    fi
 
     src_ref="${src_repo}:${tag}"
     dst_ref="${dst_repo}:${tag}"
@@ -302,7 +345,7 @@ for task in "${TASKS[@]}"; do
       FAILED=$((FAILED + 1))
       FAILURES+=("${src_path}:${tag} -> ${dest_kind}")
     fi
-  done <<< "${tags}"
+  done <<< "${selected}"
 done
 
 # --- Summary ------------------------------------------------------------------
