@@ -198,12 +198,12 @@ Then redeploy:
 
 Edit `.env` file:
 ```bash
-KEYCLOAK_ADMIN_PASSWORD=your-secure-password
+HUB_BACKEND_ADMIN_PASSWORD=your-secure-password
 ```
 
 Then restart:
 ```bash
-docker-compose restart keycloak
+docker-compose restart uifusion-api
 ```
 
 ### Add users in Keycloak
@@ -342,7 +342,7 @@ docker-compose down -v
 For production deployments:
 
 1. **Change default passwords** in `.env`:
-   - `KEYCLOAK_ADMIN_PASSWORD`
+   - `HUB_BACKEND_ADMIN_PASSWORD`
    - `KC_DB_PASSWORD`
 
 2. **Use Let's Encrypt** for SSL certificates:

@@ -24,6 +24,12 @@ def fix_for_swarm(data, is_network_config=False):
         if not is_network_config:
             data.pop('name', None)
 
+        # Strip `profiles:` from every service. `docker compose config` keeps it
+        # in the resolved output even after filtering, but `docker stack deploy`
+        # rejects it ("Additional property profiles is not allowed"). Profiles
+        # are only used here to gate which services Compose includes pre-merge.
+        data.pop('profiles', None)
+
         # Fix networks at top level
         if 'networks' in data and isinstance(data.get('services'), dict):
             # This is the top-level, fix networks

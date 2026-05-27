@@ -12,15 +12,21 @@ services:
   # INFLUXDB
   # ==========================================
   influxdb:
-    image: influxdb:${INFLUXDB_VERSION:-2.7.12}
+    image: influxdb:${INFLUXDB_VERSION:-2.9.1}
     entrypoint: ["/bin/sh", "/scripts/influxdb-entrypoint.sh"]
     command: ["influxd"]
     environment:
     - DOCKER_INFLUXDB_INIT_MODE=setup
     - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUX_ADMIN_USERNAME:-admin}
     - DOCKER_INFLUXDB_INIT_ORG=${INFLUX_ORG:-industream}
-    - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUX_BUCKET:-test}
+    - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUX_BUCKET:-industream}
     - INFLUXD_REPORTING_DISABLED=true
+    # InfluxDB 2.8+ feature: store API tokens as hashes on disk instead of
+    # cleartext. The Docker secret keeps the cleartext token (clients send it
+    # over HTTPS, server hash-and-compares). MUST be set before the initial
+    # setup runs — once active on an instance it is NOT reversible without
+    # wiping the data volume. Safe for fresh deployments.
+    - INFLUXD_USE_HASHED_TOKENS=true
     volumes:
     - ${ENV}-influxdb-data:/var/lib/influxdb2
     - ${ENV}-influxdb-config:/etc/influxdb2
@@ -46,7 +52,7 @@ services:
       - traefik.http.routers.${ENV}-influxdb-secure.rule=Host(`influxdb.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-influxdb-secure.tls=true
       - traefik.http.routers.${ENV}-influxdb-secure.service=${ENV}-influxdb
-      - traefik.http.routers.${ENV}-influxdb-secure.middlewares=security-headers@file
+      - traefik.http.routers.${ENV}-influxdb-secure.middlewares=allow-iframe@file
       - traefik.http.services.${ENV}-influxdb.loadbalancer.server.port=8086
       resources:
         limits:
@@ -65,7 +71,7 @@ services:
   # DATABRIDGE API
   # ==========================================
   databridge:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/timeseries/api:${DATABRIDGE_API_VERSION:-1.0.0-alpha.4}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/timeseries/api:${DATABRIDGE_API_VERSION:-2.3.0-dev}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
@@ -82,7 +88,8 @@ services:
     depends_on:
     - influxdb
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      # /health endpoint was removed in DataBridge 2.x — fall back to TCP probe.
+      test: ["CMD-SHELL", "wget --spider -qS http://localhost:8080/swagger 2>&1 | grep -qE 'HTTP/1.. (200|301|302)' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -94,7 +101,7 @@ services:
       - traefik.http.routers.${ENV}-databridge-secure.rule=Host(`databridge.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge-secure.tls=true
       - traefik.http.routers.${ENV}-databridge-secure.service=${ENV}-databridge
-      - traefik.http.routers.${ENV}-databridge-secure.middlewares=security-headers@file
+      - traefik.http.routers.${ENV}-databridge-secure.middlewares=allow-iframe@file
       - traefik.http.routers.${ENV}-databridge.entrypoints=web
       - traefik.http.routers.${ENV}-databridge.rule=Host(`databridge.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge.middlewares=redirect-to-https@file
@@ -117,7 +124,7 @@ services:
   # DATACATALOG API
   # ==========================================
   datacatalog-api:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/datacatalog/api:${DATACATALOG_API_VERSION:-1.0.0}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/datacatalog/api:${DATACATALOG_API_VERSION:-1.0.0}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataCatalog.Api.dll"]
     environment:
@@ -148,7 +155,7 @@ services:
       - traefik.http.routers.${ENV}-datacatalog-api-secure.rule=Host(`datacatalog.${INDUSTREAM_DOMAIN:-localhost}`) || Host(`datacatalog-api.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-datacatalog-api-secure.tls=true
       - traefik.http.routers.${ENV}-datacatalog-api-secure.service=${ENV}-datacatalog-api
-      - traefik.http.routers.${ENV}-datacatalog-api-secure.middlewares=security-headers@file
+      - traefik.http.routers.${ENV}-datacatalog-api-secure.middlewares=allow-iframe@file
       - traefik.http.routers.${ENV}-datacatalog-api.entrypoints=web
       - traefik.http.routers.${ENV}-datacatalog-api.rule=Host(`datacatalog.${INDUSTREAM_DOMAIN:-localhost}`) || Host(`datacatalog-api.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-datacatalog-api.middlewares=redirect-to-https@file
@@ -158,7 +165,7 @@ services:
       - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.rule=Host(`datacatalog-ui.${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/api/`)
       - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.tls=true
       - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.service=${ENV}-datacatalog-api
-      - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.middlewares=${ENV}-datacatalog-api-strip-api,security-headers@file
+      - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.middlewares=${ENV}-datacatalog-api-strip-api,allow-iframe@file
       - traefik.http.middlewares.${ENV}-datacatalog-api-strip-api.stripprefix.prefixes=/api
       resources:
         limits:
@@ -219,7 +226,7 @@ services:
   # DATABRIDGE API - POSTGRESQL
   # ==========================================
   databridge-postgresql:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/timeseries/api:${DATABRIDGE_API_VERSION:-1.0.0-alpha.4}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/timeseries/api:${DATABRIDGE_API_VERSION:-2.3.0-dev}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
@@ -235,7 +242,8 @@ services:
     secrets:
     - ${ENV}_databridge_pg_password
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      # /health endpoint was removed in DataBridge 2.x — fall back to TCP probe.
+      test: ["CMD-SHELL", "wget --spider -qS http://localhost:8080/swagger 2>&1 | grep -qE 'HTTP/1.. (200|301|302)' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -247,7 +255,7 @@ services:
       - traefik.http.routers.${ENV}-databridge-pg-secure.rule=Host(`databridge-pg.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge-pg-secure.tls=true
       - traefik.http.routers.${ENV}-databridge-pg-secure.service=${ENV}-databridge-pg
-      - traefik.http.routers.${ENV}-databridge-pg-secure.middlewares=security-headers@file
+      - traefik.http.routers.${ENV}-databridge-pg-secure.middlewares=allow-iframe@file
       - traefik.http.routers.${ENV}-databridge-pg.entrypoints=web
       - traefik.http.routers.${ENV}-databridge-pg.rule=Host(`databridge-pg.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge-pg.middlewares=redirect-to-https@file
@@ -269,7 +277,7 @@ services:
   # DATABRIDGE API - TIMESCALEDB
   # ==========================================
   databridge-timescaledb:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/timeseries/api:${DATABRIDGE_API_VERSION:-1.0.0-alpha.4}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/timeseries/api:${DATABRIDGE_API_VERSION:-2.3.0-dev}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
@@ -285,7 +293,8 @@ services:
     secrets:
     - ${ENV}_timescaledb_password
     healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      # /health endpoint was removed in DataBridge 2.x — fall back to TCP probe.
+      test: ["CMD-SHELL", "wget --spider -qS http://localhost:8080/swagger 2>&1 | grep -qE 'HTTP/1.. (200|301|302)' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -297,7 +306,7 @@ services:
       - traefik.http.routers.${ENV}-databridge-tsdb-secure.rule=Host(`databridge-tsdb.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge-tsdb-secure.tls=true
       - traefik.http.routers.${ENV}-databridge-tsdb-secure.service=${ENV}-databridge-tsdb
-      - traefik.http.routers.${ENV}-databridge-tsdb-secure.middlewares=security-headers@file
+      - traefik.http.routers.${ENV}-databridge-tsdb-secure.middlewares=allow-iframe@file
       - traefik.http.routers.${ENV}-databridge-tsdb.entrypoints=web
       - traefik.http.routers.${ENV}-databridge-tsdb.rule=Host(`databridge-tsdb.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-databridge-tsdb.middlewares=redirect-to-https@file
@@ -319,7 +328,7 @@ services:
   # DATACATALOG UI
   # ==========================================
   datacatalog-ui:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/datacatalog/ui:${DATACATALOG_UI_VERSION:-1.0.0}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/datacatalog/ui:${DATACATALOG_UI_VERSION:-1.0.0}
     environment:
     - NODE_ENV=production
     - DATACATALOG_API_URL=${DATACATALOG_API_URL:-https://datacatalog.${INDUSTREAM_DOMAIN:-localhost}}
@@ -343,7 +352,8 @@ services:
       - traefik.http.routers.${ENV}-datacatalog-ui-secure.rule=Host(`datacatalog-ui.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-datacatalog-ui-secure.tls=true
       - traefik.http.routers.${ENV}-datacatalog-ui-secure.service=${ENV}-datacatalog-ui
-      - traefik.http.routers.${ENV}-datacatalog-ui-secure.middlewares=security-headers@file
+      # Embedded in UIFusion iframe (cross-subdomain): use allow-iframe@file.
+      - traefik.http.routers.${ENV}-datacatalog-ui-secure.middlewares=allow-iframe@file
       - traefik.http.routers.${ENV}-datacatalog-ui.entrypoints=web
       - traefik.http.routers.${ENV}-datacatalog-ui.rule=Host(`datacatalog-ui.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-datacatalog-ui.middlewares=redirect-to-https@file

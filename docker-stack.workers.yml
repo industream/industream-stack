@@ -10,7 +10,7 @@ services:
   # CORE WORKERS
   # ==========================================
   worker-data-logger:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-data-logger:${WORKER_DATA_LOGGER_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-data-logger:${WORKER_DATA_LOGGER_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-data-logger001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -40,7 +40,7 @@ services:
         window: 120s
 
   worker-timer:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-timer:${WORKER_TIMER_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-timer:${WORKER_TIMER_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-timer001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -70,7 +70,7 @@ services:
         window: 120s
 
   worker-js-expression:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-js-expression:${WORKER_JS_EXPRESSION_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-js-expression:${WORKER_JS_EXPRESSION_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-js-expression001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -101,7 +101,7 @@ services:
         window: 120s
 
   worker-http-client:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-http:${WORKER_HTTP_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-http:${WORKER_HTTP_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-http-client001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -131,7 +131,7 @@ services:
         window: 120s
 
   worker-postgres-client:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-postgres-client:${WORKER_POSTGRES_CLIENT_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-postgres-client:${WORKER_POSTGRES_CLIENT_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-postgres-client001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -161,7 +161,7 @@ services:
         window: 120s
 
   worker-timeseries:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-timeseries-workers:${WORKER_TIMESERIES_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-timeseries-workers:${WORKER_TIMESERIES_VERSION:-2.1.0-dev}
     environment:
     - FM_WORKER_ID=worker-timeseries001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -191,7 +191,7 @@ services:
         window: 120s
 
   worker-influx-client-dc:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-influx-client:${WORKER_INFLUX_CLIENT_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-influx-client:${WORKER_INFLUX_CLIENT_VERSION:-2.0.8}
     environment:
     - FM_WORKER_ID=worker-influx-client-dc001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -221,7 +221,7 @@ services:
         window: 120s
 
   worker-notifications:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-notification:${WORKER_NOTIFICATIONS_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-notification:${WORKER_NOTIFICATIONS_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-notifications001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -254,7 +254,7 @@ services:
   # INDUSTRIAL PROTOCOL WORKERS
   # ==========================================
   worker-mqtt-client:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-mqtt-client:${WORKER_MQTT_CLIENT_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-mqtt-client:${WORKER_MQTT_CLIENT_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-mqtt-client001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -284,7 +284,7 @@ services:
         window: 120s
 
   worker-modbus-tcp:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-modbus-tcp:${WORKER_MODBUS_TCP_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-modbus-tcp:${WORKER_MODBUS_TCP_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-modbus-tcp001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -314,7 +314,7 @@ services:
         window: 120s
 
   worker-test-data-generator:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-test-data-generator:${WORKER_TEST_DATA_GENERATOR_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-test-data-generator:${WORKER_TEST_DATA_GENERATOR_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-test-data-generator001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -344,7 +344,7 @@ services:
         window: 120s
 
   worker-conditional-validator:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-conditional-dataset-validator:${WORKER_CONDITIONAL_DATASET_VALIDATOR_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-conditional-dataset-validator:${WORKER_CONDITIONAL_DATASET_VALIDATOR_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-conditional-validator001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -374,7 +374,7 @@ services:
         window: 120s
 
   worker-enqueue:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-enqueue:${WORKER_ENQUEUE_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-enqueue:${WORKER_ENQUEUE_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-js-enqueue001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -403,7 +403,7 @@ services:
         window: 120s
 
   equation-solver:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-equation-solver:${WORKER_EQUATION_SOLVER_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-equation-solver:${WORKER_EQUATION_SOLVER_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-eqsolver001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -435,7 +435,7 @@ services:
   # WORKER MANAGER
   # ==========================================
   worker-manager:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.infra/flowmaker-worker-manager:latest
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.infra/flowmaker-worker-manager:${WORKER_MANAGER_VERSION:-1.0.0}
     environment:
       - NODE_ENV=production
       - DATA_DIR=/data
@@ -443,9 +443,9 @@ services:
       - DOCKER_NETWORK=${STACK_NAME:-industream-${ENV}}_${ENV}-platform
       - SCHEDULER_SERVICE=${STACK_NAME:-industream-${ENV}}_flowmaker-scheduler
       - LOGGING_SERVICE=${STACK_NAME:-industream-${ENV}}_flowmaker-logging
-      - KEYCLOAK_URL=https://${INDUSTREAM_DOMAIN:-localhost}/auth
-      - KEYCLOAK_REALM=industream
-      - KEYCLOAK_CLIENT_ID=worker-manager
+      - HUB_BACKEND_URL=http://industream-hub-backend:3050
+      - HUB_AUTH_ISSUER=${HUB_AUTH_ISSUER:-hub-backend}
+      - HUB_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE:-industream-hub}
     volumes:
       # Mount the docker socket read-only. Worker-manager only inspects
       # container/service state to report worker status. Any container
@@ -473,7 +473,7 @@ services:
         - traefik.http.routers.${ENV}-worker-manager-secure.rule=Host(`workers.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-worker-manager-secure.tls=true
         - traefik.http.routers.${ENV}-worker-manager-secure.service=${ENV}-worker-manager
-        - traefik.http.routers.${ENV}-worker-manager-secure.middlewares=traefik-auth@file,rate-limit@file,security-headers@file
+        - traefik.http.routers.${ENV}-worker-manager-secure.middlewares=traefik-auth@file,rate-limit@file,allow-iframe@file
         - traefik.http.routers.${ENV}-worker-manager.entrypoints=web
         - traefik.http.routers.${ENV}-worker-manager.rule=Host(`workers.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-worker-manager.middlewares=redirect-to-https@file
@@ -497,7 +497,7 @@ services:
   # NEW WORKERS (from release-tracker 2026-02-17)
   # ==========================================
   worker-datacatalog-mapper:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-datacatalog-mapper:${WORKER_DATACATALOG_MAPPER_VERSION:-1.0.2}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-datacatalog-mapper:${WORKER_DATACATALOG_MAPPER_VERSION:-1.0.2}
     environment:
     - FM_WORKER_ID=worker-datacatalog-mapper001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -527,7 +527,7 @@ services:
         window: 120s
 
   worker-minio-sink:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-minio-sink:${WORKER_MINIO_SINK_VERSION:-1.0.0}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-minio-sink:${WORKER_MINIO_SINK_VERSION:-1.0.0}
     environment:
     - FM_WORKER_ID=worker-minio-sink001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120

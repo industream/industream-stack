@@ -43,6 +43,7 @@ EXCLUDE_SERVICES=""
 COMMUNITY_MODE=false
 SKIP_MEMORY_CHECK=false
 SHOW_CREDENTIALS=false
+NO_CUSTOM=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env)
@@ -64,6 +65,10 @@ while [[ $# -gt 0 ]]; do
         --exclude)
             EXCLUDE_SERVICES="$2"
             shift 2
+            ;;
+        --no-custom)
+            NO_CUSTOM=true
+            shift
             ;;
         --community)
             COMMUNITY_MODE=true
@@ -89,6 +94,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --cleanup-legacy       Remove legacy worker services (after flow migration)"
             echo "  --skip-memory-check    Skip system memory validation"
             echo "  --show-credentials     Print admin credentials to stdout (default: path only)"
+            echo "  --no-custom            Skip auto-discovery of custom stack files (debug)"
             echo "  --help, -h             Show this help message"
             echo ""
             echo "Prerequisites:"
@@ -276,7 +282,7 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 if [ "$COMMUNITY_MODE" = "true" ]; then
-    echo -e "${GREEN}✓ Community mode enabled — using public flowmaker.community project${NC}"
+    echo -e "${GREEN}✓ Community mode enabled — using COMMUNITY_REGISTRY=${COMMUNITY_REGISTRY:-ghcr.io/industream}${NC}"
 fi
 
 # Ensure ENV and STACK_NAME are from command line
@@ -286,6 +292,18 @@ STACK_NAME="${SAVED_STACK_NAME}"
 # Export ENV for variable substitution in YAML files
 export ENV
 export STACK_NAME
+
+# Inject hub-backend admin creds from secrets/ into env vars (uifusion-api
+# 2.1.0 does not support *_FILE suffix; we read the secret files here and
+# export IH_USERNAME/IH_PASSWORD via HUB_BACKEND_ADMIN_* for compose interp).
+HUB_USER_FILE="secrets/${ENV}/hub_backend_admin_user"
+HUB_PASS_FILE="secrets/${ENV}/hub_backend_admin_password"
+if [ -f "${HUB_USER_FILE}" ] && [ -f "${HUB_PASS_FILE}" ]; then
+    export HUB_BACKEND_ADMIN_USER
+    export HUB_BACKEND_ADMIN_PASSWORD
+    HUB_BACKEND_ADMIN_USER=$(cat "${HUB_USER_FILE}")
+    HUB_BACKEND_ADMIN_PASSWORD=$(cat "${HUB_PASS_FILE}")
+fi
 
 echo -e "${GREEN}✓ Environment: ENV=${ENV}${NC}"
 echo -e "${GREEN}✓ Domain: INDUSTREAM_DOMAIN=${INDUSTREAM_DOMAIN:-not set}${NC}"
@@ -298,13 +316,13 @@ echo -e "${BLUE}Checking Docker secrets for ${ENV} environment...${NC}"
 
 REQUIRED_SECRETS=(
     "${ENV}_postgres_admin_password"
-    "${ENV}_keycloak_admin_password"
-    "${ENV}_keycloak_db_password"
     "${ENV}_grafana_admin_password"
     "${ENV}_grafana_db_password"
     "${ENV}_datacatalog_db_password"
     "${ENV}_influx_admin_password"
     "${ENV}_influx_admin_token"
+    "${ENV}_hub_backend_admin_user"
+    "${ENV}_hub_backend_admin_password"
 )
 
 MISSING_SECRETS=0
@@ -322,6 +340,30 @@ if [ $MISSING_SECRETS -gt 0 ]; then
     echo -e "${RED}✗ $MISSING_SECRETS secret(s) missing!${NC}"
     echo "Create them with: ./scripts/setup/create-secrets.sh --env $ENV"
     exit 1
+fi
+
+# =============================================================================
+# Postgres major-version pre-flight
+# =============================================================================
+# Detects PG_VERSION inside the existing ${ENV}-postgres-data volume and
+# refuses to deploy if a major-version migration is needed (e.g. PG17 → PG18).
+# Skipped for fresh installs (no volume yet). Bypassable via env var.
+if [ "${SKIP_PG_MIGRATION:-false}" != "true" ] && [ -x "${SCRIPT_DIR}/setup/migrate-postgres.sh" ]; then
+    echo ""
+    echo -e "${BLUE}Checking PostgreSQL major version vs target...${NC}"
+    set +e
+    "${SCRIPT_DIR}/setup/migrate-postgres.sh" --env "$ENV" --check-only
+    PG_CHECK=$?
+    set -e
+    if [ $PG_CHECK -eq 2 ]; then
+        echo -e "${YELLOW}A major-version migration is required.${NC}"
+        echo "Run: ./scripts/setup/migrate-postgres.sh --env $ENV"
+        echo "Or bypass with: SKIP_PG_MIGRATION=true ./scripts/deploy-swarm.sh --env $ENV"
+        exit 1
+    elif [ $PG_CHECK -ne 0 ]; then
+        echo -e "${RED}Postgres pre-flight failed (exit $PG_CHECK).${NC}"
+        exit 1
+    fi
 fi
 
 # =============================================================================
@@ -453,30 +495,6 @@ print(json.dumps(cfg, indent=2))
 fi
 
 # =============================================================================
-# Generate UIFusion configuration
-# =============================================================================
-echo ""
-echo -e "${BLUE}Generating UIFusion configuration...${NC}"
-if [ -f "scripts/generate/generate-uifusion-config.sh" ]; then
-    UIFUSION_ARGS="--env $ENV"
-    [ "$DEPLOY_IRONSTREAM" = "true" ] && UIFUSION_ARGS="$UIFUSION_ARGS --with-ironstream"
-    bash scripts/generate/generate-uifusion-config.sh $UIFUSION_ARGS
-else
-    echo -e "${YELLOW}⚠ UIFusion config generator not found, skipping${NC}"
-fi
-
-# =============================================================================
-# Generate CloudBeaver configuration
-# =============================================================================
-echo ""
-echo -e "${BLUE}Generating CloudBeaver configuration...${NC}"
-if [ -f "scripts/generate/generate-cloudbeaver-config.sh" ]; then
-    bash scripts/generate/generate-cloudbeaver-config.sh
-else
-    echo -e "${YELLOW}⚠ CloudBeaver config generator not found, skipping${NC}"
-fi
-
-# =============================================================================
 # Generate legacy worker services (multi-version support)
 # =============================================================================
 echo ""
@@ -497,7 +515,15 @@ fi
 echo ""
 echo -e "${BLUE}Resolving docker-compose variables...${NC}"
 
-# Define stack files based on environment
+# Define stack files based on environment.
+#
+# Custom stack files (client overrides / extensions) are auto-discovered later
+# in this block, after the conditional stacks. Two conventions are supported:
+#   1. Files matching `docker-stack.custom*.yml` at the repo root (alphabetical).
+#   2. Any `*.yml` / `*.yaml` file inside a `custom/` directory (alphabetical).
+# Each discovered file is validated with `docker compose -f <file> config -q`
+# before the deployment proceeds. See `custom/README.md` for usage details.
+# The auto-discovery can be disabled at runtime with `--no-custom`.
 STACK_FILES=(
     "docker-stack.yml"
     "docker-stack.flowmaker.yml"
@@ -548,6 +574,65 @@ if [ "$DEPLOY_IRONSTREAM" = "true" ]; then
     fi
 fi
 
+# =============================================================================
+# Auto-discover custom stack files (client overrides / extensions)
+# =============================================================================
+# Convention 1: `docker-stack.custom*.yml` at the repo root.
+# Convention 2: `*.yml` / `*.yaml` inside the `custom/` directory.
+# Each discovered file is validated with `docker compose config -q` and any
+# failure aborts the deployment. Disable with `--no-custom`.
+if [ "$NO_CUSTOM" = "true" ]; then
+    echo -e "${YELLOW}  Skipping custom stack auto-discovery (--no-custom)${NC}"
+else
+    CUSTOM_CANDIDATES=()
+
+    # Convention 1: root-level docker-stack.custom*.yml (alphabetical, glob).
+    # `shopt -s nullglob` ensures the loop is silent when no file matches.
+    shopt -s nullglob
+    for f in docker-stack.custom*.yml; do
+        CUSTOM_CANDIDATES+=("$f")
+    done
+    shopt -u nullglob
+
+    # Convention 2: any .yml / .yaml inside custom/ (alphabetical, recursive=no).
+    if [ -d "custom" ]; then
+        shopt -s nullglob
+        for f in custom/*.yml custom/*.yaml; do
+            CUSTOM_CANDIDATES+=("$f")
+        done
+        shopt -u nullglob
+    fi
+
+    # Sort alphabetically for deterministic ordering across machines.
+    if [ ${#CUSTOM_CANDIDATES[@]} -gt 0 ]; then
+        IFS=$'\n' CUSTOM_CANDIDATES=($(sort <<< "${CUSTOM_CANDIDATES[*]}"))
+        unset IFS
+
+        for custom_file in "${CUSTOM_CANDIDATES[@]}"; do
+            # Lightweight YAML-only sanity check. We can't run a full
+            # `docker compose config -q` here because:
+            #   1) Stack files use `${ENV}-volume-name` for top-level volume
+            #      keys; Compose does not expand variables in mapping keys
+            #      until envsubst has run (later in this script).
+            #   2) Override-only files (no image:/build:) fail standalone
+            #      Compose validation, but they're valid as part of a merge.
+            # The actual `docker compose config` after envsubst (line ~640)
+            # is the real validator; a syntax error there aborts the deploy.
+            if command -v python3 &>/dev/null; then
+                if ! VALIDATION_OUTPUT=$(python3 -c "import yaml,sys; yaml.safe_load(open('$custom_file'))" 2>&1); then
+                    echo ""
+                    echo -e "${RED}\u2717 Invalid YAML in custom stack file: ${custom_file}${NC}"
+                    echo -e "${RED}${VALIDATION_OUTPUT}${NC}"
+                    echo -e "${RED}Deployment aborted. Fix the file or run with --no-custom.${NC}"
+                    exit 1
+                fi
+            fi
+            STACK_FILES+=("$custom_file")
+            echo -e "${GREEN}  \u2713 Custom stack file detected: ${custom_file}${NC}"
+        done
+    fi
+fi
+
 # Build the -f arguments for docker-compose
 COMPOSE_ARGS=""
 for file in "${STACK_FILES[@]}"; do
@@ -576,6 +661,43 @@ if [ -d "external-workers" ]; then
         echo -e "${GREEN}  ✓ ${EXTERNAL_COUNT} external worker(s) included${NC}"
     fi
 fi
+
+# =============================================================================
+# Generate UIFusion configuration
+# =============================================================================
+# We run this AFTER STACK_FILES is finalised so the generator can introspect
+# the actual list of services that will be deployed and skip nav entries that
+# point at services not present in this deployment.
+echo ""
+echo -e "${BLUE}Generating UIFusion configuration...${NC}"
+if [ -f "scripts/generate/generate-uifusion-config.sh" ]; then
+    UIFUSION_ARGS="--force --env $ENV"
+    [ "$DEPLOY_IRONSTREAM" = "true" ] && UIFUSION_ARGS="$UIFUSION_ARGS --with-ironstream"
+    UIFUSION_STACK_FILES="${STACK_FILES[*]}" \
+        bash scripts/generate/generate-uifusion-config.sh $UIFUSION_ARGS
+else
+    echo -e "${YELLOW}⚠ UIFusion config generator not found, skipping${NC}"
+fi
+
+# =============================================================================
+# Compose profiles — pick the backup jobs that match the deployment
+# =============================================================================
+# TIMESERIES_BACKEND drives which timeseries backup job is enabled
+# (ts-influx vs ts-timescale). OFFSITE_ENABLED gates backup-offsite.
+case "${TIMESERIES_BACKEND:-influx}" in
+    influx|influxdb) TS_PROFILE="ts-influx" ;;
+    timescale|timescaledb) TS_PROFILE="ts-timescale" ;;
+    *)
+        echo -e "${YELLOW}⚠ Unknown TIMESERIES_BACKEND='${TIMESERIES_BACKEND}', defaulting to influx${NC}"
+        TS_PROFILE="ts-influx"
+        ;;
+esac
+ACTIVE_PROFILES="${TS_PROFILE}"
+if [ "${OFFSITE_ENABLED:-false}" = "true" ]; then
+    ACTIVE_PROFILES="${ACTIVE_PROFILES},offsite"
+fi
+export COMPOSE_PROFILES="${ACTIVE_PROFILES}"
+echo -e "${BLUE}Compose profiles: ${GREEN}${COMPOSE_PROFILES}${NC}"
 
 # =============================================================================
 # Pre-process stack files with envsubst (for ${ENV} in secrets/volumes/networks)
@@ -642,18 +764,24 @@ with open('$RESOLVED_FILE', 'w') as f:
     echo -e "${GREEN}✓ Premium services excluded${NC}"
 fi
 
-# Rewrite image paths to point to flowmaker.community in community mode
+# In community mode, route every BSL image through COMMUNITY_REGISTRY.
+# Stack files already reference ${COMMUNITY_REGISTRY} / ${ENTERPRISE_REGISTRY}
+# directly (per industream-cli/docs/REGISTRY-ARCHITECTURE.md), so no path
+# rewriting is needed — the resolved file already points at the public GHCR
+# location. We only sanity-check that the resolved file has no leftover
+# enterprise references in stacks that should not be loaded.
 if [ "$COMMUNITY_MODE" = "true" ]; then
     echo ""
-    echo -e "${BLUE}Rewriting image paths to flowmaker.community...${NC}"
-    REGISTRY_HOST="${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}"
-    # List of source projects whose images live under flowmaker.community/
-    # Order matters: longer prefixes first to avoid partial matches
-    for project in flowmaker.core flowmaker.boxes flowmaker.infra datacatalog grafana uifusion timeseries monitoring; do
-        # Replace ${REGISTRY}/${project}/ with ${REGISTRY}/flowmaker.community/${project}/
-        sed -i "s|${REGISTRY_HOST}/${project}/|${REGISTRY_HOST}/flowmaker.community/${project}/|g" "$RESOLVED_FILE"
-    done
-    echo -e "${GREEN}✓ Image paths rewritten${NC}"
+    echo -e "${BLUE}Community mode — verifying registry routing...${NC}"
+    ENTERPRISE_HOST="${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}"
+    # workers-premium.yml is excluded earlier (line ~525). Ironstream is opt-in
+    # via --with-ironstream and should never be combined with --community.
+    if grep -q "${ENTERPRISE_HOST}/ironstream/" "$RESOLVED_FILE" 2>/dev/null; then
+        echo -e "${RED}✗ Community mode cannot include IronStream services${NC}"
+        echo -e "${RED}  Remove --with-ironstream or drop --community${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ BSL images route to COMMUNITY_REGISTRY=${COMMUNITY_REGISTRY:-ghcr.io/industream}${NC}"
 fi
 
 # =============================================================================
@@ -668,8 +796,9 @@ if [ -f "$HOME/.docker/config.json" ] && grep -q "$REGISTRY" "$HOME/.docker/conf
 fi
 
 if [ "$COMMUNITY_MODE" = "true" ]; then
-    # Community mode: pull check is done implicitly by the main pull below
-    echo -e "${GREEN}✓ Community mode — using public flowmaker.community project${NC}"
+    # Community mode pulls anonymously from COMMUNITY_REGISTRY (GHCR).
+    # No login required; pull check happens implicitly in the main pull below.
+    echo -e "${GREEN}✓ Community mode — anonymous pulls from ${COMMUNITY_REGISTRY:-ghcr.io/industream}${NC}"
 elif [ "$REGISTRY_CREDS_EXIST" = "true" ]; then
     # Credentials exist — verify they actually work with a test pull
     echo -e "${BLUE}Verifying registry access to ${REGISTRY}...${NC}"
@@ -1042,7 +1171,7 @@ echo "  DataCatalog:    https://datacatalog.${INDUSTREAM_DOMAIN}"
 echo ""
 echo -e "${BLUE}/etc/hosts (copy-paste on your workstation):${NC}"
 SERVER_IP="${INDUSTREAM_SERVER_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
-HOSTS_SUBDOMAINS="dashboard grafana flowmaker confighub scheduler logger datacatalog datacatalog-api datacatalog-ui databridge databridge-pg keycloak traefik influxdb timeseries prometheus alertmanager ntfy npm cdn cloudbeaver minio s3 db ironstream backups workers"
+HOSTS_SUBDOMAINS="dashboard grafana flowmaker confighub scheduler logger datacatalog datacatalog-api datacatalog-ui databridge databridge-pg traefik influxdb timeseries prometheus alertmanager ntfy npm cdn minio s3 ironstream backups workers"
 HOSTS_LINE="${SERVER_IP} ${INDUSTREAM_DOMAIN}"
 for sub in $HOSTS_SUBDOMAINS; do
     HOSTS_LINE="${HOSTS_LINE} ${sub}.${INDUSTREAM_DOMAIN}"
@@ -1092,9 +1221,9 @@ if [ -d "$SECRETS_DIR" ]; then
         echo -e "    User:     ${BOLD}${POSTGRES_ADMIN_USER:-postgres}${NC}"
         echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/postgres_admin_password" 2>/dev/null || echo 'N/A')${NC}"
         echo ""
-        echo -e "  ${BLUE}Keycloak${NC}"
-        echo -e "    User:     ${BOLD}${KEYCLOAK_ADMIN:-admin}${NC}"
-        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/keycloak_admin_password" 2>/dev/null || echo 'N/A')${NC}"
+        echo -e "  ${BLUE}Hub Backend (JWT auth)${NC}"
+        echo -e "    User:     ${BOLD}$(cat "$SECRETS_DIR/hub_backend_admin_user" 2>/dev/null || echo 'admin')${NC}"
+        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/hub_backend_admin_password" 2>/dev/null || echo 'N/A')${NC}"
         echo ""
         echo -e "  ${BLUE}Grafana${NC}"
         echo -e "    User:     ${BOLD}${GRAFANA_ADMIN_USER:-admin}${NC}"
@@ -1109,9 +1238,6 @@ if [ -d "$SECRETS_DIR" ]; then
         echo -e "    User:     ${BOLD}$(cat "$SECRETS_DIR/minio_root_user" 2>/dev/null || echo 'admin')${NC}"
         echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/minio_root_password" 2>/dev/null || echo 'N/A')${NC}"
         echo ""
-        echo -e "  ${BLUE}CloudBeaver${NC}"
-        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/cloudbeaver_admin_password" 2>/dev/null || echo 'N/A')${NC}"
-        echo ""
         echo -e "  ${YELLOW}Secrets stored in: ${SECRETS_DIR}/${NC}"
         echo -e "  ${YELLOW}To regenerate: ./scripts/setup/create-secrets.sh --env ${ENV} --regenerate${NC}"
         echo ""
@@ -1119,7 +1245,7 @@ if [ -d "$SECRETS_DIR" ]; then
         echo -e "${BLUE}Admin credentials${NC}"
         echo -e "  Saved at: ${BOLD}${SECRETS_DIR}/${NC} (chmod 600)"
         echo -e "  ${DIM}Re-run with --show-credentials to print them to stdout${NC}"
-        echo -e "  ${DIM}Or read individual files, e.g.: cat ${SECRETS_DIR}/keycloak_admin_password${NC}"
+        echo -e "  ${DIM}Or read individual files, e.g.: cat ${SECRETS_DIR}/hub_backend_admin_password${NC}"
         echo ""
     fi
 fi

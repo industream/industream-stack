@@ -100,8 +100,7 @@ fi
 UIFUSION_API=$(echo "$README" | sed -n '/## UIFusion/,/## /p' | grep '| `api`' | head -1 | awk -F'|' '{print $4}' | sed 's/[` ]//g')
 UIFUSION_UI=$(echo "$README" | sed -n '/## UIFusion/,/## /p' | grep '| `ui`' | head -1 | awk -F'|' '{print $4}' | sed 's/[` ]//g')
 
-# Grafana
-GRAFANA_INDUSTREAM=$(echo "$README" | sed -n '/## Grafana/,/## /p' | grep '| `grafana-industream`' | head -1 | awk -F'|' '{print $4}' | sed 's/[` ]//g')
+# Grafana — vanilla upstream OSS (grafana/grafana-oss), no Industream-built variant any more
 
 # Timeseries / DataBridge
 DATABRIDGE_API=$(echo "$README" | sed -n '/## Timeseries/,/## /p' | grep '| `api`' | head -1 | awk -F'|' '{print $4}' | sed 's/[` ]//g')
@@ -178,10 +177,6 @@ echo ""
 echo -e "${BLUE}UIFusion:${NC}"
 show_version "UI" "UIFUSION_VERSION" "$UIFUSION_UI"
 show_version "API" "UIFUSION_API_VERSION" "$UIFUSION_API"
-
-echo ""
-echo -e "${BLUE}Grafana:${NC}"
-show_version "Grafana Industream" "GRAFANA_VERSION" "$GRAFANA_INDUSTREAM"
 
 echo ""
 echo -e "${BLUE}Timeseries / DataBridge:${NC}"
@@ -283,7 +278,6 @@ if [ "$APPLY" = true ]; then
     update_env "UIFUSION_VERSION" "$UIFUSION_UI"
     update_env "UIFUSION_API_VERSION" "$UIFUSION_API"
 
-    update_env "GRAFANA_VERSION" "$GRAFANA_INDUSTREAM"
     update_env "DATABRIDGE_API_VERSION" "$DATABRIDGE_API"
 
     echo ""
@@ -324,7 +318,6 @@ if [ "$APPLY" = true ]; then
         update_env "UIFUSION_VERSION" "$UIFUSION_UI"
         update_env "UIFUSION_API_VERSION" "$UIFUSION_API"
     
-        update_env "GRAFANA_VERSION" "$GRAFANA_INDUSTREAM"
     update_env "DATABRIDGE_API_VERSION" "$DATABRIDGE_API"
         echo ""
         echo -e "${GREEN}✓ .env.example updated with latest versions${NC}"

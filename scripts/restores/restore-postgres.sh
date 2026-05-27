@@ -51,7 +51,7 @@ show_usage() {
     echo ""
     echo "Examples:"
     echo "  $0 --list                              # List all available backups"
-    echo "  $0 -d keycloak                         # Restore keycloak from latest backup"
+    echo "  $0 -d industream                       # Restore industream (grafana) from latest backup"
     echo "  $0 -d industream -f /backups/postgres/2024-01-15/industream_20240115_020000.sql.gz"
     echo "  $0 -d DataCatalog -y                   # Restore without confirmation"
     echo ""

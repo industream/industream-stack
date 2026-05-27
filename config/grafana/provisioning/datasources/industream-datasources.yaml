@@ -13,9 +13,13 @@
 apiVersion: 1
 
 datasources:
-  # Industream Datasource - Custom datasource with Timeseries and DataCatalog APIs
+  # Industream DataBridge datasource (custom Go plugin, installed at runtime
+  # via GF_INSTALL_PLUGINS). The `type` MUST match the plugin id shipped by
+  # github.com/industream/grafana-databridge (industream-databridge-datasource).
+  # The `uid` is kept as the legacy "industream-datasource" so existing
+  # dashboards referencing that uid keep resolving after the plugin rename.
   - name: Industream-datasource
-    type: industream-datasource
+    type: industream-databridge-datasource
     access: proxy
     url: http://databridge:8080
     jsonData:

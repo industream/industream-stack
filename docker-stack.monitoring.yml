@@ -12,7 +12,10 @@ services:
   # GRAFANA DASHBOARD
   # ==========================================
   grafana:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/grafana/grafana-industream:${GRAFANA_VERSION:-latest}
+    # Vanilla upstream Grafana OSS — no more custom grafana-industream build.
+    # The Industream DataBridge datasource and any extra panels are installed
+    # at runtime via GF_INSTALL_PLUGINS below (see DATABRIDGE_GRAFANA_PLUGIN).
+    image: grafana/grafana-oss:${GRAFANA_VERSION:-13.0.1}
     environment:
     - TERM=linux
     - GF_DEFAULT_APP_MODE=${GF_APP_MODE:-production}
@@ -42,24 +45,25 @@ services:
     # network anyway. Override to `require` via .env when pointing Grafana
     # at an external Postgres that serves TLS.
     - GF_DATABASE_SSL_MODE=${GF_DATABASE_SSL_MODE:-disable}
-    - GF_AUTH_GENERIC_OAUTH_ENABLED=${GRAFANA_OAUTH_ENABLED:-true}
-    - GF_AUTH_GENERIC_OAUTH_NAME=Keycloak
-    - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OAUTH_CLIENT_ID:-uifusion}
-    - GF_AUTH_GENERIC_OAUTH_SCOPES=openid email profile offline_access roles
-    - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://${INDUSTREAM_DOMAIN:-localhost}/auth/realms/industream/protocol/openid-connect/auth
-    - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=http://keycloak:8080/auth/realms/industream/protocol/openid-connect/token
-    - GF_AUTH_GENERIC_OAUTH_API_URL=http://keycloak:8080/auth/realms/industream/protocol/openid-connect/userinfo
-    - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(realm_access.roles[*], 'grafanaadmin') && 'GrafanaAdmin' || contains(realm_access.roles[*], 'admin') && 'Admin' || contains(realm_access.roles[*], 'editor') && 'Editor' || 'Viewer'
-    # Default `true` because the BUNDLED Keycloak ships with self-signed
-    # certs (or HTTP on the internal overlay). Flip to `false` via .env when
-    # the Keycloak endpoint terminates TLS with a CA-signed certificate that
-    # Grafana's container trusts.
-    - GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE=${GF_OAUTH_TLS_SKIP_VERIFY:-true}
-    - GF_AUTH_GENERIC_OAUTH_USE_PKCE=true
-    - GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN=true
-    - GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
+    # Auth: handled by grafana-hub-wrapper (JWT/JWKS from industream-hub-backend).
+    # See https://github.com/industream/grafana-hub-wrapper for the wrapper
+    # service + plugin contract (auth.jwt + iframe relay).
+    # The wrapper enables GF_AUTH_JWT_* via its own compose override; this base
+    # config stays generic-OAuth-free so non-wrapper deployments can still use
+    # basic auth.
     - TZ=${TZ:-Europe/Berlin}
-    - GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource,marcusolsson-json-datasource
+    # Runtime plugin install (replaces the baked-in grafana-industream image):
+    #   - yesoreyeram-infinity-datasource / marcusolsson-json-datasource: public
+    #   - volkovlabs-echarts-panel: public (Apache ECharts panel)
+    #   - DataBridge datasource: private Go plugin, installed from its GitHub
+    #     release zip via `<url>;<plugin-id>`. Appended only when
+    #     GRAFANA_DATABRIDGE_PLUGIN is set (compose ${VAR:+,${VAR}} expansion),
+    #     so a blank value cleanly drops it instead of leaving a trailing comma.
+    - GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource,marcusolsson-json-datasource,volkovlabs-echarts-panel${GRAFANA_DATABRIDGE_PLUGIN:+,${GRAFANA_DATABRIDGE_PLUGIN}}
+    # The DataBridge plugin is unsigned (signing is disabled in its release
+    # workflow), so Grafana must be told to load it anyway. Harmless if the
+    # plugin ever ships signed — Grafana ignores the allowlist entry then.
+    - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=industream-databridge-datasource
     - INDUSTREAM_DOMAIN=${INDUSTREAM_DOMAIN:-industream.platform.lan}
     # Datasource provisioning variables
     # Sensitive values (tokens, DB passwords) are NOT exported here — the
@@ -78,7 +82,7 @@ services:
     - ${ENV}-platform
     depends_on:
     - postgres
-    - keycloak
+    - uifusion-api
     healthcheck:
       test:
       - CMD-SHELL
@@ -100,7 +104,11 @@ services:
       - traefik.http.routers.${ENV}-grafana-secure.rule=Host(`dashboard.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-grafana-secure.tls=true
       - traefik.http.routers.${ENV}-grafana-secure.service=${ENV}-grafana
-      - traefik.http.routers.${ENV}-grafana-secure.middlewares=security-headers@file
+      # Grafana is embedded inside UIFusion (cross-subdomain iframe). The
+      # default security-headers middleware sets X-Frame-Options=SAMEORIGIN
+      # which blocks that. allow-iframe@file replaces it with ALLOWALL +
+      # CSP frame-ancestors limited to *.${INDUSTREAM_DOMAIN}.
+      - traefik.http.routers.${ENV}-grafana-secure.middlewares=allow-iframe@file
       - traefik.http.routers.${ENV}-grafana.entrypoints=web
       - traefik.http.routers.${ENV}-grafana.rule=Host(`dashboard.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-grafana.middlewares=redirect-to-https@file
@@ -188,7 +196,7 @@ services:
         - traefik.http.routers.${ENV}-prometheus-secure.rule=Host(`prometheus.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-prometheus-secure.tls=true
         - traefik.http.routers.${ENV}-prometheus-secure.service=${ENV}-prometheus
-        - traefik.http.routers.${ENV}-prometheus-secure.middlewares=traefik-auth@file,rate-limit@file,security-headers@file
+        - traefik.http.routers.${ENV}-prometheus-secure.middlewares=traefik-auth@file,rate-limit@file,allow-iframe@file
         - traefik.http.routers.${ENV}-prometheus.entrypoints=web
         - traefik.http.routers.${ENV}-prometheus.rule=Host(`prometheus.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-prometheus.middlewares=redirect-to-https@file
@@ -235,7 +243,12 @@ services:
         window: 120s
 
   cadvisor:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/monitoring/cadvisor:${CADVISOR_VERSION:-v0.56.2}
+    # Upstream cadvisor moved from gcr.io/cadvisor/cadvisor to ghcr.io/google/cadvisor
+    # in v0.56+. v0.57.0+ should include the bug fixes that motivated the
+    # previous homemade mirror — to be confirmed in practice. Set CADVISOR_IMAGE
+    # to a private mirror if regressions appear (legacy patches lived at
+    # 39t88114.../monitoring/cadvisor).
+    image: ${CADVISOR_IMAGE:-ghcr.io/google/cadvisor}:${CADVISOR_VERSION:-v0.57.0}
     command:
       - --housekeeping_interval=30s
       - --disable_metrics=disk,diskIO,tcp,udp,percpu,sched,process
@@ -294,7 +307,7 @@ services:
         - traefik.http.routers.${ENV}-alertmanager-secure.rule=Host(`alertmanager.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-alertmanager-secure.tls=true
         - traefik.http.routers.${ENV}-alertmanager-secure.service=${ENV}-alertmanager
-        - traefik.http.routers.${ENV}-alertmanager-secure.middlewares=traefik-auth@file,rate-limit@file,security-headers@file
+        - traefik.http.routers.${ENV}-alertmanager-secure.middlewares=traefik-auth@file,rate-limit@file,allow-iframe@file
         - traefik.http.routers.${ENV}-alertmanager.entrypoints=web
         - traefik.http.routers.${ENV}-alertmanager.rule=Host(`alertmanager.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-alertmanager.middlewares=redirect-to-https@file
@@ -343,7 +356,7 @@ services:
         - traefik.http.routers.${ENV}-ntfy-secure.rule=Host(`ntfy.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-ntfy-secure.tls=true
         - traefik.http.routers.${ENV}-ntfy-secure.service=${ENV}-ntfy
-        - traefik.http.routers.${ENV}-ntfy-secure.middlewares=security-headers@file
+        - traefik.http.routers.${ENV}-ntfy-secure.middlewares=allow-iframe@file
         - traefik.http.routers.${ENV}-ntfy.entrypoints=web
         - traefik.http.routers.${ENV}-ntfy.rule=Host(`ntfy.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-ntfy.middlewares=redirect-to-https@file

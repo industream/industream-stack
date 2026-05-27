@@ -146,8 +146,11 @@ services:
         - swarm.cronjob.schedule=0 4 * * *
         - swarm.cronjob.skip-running=true
 
+  # Profile-gated by deploy-swarm.sh based on TIMESERIES_BACKEND in .env.
+  # Only one of (backup-influxdb, backup-timescaledb) is enabled per deploy.
   backup-influxdb:
-    image: influxdb:${INFLUXDB_VERSION:-2.7.12}
+    profiles: ["ts-influx"]
+    image: influxdb:${INFLUXDB_VERSION:-2.9.1}
     entrypoint: ["/bin/bash", "/scripts/backup-influxdb.sh"]
     environment:
       - BACKUP_DIR=/backups/influxdb
@@ -186,16 +189,156 @@ services:
         - swarm.cronjob.schedule=30 2 * * *
         - swarm.cronjob.skip-running=true
 
+  backup-timescaledb:
+    profiles: ["ts-timescale"]
+    image: postgres:${POSTGRES_VERSION:-18-alpine}
+    entrypoint: ["/bin/bash", "/scripts/backup-timescaledb.sh"]
+    environment:
+      - BACKUP_DIR=/backups/timeseries
+      - RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
+      - TIMESCALE_HOST=timescaledb
+      - TIMESCALE_PORT=5432
+      - TIMESCALE_USER=${TIMESCALEDB_ADMIN_USER:-postgres}
+      - TIMESCALE_DB=${TIMESCALE_DB:-industream}
+      - PGPASSWORD_FILE=/run/secrets/${ENV}_timescaledb_password
+      - NTFY_URL=http://ntfy:80
+      - NTFY_TOPIC=${NTFY_TOPIC:-industream-backups}
+    volumes:
+      - ./scripts/backups/backup-timescaledb.sh:/scripts/backup-timescaledb.sh:ro
+      - ${ENV}-backup-data:/backups
+    networks:
+      - ${ENV}-platform
+    secrets:
+      - ${ENV}_timescaledb_password
+    depends_on:
+      - ntfy
+    deploy:
+      mode: replicated
+      replicas: 0
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.05'
+          memory: 128M
+      restart_policy:
+        condition: none
+      labels:
+        - swarm.cronjob.enable=true
+        - swarm.cronjob.schedule=30 2 * * *
+        - swarm.cronjob.skip-running=true
+
+  # ==========================================
+  # OFF-SITE BACKUP SYNC
+  # ==========================================
+  # Rsyncs the backup volume to a remote SSH host every day at 05:00 UTC
+  # (after all the per-component backup jobs). Profile-gated so the secret
+  # is only required when off-site is configured (see .env.example).
+  backup-offsite:
+    profiles: ["offsite"]
+    image: alpine:latest
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache -q openssh-client rsync wget && sh /scripts/offsite-sync.sh"]
+    environment:
+      - BACKUP_DIR=/backups
+      - OFFSITE_ENABLED=${OFFSITE_ENABLED:-false}
+      - OFFSITE_HOST=${OFFSITE_HOST:-}
+      - OFFSITE_USER=${OFFSITE_USER:-}
+      - OFFSITE_PATH=${OFFSITE_PATH:-}
+      - OFFSITE_PORT=${OFFSITE_PORT:-22}
+      - OFFSITE_BANDWIDTH_KBPS=${OFFSITE_BANDWIDTH_KBPS:-0}
+      - OFFSITE_SSH_KEY_FILE=/run/secrets/${ENV}_offsite_ssh_key
+      - NTFY_URL=http://ntfy:80
+      - NTFY_TOPIC=${NTFY_TOPIC:-industream-backups}
+    volumes:
+      - ./scripts/backups/offsite-sync.sh:/scripts/offsite-sync.sh:ro
+      - ${ENV}-backup-data:/backups:ro
+    networks:
+      - ${ENV}-platform
+    secrets:
+      - ${ENV}_offsite_ssh_key
+    depends_on:
+      - ntfy
+    deploy:
+      mode: replicated
+      replicas: 0
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.02'
+          memory: 32M
+      restart_policy:
+        condition: none
+      labels:
+        - swarm.cronjob.enable=true
+        - swarm.cronjob.schedule=0 5 * * *
+        - swarm.cronjob.skip-running=true
+
+  # ==========================================
+  # WEEKLY BACKUP VERIFICATION
+  # ==========================================
+  # Walks the backup volume every Sunday at 03:00 UTC and verifies the
+  # integrity of every PostgreSQL dump, InfluxDB archive and volume
+  # archive produced over the last 7 days. Sends a Ntfy notification on
+  # any failure or if no recent backups are found.
+  verify-weekly:
+    image: postgres:${POSTGRES_VERSION:-18-alpine}
+    entrypoint: ["/bin/bash", "/scripts/verify-weekly.sh"]
+    environment:
+      - BACKUP_DIR=/backups
+      - LOG_DIR=/var/log/industream-backups
+      - MAX_AGE_DAYS=7
+      - NTFY_URL=http://ntfy:80
+      - NTFY_TOPIC=${NTFY_TOPIC:-industream-backups}
+    volumes:
+      - ./scripts/backups/verify-weekly.sh:/scripts/verify-weekly.sh:ro
+      - ${ENV}-backup-data:/backups:ro
+      - ${ENV}-backup-verify-logs:/var/log/industream-backups
+    networks:
+      - ${ENV}-platform
+    depends_on:
+      - ntfy
+    deploy:
+      mode: replicated
+      replicas: 0
+      # Must run on the same node that holds the populated backup-data
+      # volume, i.e. the manager (see backup-postgres / backup-volumes /
+      # backup-influxdb placement above).
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: none
+      labels:
+        - swarm.cronjob.enable=true
+        - swarm.cronjob.schedule=0 3 * * 0
+        - swarm.cronjob.skip-running=true
+
   # ==========================================
   # BACKUP MONITOR
   # ==========================================
   backup-monitor:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.infra/backup-monitor:1.0.0
+    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/flowmaker.infra/backup-monitor:1.0.0
     environment:
       - BACKUP_DIR=/backups
       - NODE_ENV=production
-      - KEYCLOAK_URL=https://${INDUSTREAM_DOMAIN:-industream.platform.lan}/auth
-      - KEYCLOAK_REALM=industream
+      - HUB_BACKEND_URL=http://industream-hub-backend:3050
+      - HUB_AUTH_ISSUER=${HUB_AUTH_ISSUER:-hub-backend}
     volumes:
       - ${ENV}-backup-data:/backups:ro
     networks:
@@ -234,7 +377,7 @@ services:
         - traefik.http.routers.${ENV}-backup-monitor-swarm.rule=Host(`backups.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-backup-monitor-swarm.entrypoints=websecure
         - traefik.http.routers.${ENV}-backup-monitor-swarm.tls=true
-        - traefik.http.routers.${ENV}-backup-monitor-swarm.middlewares=backup-ratelimit@file,backup-security-headers@file,security-headers@file
+        - traefik.http.routers.${ENV}-backup-monitor-swarm.middlewares=backup-ratelimit@file,backup-security-headers@file,allow-iframe@file
         - traefik.http.services.${ENV}-backup-monitor-swarm.loadbalancer.server.port=3000
         - traefik.http.routers.${ENV}-backup-monitor-swarm-http.rule=Host(`backups.${INDUSTREAM_DOMAIN:-localhost}`)
         - traefik.http.routers.${ENV}-backup-monitor-swarm-http.entrypoints=web
@@ -254,6 +397,7 @@ networks:
 # =============================================================================
 volumes:
   ${ENV}-backup-data:
+  ${ENV}-backup-verify-logs:
   # All source volumes below are created by other stacks; they are referenced
   # here as `external: true` so the backup stack can mount them read-only
   # without racing stack-deploy order.
@@ -281,4 +425,12 @@ secrets:
   ${ENV}_postgres_admin_password:
     external: true
   ${ENV}_influx_admin_token:
+    external: true
+  # Used by backup-timescaledb (profile: ts-timescale). Only required when
+  # TIMESERIES_BACKEND=timescale at deploy time.
+  ${ENV}_timescaledb_password:
+    external: true
+  # Used by backup-offsite (profile: offsite). Only required when
+  # OFFSITE_ENABLED=true at deploy time.
+  ${ENV}_offsite_ssh_key:
     external: true

@@ -7,7 +7,7 @@ set -u
 # Supports reading passwords from Docker secrets
 
 # Function to read password from secret file or use provided value
-# Supports both legacy (keycloak_db_password) and multi-env (ENV_keycloak_db_password) secret names
+# Supports both legacy (<user>_db_password) and multi-env (ENV_<user>_db_password) secret names
 read_password() {
     local user=$1
     local provided_password=$2
@@ -16,13 +16,12 @@ read_password() {
 
     # Map user to secret pattern
     case "$user" in
-        keycloak) secret_pattern="keycloak_db_password" ;;
         dashboard) secret_pattern="grafana_db_password" ;;
         datacatalog) secret_pattern="datacatalog_db_password" ;;
         databridge) secret_pattern="databridge_pg_password" ;;
     esac
 
-    # Try multi-env format first (prod_keycloak_db_password, dev_keycloak_db_password, etc.)
+    # Try multi-env format first (prod_grafana_db_password, dev_grafana_db_password, etc.)
     for f in /run/secrets/*_${secret_pattern}; do
         if [ -f "$f" ]; then
             secret_file="$f"
@@ -30,7 +29,7 @@ read_password() {
         fi
     done
 
-    # Fallback to legacy format (keycloak_db_password)
+    # Fallback to legacy format
     if [ -z "$secret_file" ] && [ -f "/run/secrets/${secret_pattern}" ]; then
         secret_file="/run/secrets/${secret_pattern}"
     fi

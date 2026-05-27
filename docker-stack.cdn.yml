@@ -13,7 +13,7 @@ services:
   # Internal only: workers access via http://cdn-server:4873 on the platform network.
   # No Traefik exposure needed (aligned with FlowMaker reference deployment).
   cdn-server:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/cdn-server:${CDN_SERVER_VERSION:-2.0.0}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.core/cdn-server:${CDN_SERVER_VERSION:-2.0.0}
     hostname: cdn-server
     networks:
       - ${ENV}-platform
@@ -40,7 +40,7 @@ services:
   # CDN CACHE - ESM.sh (FlowMaker image)
   # ==========================================
   cdn-cache:
-    image: ${DOCKER_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/flowmaker.core/cdn-cache:${CDN_CACHE_VERSION:-2.0.2}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.core/cdn-cache:${CDN_CACHE_VERSION:-2.0.2}
     hostname: cdn-cache
     depends_on:
       - cdn-server

@@ -98,8 +98,8 @@ See `.env.example` for all available variables.
 
 Required secrets per environment (prefixed with `${ENV}_`):
 - `postgres_admin_password`
-- `keycloak_admin_password`
-- `keycloak_db_password`
+- `hub_backend_admin_password`
+- `hub_backend_admin_user`
 - `grafana_admin_password`
 - `grafana_db_password`
 - `datacatalog_db_password`
@@ -172,7 +172,7 @@ docker stack ps industream-prod | grep keycloak
 ./industream.sh logs keycloak
 
 # Or docker directly
-docker service logs -f industream-prod_keycloak
+docker service logs -f industream-prod_uifusion-api
 docker service logs --tail=100 industream-prod_postgres
 ```
 
@@ -183,7 +183,7 @@ docker service logs --tail=100 industream-prod_postgres
 docker service update --image NEW_IMAGE industream-prod_uifusion
 
 # Force restart
-docker service update --force industream-prod_keycloak
+docker service update --force industream-prod_uifusion-api
 
 # Scale workers
 docker service scale industream-prod_worker-timer=3
@@ -202,7 +202,7 @@ docker secret ls
 docker secret ls | grep prod_
 
 # Inspect (does NOT show value)
-docker secret inspect prod_keycloak_db_password
+docker secret inspect prod_hub_backend_admin_user
 
 # Secrets are managed per environment via:
 ./scripts/setup/create-secrets.sh --env prod
@@ -214,13 +214,13 @@ docker secret inspect prod_keycloak_db_password
 
 ```bash
 # View failed attempts
-docker service ps industream-prod_keycloak --no-trunc
+docker service ps industream-prod_uifusion-api --no-trunc
 
 # Detailed logs
-docker service logs industream-prod_keycloak --tail 100
+docker service logs industream-prod_uifusion-api --tail 100
 
 # Inspect configuration
-docker service inspect industream-prod_keycloak --pretty
+docker service inspect industream-prod_uifusion-api --pretty
 ```
 
 ### PostgreSQL Issues
@@ -259,7 +259,7 @@ docker volume rm $(docker volume ls -q -f name=prod-)
 
 ```bash
 # 1. Create new secret with different name
-echo "new-password" | docker secret create prod_keycloak_db_password_v2 -
+echo "new-password" | docker secret create prod_hub_backend_admin_user_v2 -
 
 # 2. Update PostgreSQL with new password
 POSTGRES_CONTAINER=$(docker ps --filter "name=industream-prod_postgres" --format "{{.Names}}" | head -1)
@@ -267,12 +267,12 @@ docker exec $POSTGRES_CONTAINER psql -U postgres -c "ALTER USER keycloak WITH PA
 
 # 3. Update service
 docker service update \
-  --secret-rm prod_keycloak_db_password \
-  --secret-add source=prod_keycloak_db_password_v2,target=prod_keycloak_db_password \
-  industream-prod_keycloak
+  --secret-rm prod_hub_backend_admin_user \
+  --secret-add source=prod_hub_backend_admin_user_v2,target=prod_hub_backend_admin_user \
+  industream-prod_uifusion-api
 
 # 4. Remove old secret (after verification)
-docker secret rm prod_keycloak_db_password
+docker secret rm prod_hub_backend_admin_user
 ```
 
 ## Architecture

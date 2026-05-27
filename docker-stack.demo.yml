@@ -218,7 +218,7 @@ services:
       - MQTT_PORT=1883
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_ORG=${INFLUX_ORG:-industream}
-      - INFLUXDB_BUCKET=${INFLUX_BUCKET:-test}
+      - INFLUXDB_BUCKET=${INFLUX_BUCKET:-industream}
       - SIMULATION_INTERVAL=1
       - TZ=${TZ:-Europe/Berlin}
     secrets:
