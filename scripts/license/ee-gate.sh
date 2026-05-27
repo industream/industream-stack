@@ -10,7 +10,13 @@
 #      `stack-filter.ts`, but sourced from the OFFLINE license instead of Keygen)
 #   4. applies the `-ee` image variant for entitled enterprise modules
 #   5. logs in to the enterprise registry with the license-embedded robot creds
-#   6. prints (or runs) the resulting `docker stack deploy` invocation
+#   6. delegates the actual deploy to `scripts/deploy-swarm.sh`, passing the
+#      non-entitled services through `--exclude` so they're stripped from the
+#      Swarm-resolved YAML. We delegate (rather than calling `docker stack
+#      deploy` directly) because deploy-swarm.sh owns the preprocessing
+#      pipeline — envsubst, `docker compose config`, `fix-swarm-yaml.py`,
+#      Traefik/Python/registry pre-flight checks. Skipping it would break on
+#      Compose-only constructs (e.g. `profiles:` in docker-stack.backup.yml).
 #
 # Dry-run by default (prints the plan). --login does the docker login.
 # --deploy runs the stack deploy. No license = CE (this gate is EE-only).
@@ -136,8 +142,25 @@ if [ "$NEED_LOGIN" = 1 ]; then
 fi
 
 # --- 6) deploy ---------------------------------------------------------------
+# Delegate to deploy-swarm.sh so the resolved stack benefits from the existing
+# envsubst → `docker compose config` → fix-swarm-yaml.py preprocessing. Service
+# exclusion is the license-policy hook: stack-file selection is left to
+# deploy-swarm.sh (env-driven), and non-entitled services are surgically
+# removed from the resolved YAML via its `--exclude` flag.
 echo
-DEPLOY_CMD=(docker stack deploy "${COMPOSE_ARGS[@]}" "$ENVNAME")
+DEPLOY_SCRIPT="$STACK_DIR/scripts/deploy-swarm.sh"
+[ -x "$DEPLOY_SCRIPT" ] || die "deploy-swarm.sh not found at $DEPLOY_SCRIPT"
+
+# Build comma-separated --exclude argument from EXCLUDED[].
+EXCLUDE_ARG=""
+if [ "${#EXCLUDED[@]}" -gt 0 ]; then
+  EXCLUDE_ARG=$(printf '%s,' "${EXCLUDED[@]}")
+  EXCLUDE_ARG="${EXCLUDE_ARG%,}"
+fi
+
+DEPLOY_CMD=(bash "$DEPLOY_SCRIPT" --env "$ENVNAME")
+[ -n "$EXCLUDE_ARG" ] && DEPLOY_CMD+=(--exclude "$EXCLUDE_ARG")
+
 if [ "$DO_DEPLOY" = 1 ]; then
   echo "→ ${DEPLOY_CMD[*]}"
   "${DEPLOY_CMD[@]}"
