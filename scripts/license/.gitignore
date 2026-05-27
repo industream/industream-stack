@@ -1,0 +1,5 @@
+# NEVER commit signing keys or issued licenses.
+keys/
+*.pem
+*.lic
+*.state
