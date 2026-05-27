@@ -774,7 +774,7 @@ show_status() {
 show_logs_summary() {
     print_header "Recent Logs (errors only)"
 
-    local services=("traefik" "postgres" "keycloak" "grafana")
+    local services=("traefik" "postgres" "uifusion-api" "grafana")
 
     for svc in "${services[@]}"; do
         local full_name="${STACK_NAME}_${svc}"
@@ -802,7 +802,6 @@ show_urls() {
     echo -e "  ${CYAN}DataCatalog${NC}         https://datacatalog.${domain}"
     echo ""
     echo -e "${BOLD}Administration:${NC}"
-    echo -e "  ${CYAN}Keycloak${NC}            https://keycloak.${domain}"
     echo -e "  ${CYAN}Traefik Dashboard${NC}   https://traefik.${domain}"
     echo ""
     echo -e "${BOLD}Monitoring:${NC}"
@@ -817,9 +816,9 @@ show_urls() {
 
     # Show credentials
     print_header "Default Credentials"
-    echo -e "${BOLD}Keycloak Admin:${NC}"
-    echo -e "  User:     ${KEYCLOAK_ADMIN:-admin}"
-    echo -e "  Password: ${KEYCLOAK_ADMIN_PASSWORD:-<see .env file>}"
+    echo -e "${BOLD}Hub Backend (JWT auth) Admin:${NC}"
+    echo -e "  User:     (see secrets/${ENV}/hub_backend_admin_user)"
+    echo -e "  Password: (see secrets/${ENV}/hub_backend_admin_password)"
     echo ""
     echo -e "${BOLD}Grafana Admin:${NC}"
     echo -e "  User:     ${GRAFANA_ADMIN_USER:-admin}"
@@ -867,7 +866,7 @@ show_useful_commands() {
     echo ""
     echo -e "${BOLD}Service Logs:${NC}"
     echo "  docker service logs ${STACK_NAME}_traefik -f"
-    echo "  docker service logs ${STACK_NAME}_keycloak -f"
+    echo "  docker service logs ${STACK_NAME}_uifusion-api -f"
     echo "  docker service logs ${STACK_NAME}_grafana -f"
     echo ""
     echo -e "${BOLD}Restart a Service:${NC}"

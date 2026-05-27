@@ -351,22 +351,6 @@ if has_service influxdb; then
 EOF
 fi
 
-# Keycloak is always part of the platform stack — but check anyway in case
-# someone runs a stripped-down deployment.
-if has_service keycloak; then
-    emit << EOF
-    "03-05-keycloak": {
-      "url": "https://${DOMAIN}/auth/admin/master/console",
-      "label": "Keycloak Admin",
-      "loading": { "instanceId": "angular-instance-9" },
-      "iconClass": "security",
-      "sideNavGroup": "03-ext",
-      "route": "keycloakadmin",
-      "rolesRequired": ["admin"]
-    }
-EOF
-fi
-
 if has_service minio; then
     emit << EOF
     "03-06-minio": {

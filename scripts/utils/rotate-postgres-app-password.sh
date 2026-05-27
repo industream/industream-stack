@@ -2,9 +2,9 @@
 # =============================================================================
 # ROTATE POSTGRES APP USER PASSWORD (generic)
 # =============================================================================
-# Rotates the password of any non-admin Postgres user (keycloak, grafana,
-# databridge, datacatalog, dashboard, ironstream, timescaledb, ...) without
-# breaking the dependent service.
+# Rotates the password of any non-admin Postgres user (grafana, databridge,
+# datacatalog, dashboard, ironstream, timescaledb, ...) without breaking the
+# dependent service.
 #
 # Why this script exists:
 #   Dependent services read their DB password from a mounted Docker Swarm
@@ -26,17 +26,17 @@
 #       [--restart-service <service>]
 #
 # Examples:
-#   # Keycloak DB user (restart Keycloak so it re-reads the mounted secret)
+#   # Grafana DB user (restart Grafana so it re-reads the mounted secret)
 #   ./rotate-postgres-app-password.sh \
 #       --env prod \
-#       --user keycloak \
-#       --secret prod_keycloak_db_password \
-#       --restart-service industream-prod_keycloak
-#
-#   # Grafana DB user
-#   ./rotate-postgres-app-password.sh \
-#       --env prod --user grafana --secret prod_grafana_db_password \
+#       --user dashboard \
+#       --secret prod_grafana_db_password \
 #       --restart-service industream-prod_grafana
+#
+#   # DataCatalog DB user
+#   ./rotate-postgres-app-password.sh \
+#       --env prod --user datacatalog --secret prod_datacatalog_db_password \
+#       --restart-service industream-prod_datacatalog-api
 # =============================================================================
 
 set -e
@@ -57,7 +57,7 @@ RESTART_SERVICE=""
 usage() {
     echo "Usage: $0 --env <env> --user <pg-user> --secret <swarm-secret> [options]"
     echo "  --env              Environment (default: prod). Affects stack/service names."
-    echo "  --user             Postgres role to rotate (e.g. keycloak, grafana)."
+    echo "  --user             Postgres role to rotate (e.g. dashboard, datacatalog)."
     echo "  --secret           Docker Swarm secret name holding the password."
     echo "  --secret-file      File name under secrets/ to update."
     echo "                     Defaults to the secret name with the '<env>_' prefix stripped."

@@ -53,9 +53,9 @@ COMPOSE_ROOT="${COMPOSE_ROOT:-${SWARM_ROOT}/../industream-flowmaker/deployment}"
 # resolves compose aliases.
 CANONICAL_SERVICES=(
   "postgres"
-  "keycloak"
   "redis"
   "uifusion"
+  "uifusion-api"
   "flowmaker-scheduler"
   "flowmaker-launcher"
   "flowmaker-confighub-v2"

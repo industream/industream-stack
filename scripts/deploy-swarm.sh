@@ -304,13 +304,13 @@ echo -e "${BLUE}Checking Docker secrets for ${ENV} environment...${NC}"
 
 REQUIRED_SECRETS=(
     "${ENV}_postgres_admin_password"
-    "${ENV}_keycloak_admin_password"
-    "${ENV}_keycloak_db_password"
     "${ENV}_grafana_admin_password"
     "${ENV}_grafana_db_password"
     "${ENV}_datacatalog_db_password"
     "${ENV}_influx_admin_password"
     "${ENV}_influx_admin_token"
+    "${ENV}_hub_backend_admin_user"
+    "${ENV}_hub_backend_admin_password"
 )
 
 MISSING_SECRETS=0
@@ -1159,7 +1159,7 @@ echo "  DataCatalog:    https://datacatalog.${INDUSTREAM_DOMAIN}"
 echo ""
 echo -e "${BLUE}/etc/hosts (copy-paste on your workstation):${NC}"
 SERVER_IP="${INDUSTREAM_SERVER_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
-HOSTS_SUBDOMAINS="dashboard grafana flowmaker confighub scheduler logger datacatalog datacatalog-api datacatalog-ui databridge databridge-pg keycloak traefik influxdb timeseries prometheus alertmanager ntfy npm cdn minio s3 ironstream backups workers"
+HOSTS_SUBDOMAINS="dashboard grafana flowmaker confighub scheduler logger datacatalog datacatalog-api datacatalog-ui databridge databridge-pg traefik influxdb timeseries prometheus alertmanager ntfy npm cdn minio s3 ironstream backups workers"
 HOSTS_LINE="${SERVER_IP} ${INDUSTREAM_DOMAIN}"
 for sub in $HOSTS_SUBDOMAINS; do
     HOSTS_LINE="${HOSTS_LINE} ${sub}.${INDUSTREAM_DOMAIN}"
@@ -1209,9 +1209,9 @@ if [ -d "$SECRETS_DIR" ]; then
         echo -e "    User:     ${BOLD}${POSTGRES_ADMIN_USER:-postgres}${NC}"
         echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/postgres_admin_password" 2>/dev/null || echo 'N/A')${NC}"
         echo ""
-        echo -e "  ${BLUE}Keycloak${NC}"
-        echo -e "    User:     ${BOLD}${KEYCLOAK_ADMIN:-admin}${NC}"
-        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/keycloak_admin_password" 2>/dev/null || echo 'N/A')${NC}"
+        echo -e "  ${BLUE}Hub Backend (JWT auth)${NC}"
+        echo -e "    User:     ${BOLD}$(cat "$SECRETS_DIR/hub_backend_admin_user" 2>/dev/null || echo 'admin')${NC}"
+        echo -e "    Password: ${BOLD}$(cat "$SECRETS_DIR/hub_backend_admin_password" 2>/dev/null || echo 'N/A')${NC}"
         echo ""
         echo -e "  ${BLUE}Grafana${NC}"
         echo -e "    User:     ${BOLD}${GRAFANA_ADMIN_USER:-admin}${NC}"
@@ -1233,7 +1233,7 @@ if [ -d "$SECRETS_DIR" ]; then
         echo -e "${BLUE}Admin credentials${NC}"
         echo -e "  Saved at: ${BOLD}${SECRETS_DIR}/${NC} (chmod 600)"
         echo -e "  ${DIM}Re-run with --show-credentials to print them to stdout${NC}"
-        echo -e "  ${DIM}Or read individual files, e.g.: cat ${SECRETS_DIR}/keycloak_admin_password${NC}"
+        echo -e "  ${DIM}Or read individual files, e.g.: cat ${SECRETS_DIR}/hub_backend_admin_password${NC}"
         echo ""
     fi
 fi

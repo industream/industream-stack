@@ -101,7 +101,6 @@ FALLBACK_REPOS=(
   flowmaker.core/flowmaker-launcher
   flowmaker.core/flowmaker-logger
   flowmaker.infra/flowmaker-worker-manager
-  grafana/grafana-industream
   timeseries/api
   uifusion/api
   uifusion/ui

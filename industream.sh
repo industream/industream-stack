@@ -303,7 +303,7 @@ are_env_secrets_created() {
     local env_name="$1"
     local required_secrets=(
         "${env_name}_postgres_admin_password"
-        "${env_name}_keycloak_admin_password"
+        "${env_name}_hub_backend_admin_password"
         "${env_name}_influx_admin_token"
     )
 

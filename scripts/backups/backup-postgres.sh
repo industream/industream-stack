@@ -21,7 +21,7 @@ if [ -z "${DATABASES:-}" ]; then
         "SELECT datname FROM pg_database WHERE datistemplate = false AND datname NOT IN ('postgres');" 2>/dev/null \
         | tr '\n' ' ')
 fi
-DATABASES="${DATABASES:-keycloak industream DataCatalog DataBridge}"
+DATABASES="${DATABASES:-industream DataCatalog DataBridge}"
 
 # Ntfy notification settings
 NTFY_URL="${NTFY_URL:-http://ntfy:80}"

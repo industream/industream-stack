@@ -443,9 +443,9 @@ services:
       - DOCKER_NETWORK=${STACK_NAME:-industream-${ENV}}_${ENV}-platform
       - SCHEDULER_SERVICE=${STACK_NAME:-industream-${ENV}}_flowmaker-scheduler
       - LOGGING_SERVICE=${STACK_NAME:-industream-${ENV}}_flowmaker-logging
-      - KEYCLOAK_URL=https://${INDUSTREAM_DOMAIN:-localhost}/auth
-      - KEYCLOAK_REALM=industream
-      - KEYCLOAK_CLIENT_ID=worker-manager
+      - HUB_BACKEND_URL=http://industream-hub-backend:3050
+      - HUB_AUTH_ISSUER=${HUB_AUTH_ISSUER:-hub-backend}
+      - HUB_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE:-industream-hub}
     volumes:
       # Mount the docker socket read-only. Worker-manager only inspects
       # container/service state to report worker status. Any container

@@ -337,8 +337,8 @@ services:
     environment:
       - BACKUP_DIR=/backups
       - NODE_ENV=production
-      - KEYCLOAK_URL=https://${INDUSTREAM_DOMAIN:-industream.platform.lan}/auth
-      - KEYCLOAK_REALM=industream
+      - HUB_BACKEND_URL=http://industream-hub-backend:3050
+      - HUB_AUTH_ISSUER=${HUB_AUTH_ISSUER:-hub-backend}
     volumes:
       - ${ENV}-backup-data:/backups:ro
     networks:
