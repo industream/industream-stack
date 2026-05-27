@@ -191,7 +191,7 @@ services:
         window: 120s
 
   worker-influx-client-dc:
-    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-influx-client:${WORKER_INFLUX_CLIENT_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/flow-box-influx-client:${WORKER_INFLUX_CLIENT_VERSION:-2.0.8}
     environment:
     - FM_WORKER_ID=worker-influx-client-dc001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
