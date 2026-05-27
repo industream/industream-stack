@@ -31,6 +31,22 @@ file — community images keep pulling anonymously from GHCR.
 - `gen-keys.sh` — one-time, Industream-side. Ed25519 keypair. **Private key never ships.**
 - `issue-license.sh` — Industream-side. Builds + signs a `.lic` (needs the private key).
 - `license.sh` — deploy-side library/CLI. Verifies offline (needs only the **public** key).
+- `ee-gate.sh` — the EE deploy gate (below).
+
+## EE deploy gate (`ee-gate.sh`)
+The keystone: turns a verified license into a deployment. It is the bash port of
+`stack-filter.ts`, fed by the **offline signed license** instead of Keygen.
+```bash
+./ee-gate.sh --license acme.lic [--pubkey keys/license-public.pem]
+             [--modules <modules.json>] [--env dev] [--login] [--deploy]
+```
+It (1) verifies signature + expiry, (2) derives the entitlement set
+(`addons[]` + `PRODUCT_<moduleKey>`), (3) reads `modules.json` and selects the
+allowed services + their stack files (BSL always; proprietary only if entitled —
+exactly `stack-filter.ts`), (4) applies the `-ee` image for modules with an
+`enterpriseVariant`, (5) `docker login`s the enterprise registry with the
+license-embedded robot creds, (6) prints/runs the `docker stack deploy`.
+**Dry-run by default**; `--login` authenticates, `--deploy` runs.
 
 ## Issue (Industream side)
 ```bash
