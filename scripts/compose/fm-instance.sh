@@ -68,6 +68,12 @@ cmd_create() {
   local fm_protocol
   fm_protocol=$(prompt "FM_PROTOCOL" "Protocol (http/https)" "$default_protocol")
 
+  # Optional EE mode (Logto + OAUTH). Mirror of --with-ee-overlay on swarm.
+  # When true, cmd_up appends docker-compose.ee.yml and logto secrets are
+  # generated below under instances/<name>/secrets/.
+  local with_ee
+  with_ee=$(prompt "WITH_EE" "Enable Enterprise mode (Logto OIDC) [true/false]" "false")
+
   echo ""
   echo -e "${YELLOW}=== Version Configuration (leave empty to use root .env) ===${NC}"
   echo ""
@@ -120,6 +126,20 @@ cmd_create() {
     [[ -n "$line" ]] && echo "# $line" >> "$instance_dir/.env"
   done < <(get_worker_versions)
 
+  # Persist the EE flag (read by cmd_up to decide whether to append
+  # docker-compose.ee.yml). Done as a plain append because the template
+  # predates EE — no placeholder to substitute.
+  echo "" >> "$instance_dir/.env"
+  echo "# Enterprise mode (Logto + OAUTH overlay)" >> "$instance_dir/.env"
+  echo "WITH_EE=$with_ee" >> "$instance_dir/.env"
+
+  # Generate EE secrets up-front so the first `fm up` doesn't trip on a
+  # missing file mount. Idempotent — safe to re-run.
+  if [[ "$with_ee" == "true" ]]; then
+    log_info "Generating EE secrets (logto_db_password, logto_db_url)..."
+    bash "$COMPOSE_ROOT/scripts/create-secrets-ee.sh" "$name"
+  fi
+
   # Write docker-compose.override.yml template
   cat > "$instance_dir/docker-compose.override.yml" <<'EOF'
 # Instance-specific compose overrides
@@ -162,6 +182,12 @@ EOF
   echo "  ./fm up $name --workers              # Core + workers (premium included)"
   echo "  ./fm up $name --workers --community  # Core + workers, community edition (public Harbor)"
   echo "  ./fm up $name --workers --uimaker    # Core + workers + UIMaker"
+  if [[ "$with_ee" == "true" ]]; then
+    echo ""
+    echo -e "${YELLOW}Enterprise mode enabled${NC} — logto + logto-postgres will start with the stack."
+    echo "  Auth endpoint:  ${fm_protocol}://auth.${fm_domain}"
+    echo "  Admin console:  ${fm_protocol}://auth-admin.${fm_domain}"
+  fi
 }
 
 cmd_up() {
@@ -214,6 +240,19 @@ cmd_up() {
     profiles+=(--profile premium)
   fi
 
+  # EE overlay (Logto + OAUTH) when the instance was created with WITH_EE=true.
+  # Idempotent — regenerate missing secrets if the user wiped the dir.
+  local with_ee
+  with_ee=$(grep -E '^WITH_EE=' "$instance_dir/.env" 2>/dev/null | cut -d= -f2)
+  if [[ "$with_ee" == "true" ]]; then
+    compose_files+=(-f "$COMPOSE_ROOT/docker-compose.ee.yml")
+    if [[ ! -f "$instance_dir/secrets/logto_db_url" ]]; then
+      log_info "EE secrets missing — regenerating..."
+      bash "$COMPOSE_ROOT/scripts/create-secrets-ee.sh" "$name"
+    fi
+    log_info "EE mode enabled (Logto + OAUTH)"
+  fi
+
   # Add instance override if exists
   [[ -f "$instance_dir/docker-compose.override.yml" ]] && \
     compose_files+=(-f "$instance_dir/docker-compose.override.yml")
@@ -246,6 +285,10 @@ cmd_up() {
     echo "  UIMaker RO: ${protocol}://uimaker-ro.${domain}"
     echo "  UIMaker API:${protocol}://uimaker-api.${domain}"
   fi
+  if [[ "$with_ee" == "true" ]]; then
+    echo "  Logto:      ${protocol}://auth.${domain}"
+    echo "  Logto admin:${protocol}://auth-admin.${domain}"
+  fi
 }
 
 cmd_down() {
@@ -261,6 +304,13 @@ cmd_down() {
     -f "$COMPOSE_ROOT/docker-compose.datacatalog.yml"
     -f "$COMPOSE_ROOT/docker-compose.workers.yml"
   )
+
+  # If this instance was created with WITH_EE=true, include the EE overlay
+  # so its services (logto, logto-postgres) are also reaped on down.
+  local with_ee
+  with_ee=$(grep -E '^WITH_EE=' "$instance_dir/.env" 2>/dev/null | cut -d= -f2)
+  [[ "$with_ee" == "true" ]] && \
+    compose_files+=(-f "$COMPOSE_ROOT/docker-compose.ee.yml")
 
   # Add instance override if exists
   [[ -f "$instance_dir/docker-compose.override.yml" ]] && \
