@@ -8,7 +8,7 @@
 # The community stack (docker-stack.yml, owned by the CE work) runs the Hub
 # backend natively as the `uifusion-api` service in JWKS-only / BASIC mode. This
 # overlay turns that single deployment into EE:
-#   - swaps `uifusion-api` to the enterprise image (uifusion/api-ee) and flips it
+#   - swaps `uifusion-api` to the enterprise image (uifusion/api-enterprise) and flips it
 #     to OAUTH against a self-hosted Logto;
 #   - adds Logto (+ its own Postgres).
 #
@@ -27,7 +27,7 @@
 services:
   # ---- Override the native Hub backend → enterprise image + OAUTH ------------
   uifusion-api:
-    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/uifusion/api-ee:${UIFUSION_API_EE_VERSION:-2.1.0}
+    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/uifusion/api-enterprise:${UIFUSION_API_EE_VERSION:-2.1.0}
     environment:
     - IH_AUTH_METHOD=OAUTH
     # Upstream Logto — issuer/JWKS/userinfo. JWKS+userinfo stay on the INTERNAL
@@ -50,7 +50,11 @@ services:
   # ---- Logto IdP -------------------------------------------------------------
   logto:
     image: ghcr.io/logto-io/logto:${LOGTO_VERSION:-latest}
-    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
+    # Logto reads DB_URL from env (no native _FILE convention support); we
+    # source the secret file into DB_URL at startup so docker secrets keep
+    # the password off the compose file. The CLI seed (idempotent) then runs
+    # before the server starts.
+    entrypoint: ["sh", "-c", "export DB_URL=$(cat $DB_URL_FILE) && npm run cli db seed -- --swe && npm start"]
     environment:
     - TRUST_PROXY_HEADER=1
     - DB_URL_FILE=/run/secrets/${ENV}_logto_db_url
