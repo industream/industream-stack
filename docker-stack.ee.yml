@@ -53,8 +53,11 @@ services:
     # Logto reads DB_URL from env (no native _FILE convention support); we
     # source the secret file into DB_URL at startup so docker secrets keep
     # the password off the compose file. The CLI seed (idempotent) then runs
-    # before the server starts.
-    entrypoint: ["sh", "-c", "export DB_URL=$(cat $DB_URL_FILE) && npm run cli db seed -- --swe && npm start"]
+    # before the server starts. NOTE: the secret path is hardcoded with
+    # ${ENV} (expanded by envsubst in deploy-swarm.sh) — referencing the
+    # DB_URL_FILE env var here would be mangled by envsubst at deploy-time
+    # (it strips unknown $VAR), so the literal path is used instead.
+    entrypoint: ["sh", "-c", "export DB_URL=$(cat /run/secrets/${ENV}_logto_db_url) && npm run cli db seed -- --swe && npm start"]
     environment:
     - TRUST_PROXY_HEADER=1
     - DB_URL_FILE=/run/secrets/${ENV}_logto_db_url
