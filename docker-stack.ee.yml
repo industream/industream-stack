@@ -28,6 +28,18 @@ services:
   # ---- Override the native Hub backend → enterprise image + OAUTH ------------
   uifusion-api:
     image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/uifusion/api-enterprise:${UIFUSION_API_EE_VERSION:-2.1.0}
+    # Enterprise image bundles Logto OIDC + revocation monitoring → larger
+    # working set than the community image. The CE limit (64M in
+    # docker-stack.yml) SIGKILLs Node before `dist/server.js` finishes
+    # boot. 512M observed sufficient on the test VM; tune via env.
+    deploy:
+      resources:
+        limits:
+          cpus: '${UIFUSION_API_EE_CPU_LIMIT:-0.5}'
+          memory: ${UIFUSION_API_EE_MEM_LIMIT:-512M}
+        reservations:
+          cpus: '${UIFUSION_API_EE_CPU_RESERVE:-0.05}'
+          memory: ${UIFUSION_API_EE_MEM_RESERVE:-256M}
     environment:
     - IH_AUTH_METHOD=OAUTH
     # Upstream Logto — issuer/JWKS/userinfo. JWKS+userinfo stay on the INTERNAL
