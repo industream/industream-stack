@@ -64,16 +64,24 @@ CANONICAL_SERVICES=(
   "datacatalog-api"
   "datacatalog-ui"
   "databridge-api"
+  # EE overlay services — only present when docker-{stack,compose}.ee.yml is
+  # included. Parity ensures their image/healthcheck/env-keys/ports match
+  # between the Swarm and Compose EE overlays.
+  "logto"
+  "logto-postgres"
 )
 
 # Compose service name aliases -> canonical name.
 # Compose uses `flowmaker-confighub` for the v2 image, `flowmaker-logging`,
-# `flowmaker-frontend` — map them so the parity check lines up.
+# `flowmaker-frontend` — map them so the parity check lines up. The EE
+# overlay overrides `industream-hub-backend` (compose) which is the same
+# service as `uifusion-api` (swarm).
 declare -A COMPOSE_ALIAS=(
   ["flowmaker-confighub"]="flowmaker-confighub-v2"
   ["flowmaker-logging"]="flowmaker-logger"
   ["flowmaker-frontend"]="flowmaker-front"
   ["databridge"]="databridge-api"
+  ["industream-hub-backend"]="uifusion-api"
 )
 
 # -----------------------------------------------------------------------------
