@@ -30,6 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/.."
 DEPLOY_DEMO=false
 DEPLOY_IRONSTREAM=false
+WITH_EE_OVERLAY=false
 CLEANUP_LEGACY=false
 ENV=""
 
@@ -56,6 +57,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --with-ironstream)
             DEPLOY_IRONSTREAM=true
+            shift
+            ;;
+        --with-ee-overlay)
+            WITH_EE_OVERLAY=true
             shift
             ;;
         --cleanup-legacy)
@@ -91,6 +96,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --with-demo        Also deploy demo simulators (dev env only - OPC-UA, MQTT, S7, Modbus, RTSP)"
             echo "  --with-ironstream  Include IronStream business services"
+            echo "  --with-ee-overlay  Include the Enterprise overlay (Logto OIDC + uifusion-api EE image)"
             echo "  --cleanup-legacy       Remove legacy worker services (after flow migration)"
             echo "  --skip-memory-check    Skip system memory validation"
             echo "  --show-credentials     Print admin credentials to stdout (default: path only)"
@@ -571,6 +577,21 @@ if [ "$DEPLOY_IRONSTREAM" = "true" ]; then
     else
         echo -e "${YELLOW}  \u26a0 docker-stack.ironstream.yml not found, skipping${NC}"
         DEPLOY_IRONSTREAM=false
+    fi
+fi
+
+# EE overlay (Logto + OAUTH override on uifusion-api). ee-gate.sh sets this
+# flag automatically when the license entitles the enterprise edition. The
+# custom auto-discovery block below is appended AFTER this overlay, so client
+# `custom/` files keep the final say on uifusion-api overrides.
+if [ "$WITH_EE_OVERLAY" = "true" ]; then
+    if [ -f "docker-stack.ee.yml" ]; then
+        STACK_FILES+=("docker-stack.ee.yml")
+        echo -e "${BLUE}  Including EE overlay — Logto + OAUTH (--with-ee-overlay)${NC}"
+    else
+        echo -e "${RED}✗ --with-ee-overlay requested but docker-stack.ee.yml not present${NC}"
+        echo -e "${YELLOW}  Pull the v2/ee-overlay branch or check out PR #2.${NC}"
+        exit 1
     fi
 fi
 
