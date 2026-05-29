@@ -20,28 +20,43 @@
 #                                    (Hub auth bridge: fetches JWT, injects
 #                                     into <iframe src=/grafana/>)
 #
-# JWKS resolution: Grafana reads http://uifusion-api:3050/auth/jwks from the
-# internal overlay network (no TLS, no mixed-content concerns since both ends
-# are in-cluster). The Hub backend (uifusion-api in both CE and EE) is the
-# authoritative JWKS publisher.
+# JWKS resolution: Grafana hard-rejects http:// for jwk_set_url ("jwt_set_url
+# must have https scheme"). We can't terminate TLS internally on uifusion-api
+# (Hub backend is plain HTTP on :3050), so we route through Traefik on the
+# public hostname: add `extra_hosts: industream.platform.lan -> host-gateway`
+# so Grafana resolves the public name to the swarm host (Traefik's published
+# :443 port), then `tls_skip_verify_insecure=true` because the cert is signed
+# by the platform's self-signed CA which Grafana doesn't trust by default.
+# Tighter alternative for prod: mount the platform CA into Grafana's
+# /usr/local/share/ca-certificates and drop the skip-verify.
 # =============================================================================
 services:
   # ---- Grafana: switch from BASIC to JWT auth via JWKS from Hub backend.
   # ---- Also flip serve_from_sub_path=true so the wrapper can mount it at
   # ---- /grafana/ on the same hostname (dashboard.${DOMAIN}/grafana/).
   grafana:
+    # Route the public Hub hostname back to the swarm host so Grafana can fetch
+    # JWKS over HTTPS (it refuses http://). host-gateway = the Docker host
+    # bridge gateway, which on a swarm node is the host itself → Traefik on
+    # :443 (published port).
+    extra_hosts:
+    - "${INDUSTREAM_DOMAIN:-localhost}:host-gateway"
     environment:
     # Disable BASIC: only JWT-bearer requests get through (the wrapper SPA
     # injects Authorization: Bearer <hub-jwt> on every request to /grafana/).
     - GF_AUTH_BASIC_ENABLED=false
     - GF_AUTH_DISABLE_LOGIN_FORM=true
-    # JWT validation. JWKS is fetched from the internal Hub backend service
-    # name — no TLS, no public DNS needed inside the swarm overlay network.
+    # JWT validation against the Hub backend JWKS, routed via Traefik on
+    # the public hostname (see extra_hosts above + jwt_set_url scheme check).
     - GF_AUTH_JWT_ENABLED=true
     - GF_AUTH_JWT_ENABLE_LOGIN_TOKEN=true
     - GF_AUTH_JWT_HEADER_NAME=Authorization
     - GF_AUTH_JWT_URL_LOGIN=true
-    - GF_AUTH_JWT_JWK_SET_URL=http://uifusion-api:3050/auth/jwks
+    - GF_AUTH_JWT_JWK_SET_URL=https://${INDUSTREAM_DOMAIN:-localhost}/auth/jwks
+    # The platform CA is self-signed (see TLS_MODE=selfsigned in .env) and
+    # Grafana doesn't trust it out of the box. Skip verification — JWKS
+    # integrity is enforced by the JWT signature check anyway, not TLS.
+    - GF_AUTH_JWT_TLS_SKIP_VERIFY_INSECURE=true
     - GF_AUTH_JWT_EXPECT_CLAIMS={"iss":"hub-backend","aud":"industream-hub"}
     - GF_AUTH_JWT_USERNAME_CLAIM=sub
     - GF_AUTH_JWT_EMAIL_CLAIM=email
