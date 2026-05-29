@@ -40,7 +40,10 @@ services:
   # ---- `allow-iframe@file` (defined in traefik-dynamic.yml) sets
   # ---- ALLOWALL + CSP frame-ancestors 'self' *.${DOMAIN}, so only
   # ---- Industream subdomains can iframe — no clickjacking exposure.
-  uifusion-ui:
+  # NB: service is `uifusion` (the SPA shell); `uifusion-ui` is just the
+  # Traefik router name. Routers belong to a service via labels, not by
+  # having a separate compose service.
+  uifusion:
     deploy:
       labels:
       - traefik.http.routers.${ENV}-uifusion-ui-secure.middlewares=allow-iframe@file
