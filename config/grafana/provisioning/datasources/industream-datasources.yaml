@@ -1,102 +1,54 @@
 # Industream Datasources Configuration
-# This file provisions datasources automatically in Grafana on startup
-# Grafana supports $VAR syntax for env variable substitution (NOT ${VAR:-default})
+# This file provisions datasources automatically in Grafana on startup.
+# Grafana supports $VAR syntax for env variable substitution (NOT ${VAR:-default}).
 #
-# SECRETS POLICY:
-# Sensitive values (DB passwords, API tokens) are NOT read from env vars.
-# Env vars are readable via `docker inspect`, /proc/<pid>/environ, and leak
-# into core dumps. Instead we use Grafana's `<field>__file` convention
-# (supported for secureJsonData since Grafana 8), which makes Grafana read
-# the content from the given path at load time. The path points at a
-# Docker secret mounted read-only in /run/secrets/*.
+# DESIGN — single funnel through DataBridge:
+# We deliberately ship ONLY the DataBridge plugin as a datasource. All
+# timeseries / DataCatalog access for dashboards goes through DataBridge so:
+#   - dashboards have ONE consistent query surface (no per-source syntax)
+#   - DataBridge centralises asset / displayname / unit / pattern logic
+#   - secrets live in one place (DataBridge api key) instead of N db passwords
+#   - downstream sources can change (Influx → Timescale, etc.) without
+#     touching dashboards
+#
+# Previously this file also provisioned: Industream-Timeseries (influxdb
+# direct), Industream-DataCatalog (infinity HTTP), Industream-DataCatalog-DB
+# (postgres direct), Industream-PostgreSQL (postgres direct),
+# Industream-Timeseries-API (json HTTP). Dropped on purpose — recreate via
+# the Grafana UI if you need a debug-time bypass, but do NOT re-add to YAML.
+#
+# SECRETS POLICY: secureJsonData fields use Grafana's `<field>__file`
+# convention so the value is read from /run/secrets/* at load time (no env
+# leakage via `docker inspect`).
 
 apiVersion: 1
 
 datasources:
-  # Industream DataBridge datasource (custom Go plugin, installed at runtime
-  # via GF_INSTALL_PLUGINS). The `type` MUST match the plugin id shipped by
-  # github.com/industream/grafana-databridge (industream-databridge-datasource).
-  # The `uid` is kept as the legacy "industream-datasource" so existing
-  # dashboards referencing that uid keep resolving after the plugin rename.
+  # Industream DataBridge — custom Go plugin installed at runtime via
+  # GF_INSTALL_PLUGINS. `type` MUST match the plugin id shipped by
+  # github.com/industream/grafana-databridge. The plugin owns the connection
+  # to BOTH the timeseries API (databridge.) and DataCatalog API
+  # (datacatalog.), fanning out queries internally — Grafana sees one
+  # datasource.
   - name: Industream-datasource
     type: industream-databridge-datasource
     access: proxy
-    url: http://databridge:8080
-    jsonData:
-      timeseriesApiUrl: https://databridge.$INDUSTREAM_DOMAIN
-      dataCatalogApiUrl: https://datacatalog.$INDUSTREAM_DOMAIN
-      tlsSkipVerify: true
-    editable: true
     isDefault: true
+    editable: true
     uid: industream-datasource
-
-  # Timeseries API - InfluxDB datasource
-  - name: Industream-Timeseries
-    type: influxdb
-    access: proxy
-    url: http://influxdb:8086
-    database: $INFLUX_BUCKET
-    jsonData:
-      version: Flux
-      organization: $INFLUX_ORG
-      defaultBucket: $INFLUX_BUCKET
-      tlsSkipVerify: true
-    secureJsonData:
-      token__file: /run/secrets/${ENV}_influx_admin_token
-    editable: true
-    isDefault: false
-    uid: industream-timeseries
-
-  # DataCatalog API - JSON API datasource (via Infinity plugin)
-  - name: Industream-DataCatalog
-    type: yesoreyeram-infinity-datasource
-    access: proxy
-    url: https://datacatalog.$INDUSTREAM_DOMAIN
-    jsonData:
-      tlsSkipVerify: true
-      timeField: "timestamp"
-      allowedHosts:
-        - datacatalog.$INDUSTREAM_DOMAIN
-    editable: true
-    uid: industream-datacatalog
-
-  # DataCatalog API - Alternative: PostgreSQL direct connection
-  - name: Industream-DataCatalog-DB
-    type: postgres
-    access: proxy
-    url: postgres:5432
-    database: DataCatalog
-    user: $DATACATALOG_DB_USER
-    jsonData:
-      sslmode: disable
-      postgresVersion: 1700  # PostgreSQL 17.x
-      timescaledb: false
-    secureJsonData:
-      password__file: /run/secrets/${ENV}_datacatalog_db_password
-    editable: true
-    uid: industream-datacatalog-db
-
-  # PostgreSQL - Main database
-  - name: Industream-PostgreSQL
-    type: postgres
-    access: proxy
-    url: postgres:5432
-    database: postgres
-    user: $POSTGRES_ADMIN_USER
-    jsonData:
-      sslmode: disable
-      postgresVersion: 1700
-    secureJsonData:
-      password__file: /run/secrets/${ENV}_postgres_admin_password
-    editable: true
-    uid: industream-postgres
-
-  # Timeseries API - Alternative: Direct HTTP API datasource
-  - name: Industream-Timeseries-API
-    type: marcusolsson-json-datasource
-    access: proxy
+    # `url` is unused by this plugin (it routes through dataBridgeApiUrl /
+    # dataCatalogApiUrl in jsonData). Kept as the public databridge endpoint
+    # for Grafana datasource-test UI compatibility.
     url: https://databridge.$INDUSTREAM_DOMAIN
     jsonData:
+      # Matches PluginSettings struct in pkg/models/settings.go — keep field
+      # names in sync if bumping the plugin version.
+      dataBridgeApiUrl: https://databridge.$INDUSTREAM_DOMAIN
+      dataCatalogApiUrl: https://datacatalog.$INDUSTREAM_DOMAIN
       tlsSkipVerify: true
-    editable: true
-    uid: industream-timeseries-api
+    # No secureJsonData (apiKey) — DataBridge backend currently runs
+    # un-authenticated on the internal overlay network. Add when an API key
+    # is provisioned (see /home/cdm/industream-platform/secrets/<env>/
+    # databridge_api_key — to be created):
+    # secureJsonData:
+    #   apiKey__file: /run/secrets/${ENV}_databridge_api_key
