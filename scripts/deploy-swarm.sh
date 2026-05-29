@@ -31,6 +31,7 @@ PROJECT_DIR="$SCRIPT_DIR/.."
 DEPLOY_DEMO=false
 DEPLOY_IRONSTREAM=false
 WITH_EE_OVERLAY=false
+WITH_GRAFANA_SSO=false
 CLEANUP_LEGACY=false
 ENV=""
 
@@ -61,6 +62,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --with-ee-overlay)
             WITH_EE_OVERLAY=true
+            shift
+            ;;
+        --with-grafana-sso)
+            WITH_GRAFANA_SSO=true
             shift
             ;;
         --cleanup-legacy)
@@ -97,6 +102,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --with-demo        Also deploy demo simulators (dev env only - OPC-UA, MQTT, S7, Modbus, RTSP)"
             echo "  --with-ironstream  Include IronStream business services"
             echo "  --with-ee-overlay  Include the Enterprise overlay (Logto OIDC + uifusion-api EE image)"
+            echo "  --with-grafana-sso Wrap Grafana in grafana-hub-wrapper (JWT/JWKS SSO via Hub backend) — CE/EE-compatible"
             echo "  --cleanup-legacy       Remove legacy worker services (after flow migration)"
             echo "  --skip-memory-check    Skip system memory validation"
             echo "  --show-credentials     Print admin credentials to stdout (default: path only)"
@@ -591,6 +597,20 @@ if [ "$WITH_EE_OVERLAY" = "true" ]; then
     else
         echo -e "${RED}✗ --with-ee-overlay requested but docker-stack.ee.yml not present${NC}"
         echo -e "${YELLOW}  Pull the v2/ee-overlay branch or check out PR #2.${NC}"
+        exit 1
+    fi
+fi
+
+# Grafana Hub SSO wrapper. CE/EE-compatible (the Hub backend always signs
+# its own JWT regardless of identity source). Appended after EE overlay so
+# EE-only env can be referenced if needed later; before custom so client
+# files retain final-word semantics.
+if [ "$WITH_GRAFANA_SSO" = "true" ]; then
+    if [ -f "docker-stack.grafana-wrapper.yml" ]; then
+        STACK_FILES+=("docker-stack.grafana-wrapper.yml")
+        echo -e "${BLUE}  Including Grafana SSO wrapper (--with-grafana-sso)${NC}"
+    else
+        echo -e "${RED}✗ --with-grafana-sso requested but docker-stack.grafana-wrapper.yml not present${NC}"
         exit 1
     fi
 fi
