@@ -52,7 +52,7 @@ services:
     - GF_AUTH_JWT_ENABLE_LOGIN_TOKEN=true
     - GF_AUTH_JWT_HEADER_NAME=Authorization
     - GF_AUTH_JWT_URL_LOGIN=true
-    - GF_AUTH_JWT_JWK_SET_URL=https://${INDUSTREAM_DOMAIN:-localhost}/auth/jwks
+    - GF_AUTH_JWT_JWK_SET_URL=https://${INDUSTREAM_DOMAIN:-localhost}/api/uifusion/auth/jwks
     # The platform CA is self-signed (see TLS_MODE=selfsigned in .env) and
     # Grafana doesn't trust it out of the box. Skip verification — JWKS
     # integrity is enforced by the JWT signature check anyway, not TLS.
