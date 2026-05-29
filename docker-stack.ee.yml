@@ -69,7 +69,7 @@ services:
     # ${ENV} (expanded by envsubst in deploy-swarm.sh) — referencing the
     # DB_URL_FILE env var here would be mangled by envsubst at deploy-time
     # (it strips unknown $VAR), so the literal path is used instead.
-    entrypoint: ["sh", "-c", "export DB_URL=$(cat /run/secrets/${ENV}_logto_db_url) && npm run cli db seed -- --swe && npm start"]
+    entrypoint: ["sh", "-c", "export DB_URL=$(cat /run/secrets/${ENV}_logto_db_url) && npm run cli db alteration deploy latest && npm run cli db seed -- --swe && npm start"]
     environment:
     - TRUST_PROXY_HEADER=1
     - DB_URL_FILE=/run/secrets/${ENV}_logto_db_url
