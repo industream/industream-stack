@@ -31,6 +31,20 @@
 # /usr/local/share/ca-certificates and drop the skip-verify.
 # =============================================================================
 services:
+  # ---- Hub SPA: allow cross-subdomain iframe so the wrapper at
+  # ---- dashboard.${DOMAIN} can embed the Hub's `/shared-worker.html`
+  # ---- auth-bridge iframe. Default `security-headers@file` sets
+  # ---- X-Frame-Options=SAMEORIGIN which blocks the bridge → the wrapper
+  # ---- never receives a JWT and Grafana returns 302 → /login → "Welcome
+  # ---- to Grafana" instead of the dashboard.
+  # ---- `allow-iframe@file` (defined in traefik-dynamic.yml) sets
+  # ---- ALLOWALL + CSP frame-ancestors 'self' *.${DOMAIN}, so only
+  # ---- Industream subdomains can iframe — no clickjacking exposure.
+  uifusion-ui:
+    deploy:
+      labels:
+      - traefik.http.routers.${ENV}-uifusion-ui-secure.middlewares=allow-iframe@file
+
   # ---- Grafana: switch from BASIC to JWT auth via JWKS from Hub backend.
   # ---- Also flip serve_from_sub_path=true so the wrapper can mount it at
   # ---- /grafana/ on the same hostname (dashboard.${DOMAIN}/grafana/).
