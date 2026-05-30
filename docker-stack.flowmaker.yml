@@ -150,6 +150,11 @@ services:
     image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.core/flowmaker-front:${FLOWMAKER_FRONTEND_VERSION:-2.1.0}
     environment:
     - FMUI_CONFIG_HUB_URL=https://confighub.${INDUSTREAM_DOMAIN:-localhost}
+    # The SPA dynamically imports ${industreamHubOrigin}/industream-login.js
+    # for the cross-subdomain auth-bridge. Default in assets/config.json is
+    # a test-stub (hub.hub-test.flowmaker.testnet) baked into the image —
+    # if left, the SPA crashes at bootstrap with ERR_NAME_NOT_RESOLVED.
+    - FMUI_INDUSTREAM_HUB_ORIGIN=https://${INDUSTREAM_DOMAIN:-localhost}
     networks:
     - traefik-public
     - ${ENV}-platform
