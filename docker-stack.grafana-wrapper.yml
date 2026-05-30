@@ -85,11 +85,31 @@ services:
     - GF_SERVER_SERVE_FROM_SUB_PATH=true
     - GF_SERVER_ROOT_URL=https://dashboard.${INDUSTREAM_DOMAIN:-localhost}/grafana/
     deploy:
-      # Strip the dashboard.${DOMAIN} route from Grafana — it now belongs to
-      # grafana-wrapper. Traefik labels are fully replaced (no merge — swarm
-      # overlays replace label lists wholesale on `deploy.labels`).
+      # In dict-merge semantics, the base monitoring.yml labels stay; we
+      # override the existing Host(dashboard.${DOMAIN}) router to point at
+      # a hidden hostname (grafana-direct.${DOMAIN}) instead — the wrapper
+      # owns dashboard.${DOMAIN} for normal traffic. Then add a dedicated
+      # WebSocket router for /grafana/api/live/* that bypasses nginx and
+      # goes straight to grafana:3000 — Traefik handles WS natively and
+      # has no H2C-smuggling exposure (it understands the upgrade as a
+      # first-class protocol switch, not a smugglable HTTP header).
       labels:
-      - traefik.enable=false
+      - traefik.enable=true
+      # Re-target the base "grafana-secure" router off dashboard.${DOMAIN}
+      # so the wrapper keeps that hostname. grafana-direct.* gives admins a
+      # back-door route to Grafana without the wrapper (useful for debug).
+      - traefik.http.routers.${ENV}-grafana-secure.rule=Host(`grafana-direct.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-grafana.rule=Host(`grafana-direct.${INDUSTREAM_DOMAIN:-localhost}`)
+      # WebSocket router on dashboard.${DOMAIN}/grafana/api/live/* — higher
+      # priority than the wrapper's catch-all so Traefik picks this for the
+      # WS paths. Stripprefix-free: Grafana already serves at /grafana/* via
+      # serve_from_sub_path=true.
+      - traefik.http.routers.${ENV}-grafana-live-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-grafana-live-secure.rule=Host(`dashboard.${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/grafana/api/live`)
+      - traefik.http.routers.${ENV}-grafana-live-secure.tls=true
+      - traefik.http.routers.${ENV}-grafana-live-secure.service=${ENV}-grafana
+      - traefik.http.routers.${ENV}-grafana-live-secure.middlewares=allow-iframe@file
+      - traefik.http.routers.${ENV}-grafana-live-secure.priority=200
 
   # ---- Hub auth bridge in front of Grafana ---------------------------------
   grafana-wrapper:
