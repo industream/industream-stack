@@ -1,0 +1,159 @@
+# =============================================================================
+# Grafana Hub SSO wrapper — CE/EE-compatible overlay
+# =============================================================================
+# Wires `industream/grafana-hub-wrapper` in front of Grafana, with Grafana
+# configured for JWT auth against the Hub backend's JWKS endpoint. The Hub
+# always signs its own JWT (issuer=hub-backend, aud=industream-hub) regardless
+# of whether the identity SOURCE is internal (CE) or Logto (EE), so this
+# overlay works on both editions unchanged.
+#
+# Deploy:
+#   docker stack deploy -c docker-stack.yml [...other overlays...] \
+#                       -c docker-stack.grafana-wrapper.yml ${ENV}
+# Or via deploy-swarm.sh: add the file to STACK_FILES via --with-grafana-sso
+# (see scripts/deploy-swarm.sh).
+#
+# Topology:
+#   browser → traefik → grafana-wrapper:8080 (nginx)
+#                    ├─ /grafana/  → grafana:3000   (same-origin proxy)
+#                    └─ /          → /usr/share/nginx/html/index.html
+#                                    (Hub auth bridge: fetches JWT, injects
+#                                     into <iframe src=/grafana/>)
+#
+# JWKS resolution: Grafana hard-rejects http:// for jwk_set_url ("jwt_set_url
+# must have https scheme"). We can't terminate TLS internally on uifusion-api
+# (Hub backend is plain HTTP on :3050), so we route through Traefik on the
+# public hostname: add `extra_hosts: industream.platform.lan -> host-gateway`
+# so Grafana resolves the public name to the swarm host (Traefik's published
+# :443 port), then `tls_skip_verify_insecure=true` because the cert is signed
+# by the platform's self-signed CA which Grafana doesn't trust by default.
+# Tighter alternative for prod: mount the platform CA into Grafana's
+# /usr/local/share/ca-certificates and drop the skip-verify.
+# =============================================================================
+services:
+  # ---- Hub SPA: allow cross-subdomain iframe so the wrapper at
+  # ---- dashboard.${DOMAIN} can embed the Hub's `/shared-worker.html`
+  # ---- auth-bridge iframe. Default `security-headers@file` sets
+  # ---- X-Frame-Options=SAMEORIGIN which blocks the bridge → the wrapper
+  # ---- never receives a JWT and Grafana returns 302 → /login → "Welcome
+  # ---- to Grafana" instead of the dashboard.
+  # ---- `allow-iframe@file` (defined in traefik-dynamic.yml) sets
+  # ---- ALLOWALL + CSP frame-ancestors 'self' *.${DOMAIN}, so only
+  # ---- Industream subdomains can iframe — no clickjacking exposure.
+  # NB: service is `uifusion` (the SPA shell); `uifusion-ui` is just the
+  # Traefik router name. Routers belong to a service via labels, not by
+  # having a separate compose service.
+  uifusion:
+    deploy:
+      labels:
+      - traefik.http.routers.${ENV}-uifusion-ui-secure.middlewares=allow-iframe@file
+
+  # ---- Grafana: switch from BASIC to JWT auth via JWKS from Hub backend.
+  # ---- Also flip serve_from_sub_path=true so the wrapper can mount it at
+  # ---- /grafana/ on the same hostname (dashboard.${DOMAIN}/grafana/).
+  grafana:
+    # Route the public Hub hostname back to the swarm host so Grafana can fetch
+    # JWKS over HTTPS (it refuses http://). host-gateway = the Docker host
+    # bridge gateway, which on a swarm node is the host itself → Traefik on
+    # :443 (published port).
+    extra_hosts:
+    - "${INDUSTREAM_DOMAIN:-localhost}:host-gateway"
+    environment:
+    # Disable BASIC: only JWT-bearer requests get through (the wrapper SPA
+    # injects Authorization: Bearer <hub-jwt> on every request to /grafana/).
+    - GF_AUTH_BASIC_ENABLED=false
+    - GF_AUTH_DISABLE_LOGIN_FORM=true
+    # JWT validation against the Hub backend JWKS, routed via Traefik on
+    # the public hostname (see extra_hosts above + jwt_set_url scheme check).
+    - GF_AUTH_JWT_ENABLED=true
+    - GF_AUTH_JWT_ENABLE_LOGIN_TOKEN=true
+    - GF_AUTH_JWT_HEADER_NAME=Authorization
+    - GF_AUTH_JWT_URL_LOGIN=true
+    - GF_AUTH_JWT_JWK_SET_URL=https://${INDUSTREAM_DOMAIN:-localhost}/api/uifusion/auth/jwks
+    # The platform CA is self-signed (see TLS_MODE=selfsigned in .env) and
+    # Grafana doesn't trust it out of the box. Skip verification — JWKS
+    # integrity is enforced by the JWT signature check anyway, not TLS.
+    - GF_AUTH_JWT_TLS_SKIP_VERIFY_INSECURE=true
+    - GF_AUTH_JWT_EXPECT_CLAIMS={"iss":"hub-backend","aud":"industream-hub"}
+    - GF_AUTH_JWT_USERNAME_CLAIM=sub
+    - GF_AUTH_JWT_EMAIL_CLAIM=email
+    - GF_AUTH_JWT_AUTO_SIGN_UP=true
+    # Role from Hub claims. JMESPath: `contains(roles,'admin') && 'Admin' || 'Editor'`
+    - GF_AUTH_JWT_ROLE_ATTRIBUTE_PATH=contains(roles, 'admin') && 'Admin' || 'Editor'
+    # Mount Grafana at /grafana/ behind the wrapper so the iframe stays
+    # same-origin (no third-party cookie / X-Frame-Options issues).
+    - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    - GF_SERVER_ROOT_URL=https://dashboard.${INDUSTREAM_DOMAIN:-localhost}/grafana/
+    deploy:
+      # In dict-merge semantics, the base monitoring.yml labels stay; we
+      # override the existing Host(dashboard.${DOMAIN}) router to point at
+      # a hidden hostname (grafana-direct.${DOMAIN}) instead — the wrapper
+      # owns dashboard.${DOMAIN} for normal traffic. Then add a dedicated
+      # WebSocket router for /grafana/api/live/* that bypasses nginx and
+      # goes straight to grafana:3000 — Traefik handles WS natively and
+      # has no H2C-smuggling exposure (it understands the upgrade as a
+      # first-class protocol switch, not a smugglable HTTP header).
+      labels:
+      - traefik.enable=true
+      # Re-target the base "grafana-secure" router off dashboard.${DOMAIN}
+      # so the wrapper keeps that hostname. grafana-direct.* gives admins a
+      # back-door route to Grafana without the wrapper (useful for debug).
+      - traefik.http.routers.${ENV}-grafana-secure.rule=Host(`grafana-direct.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-grafana.rule=Host(`grafana-direct.${INDUSTREAM_DOMAIN:-localhost}`)
+      # WebSocket router on dashboard.${DOMAIN}/grafana/api/live/* — higher
+      # priority than the wrapper's catch-all so Traefik picks this for the
+      # WS paths. Stripprefix-free: Grafana already serves at /grafana/* via
+      # serve_from_sub_path=true.
+      - traefik.http.routers.${ENV}-grafana-live-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-grafana-live-secure.rule=Host(`dashboard.${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/grafana/api/live`)
+      - traefik.http.routers.${ENV}-grafana-live-secure.tls=true
+      - traefik.http.routers.${ENV}-grafana-live-secure.service=${ENV}-grafana
+      - traefik.http.routers.${ENV}-grafana-live-secure.middlewares=allow-iframe@file
+      - traefik.http.routers.${ENV}-grafana-live-secure.priority=200
+
+  # ---- Hub auth bridge in front of Grafana ---------------------------------
+  grafana-wrapper:
+    image: ${ENTERPRISE_REGISTRY:-842775dh.c1.gra9.container-registry.ovh.net}/industream/grafana-hub-wrapper:${GRAFANA_WRAPPER_VERSION:-1.0.1}
+    environment:
+    # The wrapper SPA loads `${INDUSTREAM_HUB_ORIGIN}/industream-login.js` for
+    # the auth client. Same host as the rest of the Hub UI so cookies +
+    # service-worker share an origin.
+    - INDUSTREAM_HUB_ORIGIN=https://${INDUSTREAM_DOMAIN:-localhost}
+    networks:
+    - traefik-public
+    - ${ENV}-platform
+    depends_on:
+    - grafana
+    - uifusion-api
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-grafana-wrapper-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-grafana-wrapper-secure.rule=Host(`dashboard.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-grafana-wrapper-secure.tls=true
+      - traefik.http.routers.${ENV}-grafana-wrapper-secure.service=${ENV}-grafana-wrapper
+      # Same iframe middleware as the original grafana route: ALLOWALL + CSP
+      # frame-ancestors *.${DOMAIN}. The wrapper SPA itself is embedded inside
+      # the Industream Hub menu so it MUST be iframeable from the Hub origin.
+      - traefik.http.routers.${ENV}-grafana-wrapper-secure.middlewares=allow-iframe@file
+      - traefik.http.routers.${ENV}-grafana-wrapper.entrypoints=web
+      - traefik.http.routers.${ENV}-grafana-wrapper.rule=Host(`dashboard.${INDUSTREAM_DOMAIN:-localhost}`)
+      - traefik.http.routers.${ENV}-grafana-wrapper.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-grafana-wrapper.loadbalancer.server.port=8080
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
+        reservations:
+          cpus: '0.01'
+          memory: 16M
+      restart_policy:
+        condition: any
+        delay: 5s
+        window: 120s

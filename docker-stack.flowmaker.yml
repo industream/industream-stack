@@ -13,7 +13,12 @@ services:
     image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.core/flowmaker-launcher:${FLOWMAKER_CORE_VERSION:-2.1.0}
     stop_grace_period: 30s
     environment:
+    # Two distinct HTTP ports — the SPA & operator UI talk to the PUBLIC
+    # one (3121), workers register on the BACKEND one (3120). The compose
+    # dev stack already wires Caddy to {{upstreams 3121}}; we keep parity
+    # by exposing 3121 to Traefik below.
     - FM_RUNTIME_BACKEND_PORT=3120
+    - FM_RUNTIME_PUBLIC_PORT=3121
     - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
     - FM_CONFIGHUB_URL=http://flowmaker-confighub:4000
     - FM_LAUNCHER_DATA_PATH=/data
@@ -43,7 +48,11 @@ services:
       - traefik.http.routers.${ENV}-flowmaker-scheduler.entrypoints=web
       - traefik.http.routers.${ENV}-flowmaker-scheduler.rule=Host(`scheduler.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-flowmaker-scheduler.middlewares=redirect-to-https@file
-      - traefik.http.services.${ENV}-flowmaker-scheduler.loadbalancer.server.port=3120
+      # 3121 = FM_RUNTIME_PUBLIC_PORT: serves /workers, /runs, /sessions/:id/heartbeat
+      # to the FlowMaker SPA. The OTHER port (3120) is the worker-facing backend
+      # — only reachable on the internal overlay network (FM_RUNTIME_HTTP_ADDRESS
+      # in docker-compose.workers.yml). Don't expose 3120 publicly.
+      - traefik.http.services.${ENV}-flowmaker-scheduler.loadbalancer.server.port=3121
       resources:
         limits:
           cpus: '1.0'
@@ -150,6 +159,11 @@ services:
     image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.core/flowmaker-front:${FLOWMAKER_FRONTEND_VERSION:-2.1.0}
     environment:
     - FMUI_CONFIG_HUB_URL=https://confighub.${INDUSTREAM_DOMAIN:-localhost}
+    # The SPA dynamically imports ${industreamHubOrigin}/industream-login.js
+    # for the cross-subdomain auth-bridge. Default in assets/config.json is
+    # a test-stub (hub.hub-test.flowmaker.testnet) baked into the image —
+    # if left, the SPA crashes at bootstrap with ERR_NAME_NOT_RESOLVED.
+    - FMUI_INDUSTREAM_HUB_ORIGIN=https://${INDUSTREAM_DOMAIN:-localhost}
     networks:
     - traefik-public
     - ${ENV}-platform

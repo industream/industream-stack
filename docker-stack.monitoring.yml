@@ -54,7 +54,7 @@ services:
     - TZ=${TZ:-Europe/Berlin}
     # Runtime plugin install (replaces the baked-in grafana-industream image):
     #   - yesoreyeram-infinity-datasource / marcusolsson-json-datasource: public
-    #   - volkovlabs-echarts-panel: public (Apache ECharts panel)
+    #   - volkovlabs-echarts-panel: public (Volkovlabs Business Charts — Apache ECharts)
     #   - DataBridge datasource: private Go plugin, installed from its GitHub
     #     release zip via `<url>;<plugin-id>`. Appended only when
     #     GRAFANA_DATABRIDGE_PLUGIN is set (compose ${VAR:+,${VAR}} expansion),
