@@ -70,7 +70,7 @@ services:
         window: 120s
 
   worker-js-expression:
-    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/js-expression:${WORKER_JS_EXPRESSION_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/js-expression:${WORKER_JS_EXPRESSION_VERSION:-2.1.3}
     environment:
     - FM_WORKER_ID=worker-js-expression001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -131,7 +131,7 @@ services:
         window: 120s
 
   worker-postgres-client:
-    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/postgres-client:${WORKER_POSTGRES_CLIENT_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/postgres-client:${WORKER_POSTGRES_CLIENT_VERSION:-2.0.5}
     environment:
     - FM_WORKER_ID=worker-postgres-client001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -161,7 +161,7 @@ services:
         window: 120s
 
   worker-timeseries:
-    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/timeseries-workers:${WORKER_TIMESERIES_VERSION:-2.1.0-dev}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/timeseries-workers:${WORKER_TIMESERIES_VERSION:-2.1.0}
     environment:
     - FM_WORKER_ID=worker-timeseries001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -254,7 +254,7 @@ services:
   # INDUSTRIAL PROTOCOL WORKERS
   # ==========================================
   worker-mqtt-client:
-    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/mqtt-client:${WORKER_MQTT_CLIENT_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/mqtt-client:${WORKER_MQTT_CLIENT_VERSION:-2.2.2}
     environment:
     - FM_WORKER_ID=worker-mqtt-client001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -284,7 +284,7 @@ services:
         window: 120s
 
   worker-modbus-tcp:
-    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/modbus-tcp:${WORKER_MODBUS_TCP_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/modbus-tcp:${WORKER_MODBUS_TCP_VERSION:-2.1.2}
     environment:
     - FM_WORKER_ID=worker-modbus-tcp001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -403,7 +403,7 @@ services:
         window: 120s
 
   equation-solver:
-    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/equation-solver:${WORKER_EQUATION_SOLVER_VERSION:-2.0.3}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/equation-solver:${WORKER_EQUATION_SOLVER_VERSION:-2.0.5}
     environment:
     - FM_WORKER_ID=worker-eqsolver001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
