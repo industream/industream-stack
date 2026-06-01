@@ -527,7 +527,7 @@ services:
         window: 120s
 
   worker-minio-sink:
-    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.boxes/minio-sink:${WORKER_MINIO_SINK_VERSION:-1.0.0}
+    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/minio-sink:${WORKER_MINIO_SINK_VERSION:-1.0.1}
     environment:
     - FM_WORKER_ID=worker-minio-sink001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
