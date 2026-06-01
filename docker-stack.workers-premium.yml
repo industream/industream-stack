@@ -7,7 +7,7 @@
 
 services:
   worker-opc-ua-client:
-    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-opc-ua-client:${WORKER_OPC_UA_CLIENT_VERSION:-2.0.3}
+    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/opc-ua-client:${WORKER_OPC_UA_CLIENT_VERSION:-2.0.3}
     environment:
     - FM_WORKER_ID=worker-opc-ua-client001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -37,7 +37,7 @@ services:
         window: 120s
 
   worker-rtsp-client:
-    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-rtsp-client:${WORKER_RTSP_CLIENT_VERSION:-1.0.0}
+    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/rtsp-client:${WORKER_RTSP_CLIENT_VERSION:-1.0.0}
     environment:
     - FM_WORKER_ID=worker-rtsp-client001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
@@ -67,7 +67,7 @@ services:
         window: 120s
 
   worker-luminosity-box:
-    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/flow-box-luminosity-box:${WORKER_LUMINOSITY_BOX_VERSION:-1.0.0}
+    image: ${ENTERPRISE_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}/flowmaker.boxes/luminosity-box:${WORKER_LUMINOSITY_BOX_VERSION:-1.0.0}
     environment:
     - FM_WORKER_ID=worker-luminosity-box001
     - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
