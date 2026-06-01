@@ -25,10 +25,12 @@
 # (Hub backend is plain HTTP on :3050), so we route through Traefik on the
 # public hostname: add `extra_hosts: industream.platform.lan -> host-gateway`
 # so Grafana resolves the public name to the swarm host (Traefik's published
-# :443 port), then `tls_skip_verify_insecure=true` because the cert is signed
-# by the platform's self-signed CA which Grafana doesn't trust by default.
-# Tighter alternative for prod: mount the platform CA into Grafana's
-# /usr/local/share/ca-certificates and drop the skip-verify.
+# :443 port). The cert presented there must be TRUSTED by Grafana (skip-verify
+# does NOT work for the JWKS fetch in Grafana 13 — see the env note below):
+#   - TLS_MODE=letsencrypt → trusted out of the box.
+#   - TLS_MODE=selfsigned  → companion overlay docker-stack.grafana-wrapper-
+#     selfsigned.yml mounts the platform CA into Grafana (SSL_CERT_DIR), kept
+#     non-root. deploy-swarm.sh appends it automatically when selfsigned.
 # =============================================================================
 services:
   # ---- Hub SPA: allow cross-subdomain iframe so the wrapper at
@@ -70,10 +72,16 @@ services:
     - GF_AUTH_JWT_HEADER_NAME=Authorization
     - GF_AUTH_JWT_URL_LOGIN=true
     - GF_AUTH_JWT_JWK_SET_URL=https://${INDUSTREAM_DOMAIN:-localhost}/api/uifusion/auth/jwks
-    # The platform CA is self-signed (see TLS_MODE=selfsigned in .env) and
-    # Grafana doesn't trust it out of the box. Skip verification — JWKS
-    # integrity is enforced by the JWT signature check anyway, not TLS.
-    - GF_AUTH_JWT_TLS_SKIP_VERIFY_INSECURE=true
+    # Verify the JWKS endpoint TLS. NOTE: Grafana 13 does NOT honor
+    # tls_skip_verify_insecure for the JWKS fetch — with a self-signed cert the
+    # keyset stays empty ("no keys found") and EVERY token is rejected, so
+    # Grafana falls back to its login page ("Welcome to Grafana"). skip-verify
+    # is therefore not a usable workaround. The cert must be genuinely trusted:
+    #   - TLS_MODE=letsencrypt → public cert trusted out of the box (nothing else).
+    #   - TLS_MODE=selfsigned  → trust the platform CA in Grafana via
+    #     docker-stack.grafana-wrapper-selfsigned.yml (deploy-swarm.sh appends it
+    #     automatically when TLS_MODE=selfsigned).
+    - GF_AUTH_JWT_TLS_SKIP_VERIFY_INSECURE=false
     - GF_AUTH_JWT_EXPECT_CLAIMS={"iss":"hub-backend","aud":"industream-hub"}
     - GF_AUTH_JWT_USERNAME_CLAIM=sub
     - GF_AUTH_JWT_EMAIL_CLAIM=email

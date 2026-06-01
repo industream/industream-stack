@@ -613,6 +613,25 @@ if [ "$WITH_GRAFANA_SSO" = "true" ]; then
         echo -e "${RED}✗ --with-grafana-sso requested but docker-stack.grafana-wrapper.yml not present${NC}"
         exit 1
     fi
+
+    # TLS_MODE-conditional CA trust for the JWKS fetch:
+    #   - selfsigned → Grafana must trust the platform CA (skip-verify does NOT
+    #     work in Grafana 13 for JWKS). Append the overlay that mounts it.
+    #   - letsencrypt → public cert trusted out of the box; nothing to add.
+    if [ "${TLS_MODE:-selfsigned}" = "selfsigned" ]; then
+        if [ -f "docker-stack.grafana-wrapper-selfsigned.yml" ]; then
+            STACK_FILES+=("docker-stack.grafana-wrapper-selfsigned.yml")
+            echo -e "${BLUE}  Trusting platform CA in Grafana (TLS_MODE=selfsigned)${NC}"
+            if [ ! -f "certs/${INDUSTREAM_DOMAIN}.crt" ]; then
+                echo -e "${YELLOW}  ⚠ certs/${INDUSTREAM_DOMAIN}.crt not found — run scripts/generate/generate-certs.sh first, else Grafana SSO will fail with 'no keys found'${NC}"
+            fi
+        else
+            echo -e "${RED}✗ TLS_MODE=selfsigned + --with-grafana-sso but docker-stack.grafana-wrapper-selfsigned.yml not present${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${BLUE}  Grafana SSO: TLS_MODE=${TLS_MODE} → relying on publicly-trusted cert (no CA mount)${NC}"
+    fi
 fi
 
 # =============================================================================
