@@ -131,6 +131,11 @@ services:
     - DB_SECRET_NAME=${ENV}_datacatalog_db_password
     - PostgreSql__ConnectionString=Server=postgres;Port=5432;User Id=${DATACATALOG_DB_USER:-datacatalog};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${DATACATALOG_DB_NAME:-DataCatalog};
     - Database__MigrateOnStartup=false
+    # Hub JWT validation (dual-port: 8002 frontend JWT / 8003 backend API key).
+    - ASPNETCORE_HTTP_PORTS=8002;8003
+    - Authentication__Frontend__Issuer=${FM_AUTH_ISSUER:-hub-backend}
+    - Authentication__Frontend__Audience=${FM_AUTH_AUDIENCE:-industream-hub}
+    - Authentication__Frontend__JwksUrl=${FM_AUTH_JWKS_URL:-http://uifusion-api:3050/auth/jwks}
     volumes:
     - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
     networks:
@@ -143,7 +148,7 @@ services:
     healthcheck:
       test:
       - CMD-SHELL
-      - wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/health || exit 1
+      - wget --no-verbose --tries=1 --spider http://127.0.0.1:8002/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
@@ -160,7 +165,7 @@ services:
       - traefik.http.routers.${ENV}-datacatalog-api.rule=Host(`datacatalog.${INDUSTREAM_DOMAIN:-localhost}`) || Host(`datacatalog-api.${INDUSTREAM_DOMAIN:-localhost}`)
       - traefik.http.routers.${ENV}-datacatalog-api.middlewares=redirect-to-https@file
       - traefik.http.middlewares.${ENV}-datacatalog-api-stripprefix.stripprefix.prefixes=/api/datacatalog
-      - traefik.http.services.${ENV}-datacatalog-api.loadbalancer.server.port=8080
+      - traefik.http.services.${ENV}-datacatalog-api.loadbalancer.server.port=8002
       - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.entrypoints=websecure
       - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.rule=Host(`datacatalog-ui.${INDUSTREAM_DOMAIN:-localhost}`) && PathPrefix(`/api/`)
       - traefik.http.routers.${ENV}-datacatalog-api-ui-proxy.tls=true
