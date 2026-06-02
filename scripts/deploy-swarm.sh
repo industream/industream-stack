@@ -1200,6 +1200,52 @@ echo -e "${GREEN}✓ ${ENV^^} environment deployed successfully!${NC}"
 echo -e "${GREEN}══════════════════════════════════════════════════${NC}"
 
 # =============================================================================
+# EE: auto-register Logto OIDC apps from service labels (io.industream.logto.*)
+# =============================================================================
+# The label-driven seeder writes OIDC apps straight into logto-postgres (no
+# Management API / M2M). It ships INSIDE the EE Hub-backend image
+# (api-enterprise → /app/oidc-seeds/) — present in EE only, never in CE — so we
+# extract it from the running container at deploy time. A vendored copy under
+# scripts/setup/ takes precedence if present. Best-effort: waits briefly for
+# Logto, never fails the deploy. (API resources + RBAC roles still come from
+# seed-logto.sh, which needs a Management-API M2M app.)
+if [ "$WITH_EE_OVERLAY" = "true" ]; then
+    SEEDER="${SCRIPT_DIR}/setup/seed-logto-stack.sh"
+    if [ ! -f "$SEEDER" ]; then
+        # Not vendored → extract from the EE Hub-backend container to a temp file
+        # (never write into the repo working tree).
+        _hub_cid=$(docker ps -q \
+            --filter "label=com.docker.swarm.service.name=${STACK_NAME}_uifusion-api" | head -1)
+        if [ -n "$_hub_cid" ]; then
+            SEEDER="$(mktemp -d)/seed-logto-stack.sh"
+            docker cp "${_hub_cid}:/app/oidc-seeds/logto/seed-logto-stack.sh" "$SEEDER" 2>/dev/null \
+                || SEEDER=""
+        else
+            SEEDER=""
+        fi
+    fi
+
+    if [ -n "$SEEDER" ] && [ -f "$SEEDER" ]; then
+        echo ""
+        echo -e "${BLUE}EE: registering Logto OIDC apps from service labels...${NC}"
+        # Best-effort Logto readiness wait (OIDC discovery endpoint, internal net).
+        for _i in $(seq 1 30); do
+            docker run --rm --network "${STACK_NAME}_${ENV}-platform" curlimages/curl:8.9.1 \
+                -sf -o /dev/null --max-time 3 \
+                "http://logto:3001/oidc/.well-known/openid-configuration" 2>/dev/null && break
+            sleep 4
+        done
+        if SWARM_STACK="$STACK_NAME" bash "$SEEDER" --runtime swarm --stack "$STACK_NAME"; then
+            echo -e "${GREEN}✓ Logto OIDC apps registered${NC}"
+        else
+            echo -e "${YELLOW}⚠ Logto app registration failed (non-fatal — re-run seed-logto-stack.sh manually)${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ seed-logto-stack.sh unavailable (no vendored copy + EE image lacks /app/oidc-seeds/) — Logto OIDC apps not auto-registered.${NC}"
+    fi
+fi
+
+# =============================================================================
 # Display demo information if deployed
 # =============================================================================
 if [ "$DEPLOY_DEMO" = "true" ]; then

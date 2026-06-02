@@ -41,6 +41,24 @@ services:
     - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile roles offline_access}
     - OIDC_AUDIENCE=${OIDC_AUDIENCE:-}
     - OIDC_REDIRECT_PATH=${OIDC_REDIRECT_PATH:-/}
+    # The shell embeds sibling apps + the SharedWorker bridge iframe across
+    # subdomains. The CE base router uses security-headers@file (X-Frame-Options
+    # SAMEORIGIN) which blocks that → switch to allow-iframe@file (ALLOWALL +
+    # CSP frame-ancestors scoped to ${INDUSTREAM_DOMAIN}). Same override the
+    # grafana-wrapper overlay applies; declared here so EE works without it.
+    deploy:
+      labels:
+      - traefik.http.routers.${ENV}-uifusion-ui-secure.middlewares=allow-iframe@file
+      # Label-driven Logto OIDC app registration. seed-logto-stack.sh (hub repo)
+      # scans these labels and upserts the `industream-hub-app` SPA straight into
+      # logto-postgres (no Management API / M2M needed). The shell is the only
+      # service doing a direct OIDC login; sibling apps (datacatalog, grafana)
+      # consume the Hub-minted token via the SharedWorker bridge instead.
+      - io.industream.logto.register=true
+      - io.industream.logto.client_id=industream-hub-app
+      - io.industream.logto.app_type=SPA
+      - io.industream.logto.name=Industream Hub
+      - io.industream.logto.redirect_uri=https://${INDUSTREAM_DOMAIN:-localhost}/
 
   # ---- Override the native Hub backend → enterprise image + OAUTH ------------
   uifusion-api:
@@ -75,6 +93,15 @@ services:
     - IH_REVOCATION_CHECK_INTERVAL_SECONDS=${IH_REVOCATION_CHECK_INTERVAL_SECONDS:-300}
     - IH_REVOCATION_HARD_FAIL_AFTER_SECONDS=${IH_REVOCATION_HARD_FAIL_AFTER_SECONDS:-900}
     - IH_OIDC_INTROSPECTION_URL=${OIDC_INTROSPECTION_URL:-}
+
+  # NB: datacatalog-api dual-port + Hub JWT auth lives in the base
+  # docker-stack.data.yml (industream-stack#18) — not duplicated here.
+
+  # ---- DataCatalog UI: point the SPA at the Hub origin so its auth client can
+  # ---- retrieve the access token from the bridge and inject it as a Bearer.
+  datacatalog-ui:
+    environment:
+    - INDUSTREAM_HUB_ORIGIN=https://${INDUSTREAM_DOMAIN:-localhost}
 
   # ---- Logto IdP -------------------------------------------------------------
   logto:
