@@ -1246,6 +1246,55 @@ if [ "$WITH_EE_OVERLAY" = "true" ]; then
 fi
 
 # =============================================================================
+# Register Hub launchpad apps (CE + EE) — populates the menu AND the auth-bridge
+# origin allowlist served at uifusion-api:3050/origins.
+# =============================================================================
+# The SharedWorker auth bridge only relays the Hub token to app origins that are
+# in the allowlist, which the Hub-backend derives from its registered apps.
+# Without this step the allowlist holds only the shell origin, so a sibling app
+# served on its own subdomain — e.g. Grafana behind the grafana-hub-wrapper at
+# dashboard.${INDUSTREAM_DOMAIN} (--with-grafana-sso) — is refused with
+# "this application origin is not allowed to use Industream authentication" and
+# SSO fails. Edition-agnostic: the launchpad + bridge exist in both CE and EE,
+# and the seeder posts to the Hub-backend's container-local free-vend port 3051
+# (no JWT). Prefers the vendored copy; falls back to extracting it from the
+# Hub-backend image. Best-effort — never fails the deploy.
+MENU_SEEDER="${SCRIPT_DIR}/setup/seed-menu-apps-stack.sh"
+if [ ! -f "$MENU_SEEDER" ]; then
+    _hub_cid=$(docker ps -q \
+        --filter "label=com.docker.swarm.service.name=${STACK_NAME}_uifusion-api" | head -1)
+    if [ -n "$_hub_cid" ]; then
+        MENU_SEEDER="$(mktemp -d)/seed-menu-apps-stack.sh"
+        docker cp "${_hub_cid}:/app/menu-seeds/seed-menu-apps-stack.sh" "$MENU_SEEDER" 2>/dev/null \
+            || MENU_SEEDER=""
+    else
+        MENU_SEEDER=""
+    fi
+fi
+
+if [ -n "$MENU_SEEDER" ] && [ -f "$MENU_SEEDER" ]; then
+    echo ""
+    echo -e "${BLUE}Registering Hub launchpad apps (menu + auth-bridge origin allowlist)...${NC}"
+    # Brief readiness wait: the Hub-backend may still be rolling. The seeder
+    # execs into the container and posts to localhost:3051, so wait until the
+    # task is running, then let the internal free-vend port settle.
+    for _i in $(seq 1 15); do
+        _hub_cid=$(docker ps -q \
+            --filter "label=com.docker.swarm.service.name=${STACK_NAME}_uifusion-api" | head -1)
+        [ -n "$_hub_cid" ] && break
+        sleep 2
+    done
+    [ -n "$_hub_cid" ] && sleep 3
+    if bash "$MENU_SEEDER" --domain "$INDUSTREAM_DOMAIN" --runtime swarm --stack "$STACK_NAME"; then
+        echo -e "${GREEN}✓ Hub launchpad apps registered${NC}"
+    else
+        echo -e "${YELLOW}⚠ Hub launchpad app registration failed (non-fatal — re-run seed-menu-apps-stack.sh manually)${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ seed-menu-apps-stack.sh unavailable (no vendored copy + Hub image lacks /app/menu-seeds/) — launchpad + Grafana SSO origins not registered.${NC}"
+fi
+
+# =============================================================================
 # Display demo information if deployed
 # =============================================================================
 if [ "$DEPLOY_DEMO" = "true" ]; then
