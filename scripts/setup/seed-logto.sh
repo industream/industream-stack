@@ -13,9 +13,11 @@
 #   secrets/<env>/logto_m2m_credentials      ← JSON: {"appId":"…","appSecret":"…"}
 #
 # This script then idempotently provisions:
-#   - OIDC application `industream-hub-app`     (resource = the Hub API)
-#   - API resource `industream-hub`             (audience claim)
-#   - Roles: `industream-admin`, `industream-user`
+#   - OIDC application `industream-hub-app`        (the SPA web client)
+#   - API resources, one per platform API, each with read/write/admin scopes
+#     (`industream-hub` also carries the JWT `aud`)
+#   - Roles (Grafana-aligned): industream-viewer / -editor / -admin, each
+#     granted the matching scopes across ALL APIs (admin = everything)
 #
 # What it does NOT do (out of scope; do those via the admin console once):
 #   - Create end-users (use SCIM / invitation flows or the admin console)
@@ -134,20 +136,66 @@ find_by_name() {
 }
 
 # -----------------------------------------------------------------------------
-# 1) API resource = `industream-hub` (this is what `aud` will carry in the JWT)
+# 1) API resources (one per platform API) + read/write/admin scopes.
+#    `industream-hub` also carries the JWT `aud`; the others are declared so
+#    per-API audience validation is possible later. Scope ids are collected
+#    per level so the roles below can grant them in bulk.
 # -----------------------------------------------------------------------------
-RESOURCE_NAME="industream-hub"
-RESOURCE_INDICATOR="https://hub.${DOMAIN}"
-EXISTING_RES_ID=$(find_by_name "resources" "$RESOURCE_NAME")
-if [ -n "$EXISTING_RES_ID" ] && [ "$FORCE" = false ]; then
-    echo -e "${YELLOW}⏭ API resource '$RESOURCE_NAME' exists ($EXISTING_RES_ID), skipping${NC}"
-else
-    [ -n "$EXISTING_RES_ID" ] && curl -sS -X DELETE -H "$AUTH_HEADER" "$API_BASE/resources/$EXISTING_RES_ID" >/dev/null
-    curl -sS --fail-with-body -X POST "$API_BASE/resources" \
-        -H "$AUTH_HEADER" -H "Content-Type: application/json" \
-        -d "{\"name\":\"$RESOURCE_NAME\",\"indicator\":\"$RESOURCE_INDICATOR\"}" >/dev/null
-    echo -e "${GREEN}✓ Created API resource '$RESOURCE_NAME' ($RESOURCE_INDICATOR)${NC}"
-fi
+API_RESOURCES=(
+    "industream-hub|https://hub.${DOMAIN}"
+    "datacatalog|https://datacatalog-api.${DOMAIN}"
+    "flowmaker|https://flowmaker.${DOMAIN}"
+    "confighub|https://confighub.${DOMAIN}"
+    "databridge|https://databridge.${DOMAIN}"
+)
+SCOPE_LEVELS=(read write admin)
+READ_SCOPES=(); WRITE_SCOPES=(); ADMIN_SCOPES=()
+
+# Create (or reuse) a resource by name; echo its id. Honors --force.
+ensure_resource() {
+    local name="$1" indicator="$2" id
+    id=$(find_by_name resources "$name")
+    if [ -n "$id" ] && [ "$FORCE" = true ]; then
+        curl -sS -X DELETE -H "$AUTH_HEADER" "$API_BASE/resources/$id" >/dev/null; id=""
+    fi
+    if [ -z "$id" ]; then
+        id=$(curl -sS --fail-with-body -X POST "$API_BASE/resources" \
+            -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+            -d "{\"name\":\"$name\",\"indicator\":\"$indicator\"}" | jq -r '.id')
+        echo -e "${GREEN}✓ Resource '$name' ($indicator)${NC}" >&2
+    else
+        echo -e "${YELLOW}⏭ Resource '$name' exists${NC}" >&2
+    fi
+    printf '%s' "$id"
+}
+
+# Create (or reuse) a scope on a resource; echo its id.
+ensure_scope() {
+    local rid="$1" sname="$2" sid
+    sid=$(curl -sS -H "$AUTH_HEADER" "$API_BASE/resources/$rid/scopes" \
+        | jq -r --arg n "$sname" '.[] | select(.name==$n) | .id' | head -n1)
+    if [ -z "$sid" ]; then
+        sid=$(curl -sS --fail-with-body -X POST "$API_BASE/resources/$rid/scopes" \
+            -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+            -d "{\"name\":\"$sname\",\"description\":\"$sname access\"}" | jq -r '.id')
+    fi
+    printf '%s' "$sid"
+}
+
+for entry in "${API_RESOURCES[@]}"; do
+    rname="${entry%%|*}"; rind="${entry##*|}"
+    rid=$(ensure_resource "$rname" "$rind")
+    [ -n "$rid" ] && [ "$rid" != "null" ] || { echo -e "${RED}✗ no id for resource '$rname'${NC}"; exit 1; }
+    for lvl in "${SCOPE_LEVELS[@]}"; do
+        sid=$(ensure_scope "$rid" "$lvl")
+        case "$lvl" in
+            read)  READ_SCOPES+=("$sid") ;;
+            write) WRITE_SCOPES+=("$sid") ;;
+            admin) ADMIN_SCOPES+=("$sid") ;;
+        esac
+    done
+done
+echo -e "${GREEN}✓ ${#API_RESOURCES[@]} API resources with read/write/admin scopes${NC}"
 
 # -----------------------------------------------------------------------------
 # 2) OIDC app = `industream-hub-app` (the SPA / web client used by uifusion-api)
@@ -177,22 +225,48 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 3) Roles: industream-admin + industream-user
+# 3) Roles (Grafana-aligned): viewer / editor / admin.
+#    viewer = read on every API; editor = read+write; admin = everything.
+#    The `roles` claim drives Grafana (role_attribute_path) and the menu's
+#    per-app gating; the `scope` claim carries the fine-grained access.
 # -----------------------------------------------------------------------------
-for role in industream-admin industream-user; do
-    EXISTING_ROLE_ID=$(find_by_name "roles" "$role")
-    if [ -n "$EXISTING_ROLE_ID" ] && [ "$FORCE" = false ]; then
-        echo -e "${YELLOW}⏭ Role '$role' exists, skipping${NC}"
-        continue
+ensure_role() {
+    local name="$1" desc="$2" id
+    id=$(find_by_name roles "$name")
+    if [ -n "$id" ] && [ "$FORCE" = true ]; then
+        curl -sS -X DELETE -H "$AUTH_HEADER" "$API_BASE/roles/$id" >/dev/null; id=""
     fi
-    [ -n "$EXISTING_ROLE_ID" ] && curl -sS -X DELETE -H "$AUTH_HEADER" "$API_BASE/roles/$EXISTING_ROLE_ID" >/dev/null
-    curl -sS --fail-with-body -X POST "$API_BASE/roles" \
+    if [ -z "$id" ]; then
+        id=$(curl -sS --fail-with-body -X POST "$API_BASE/roles" \
+            -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+            -d "{\"name\":\"$name\",\"description\":\"$desc\"}" | jq -r '.id')
+        echo -e "${GREEN}✓ Role '$name'${NC}" >&2
+    else
+        echo -e "${YELLOW}⏭ Role '$name' exists${NC}" >&2
+    fi
+    printf '%s' "$id"
+}
+
+# Grant scope ids to a role (idempotent — Logto ignores already-granted ids).
+assign_role_scopes() {
+    local rid="$1"; shift
+    [ "$#" -gt 0 ] || return 0
+    local ids; ids=$(printf '%s\n' "$@" | jq -R . | jq -cs .)
+    curl -sS -X POST "$API_BASE/roles/$rid/scopes" \
         -H "$AUTH_HEADER" -H "Content-Type: application/json" \
-        -d "{\"name\":\"$role\",\"description\":\"Industream platform role: $role\"}" >/dev/null
-    echo -e "${GREEN}✓ Created role '$role'${NC}"
-done
+        -d "{\"scopeIds\":$ids}" >/dev/null 2>&1 || true
+}
+
+VIEWER_ID=$(ensure_role industream-viewer "Read-only across all Industream APIs (Grafana: Viewer)")
+EDITOR_ID=$(ensure_role industream-editor "Read + write across all Industream APIs (Grafana: Editor)")
+ADMIN_ID=$(ensure_role  industream-admin  "Full admin across all Industream APIs (Grafana: Admin)")
+
+assign_role_scopes "$VIEWER_ID" "${READ_SCOPES[@]}"
+assign_role_scopes "$EDITOR_ID" "${READ_SCOPES[@]}" "${WRITE_SCOPES[@]}"
+assign_role_scopes "$ADMIN_ID"  "${READ_SCOPES[@]}" "${WRITE_SCOPES[@]}" "${ADMIN_SCOPES[@]}"
+echo -e "${GREEN}✓ Roles viewer/editor/admin scoped (admin = all APIs)${NC}"
 
 echo ""
 echo -e "${GREEN}Logto seeding complete for environment '$ENV'.${NC}"
-echo -e "${BLUE}Next step: assign users to roles via the admin console,${NC}"
-echo -e "${BLUE}then point uifusion-api OIDC_CLIENT_ID to '$APP_NAME'.${NC}"
+echo -e "${BLUE}Next: assign users to roles in the admin console, then set${NC}"
+echo -e "${BLUE}uifusion-api OIDC_CLIENT_ID to '$APP_NAME'.${NC}"
