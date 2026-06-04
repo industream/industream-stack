@@ -10,9 +10,10 @@ COMPOSE_ROOT="${COMPOSE_ROOT:-$(cd "$SCRIPT_DIR/../../../industream-flowmaker/de
 INSTANCES_DIR="${FM_INSTANCES_DIR:-$COMPOSE_ROOT/instances}"
 mkdir -p "$INSTANCES_DIR"
 
-# Public community Harbor — BSL 1.1 images, anonymous pull.
+# Public community registry — BSL 1.1 images, anonymous pull.
+# Mirror of industream-flowmaker/deployment/.env.defaults:COMMUNITY_REGISTRY.
 # Override with FM_COMMUNITY_REGISTRY=... if you host your own mirror.
-COMMUNITY_REGISTRY="${FM_COMMUNITY_REGISTRY:-39t88114.c1.gra9.container-registry.ovh.net}"
+COMMUNITY_REGISTRY="${FM_COMMUNITY_REGISTRY:-ghcr.io/industream}"
 
 cmd_create() {
   local name="${1:-}"
