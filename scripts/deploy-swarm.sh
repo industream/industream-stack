@@ -1274,8 +1274,14 @@ if [ "$WITH_EE_OVERLAY" = "true" ]; then
         echo ""
         echo -e "${BLUE}EE: seeding Logto roles + bootstrap user '${_admin_user}'...${NC}"
         # Quiet: keep the password out of the deploy log (seeder echoes a psql row).
+        # NOTE: seed-logto.sh also upserts the OIDC app and would otherwise reset
+        # its redirect_uri to its localhost dev default — clobbering the correct
+        # one seed-logto-stack.sh derived from the service label (which ran just
+        # above). Pass the SAME redirect so the app stays consistent and login
+        # doesn't break with `invalid_redirect_uri`.
         if SWARM_STACK="$STACK_NAME" bash "$USER_SEEDER" \
             --client-id "${OIDC_CLIENT_ID:-industream-hub-app}" \
+            --redirect "https://${INDUSTREAM_DOMAIN:-localhost}/" \
             --user "$_admin_user" --password "$_admin_pass" \
             --email "${_admin_user}@${INDUSTREAM_DOMAIN:-localhost}" --role admin \
             --runtime swarm --stack "$STACK_NAME" >/dev/null 2>&1; then
