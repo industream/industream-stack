@@ -1,0 +1,47 @@
+# =============================================================================
+# base/datacatalog.yml — orchestrator-neutral (image + functional env only).
+# =============================================================================
+# Runnable as-is under plain `docker compose` when merged with a runtime overlay
+# (CE no-CLI fallback). Carries NO deploy:/labels/secrets-backend/net-names — the
+# runtime.<swarm|compose>.yml overlay owns those.
+#
+# This file is also the SECURITY + AUTH FIX for the compose tree, which today:
+#   - has NO Hub-JWT validation block  → datacatalog-api accepts unauthenticated
+#   - hardcodes `Password=industream4370` inline  → secret leak
+#   - serves on 8080 instead of the dual-port 8002/8003
+# All three are corrected here ONCE and inherited by both runtimes.
+# =============================================================================
+services:
+  datacatalog-api:
+    image: ${COMMUNITY_REGISTRY}/datacatalog/api:${DATACATALOG_API_VERSION}
+    # The image bakes ASPNETCORE_HTTP_PORTS=8080 → override so BOTH runtimes use
+    # the dual-port split: 8002 frontend (Hub JWT) / 8003 backend (API key).
+    entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
+    command: ["dotnet", "/app/Industream.DataCatalog.Api.dll"]
+    environment:
+      - ASPNETCORE_HTTP_PORTS=8002;8003
+      # --- Hub JWT validation (was MISSING on compose) — the auth INVARIANT ---
+      - Authentication__Frontend__Issuer=${HUB_AUTH_ISSUER}
+      - Authentication__Frontend__Audience=${HUB_AUTH_AUDIENCE}
+      - Authentication__Frontend__JwksUrl=${HUB_AUTH_JWKS_URL}
+      # --- DB connection: fully parametrized, NO inline password. The literal
+      # __DB_PASSWORD_PLACEHOLDER__ is replaced at startup by dotnet-entrypoint.sh
+      # from the mounted secret named by DB_SECRET_NAME — identical mechanism on
+      # swarm (docker secret) and compose (file secret). DATACATALOG_DB_HOST
+      # differs per topology (shared `postgres` vs dedicated `datacatalog-postgresql`).
+      - DB_SECRET_NAME=${DATACATALOG_DB_SECRET_NAME}
+      - PostgreSql__ConnectionString=Server=${DATACATALOG_DB_HOST};Port=5432;User Id=${DATACATALOG_DB_USER:-datacatalog};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${DATACATALOG_DB_NAME:-DataCatalog};
+      - Database__MigrateOnStartup=false
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8002/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  datacatalog-ui:
+    image: ${COMMUNITY_REGISTRY}/datacatalog/ui:${DATACATALOG_UI_VERSION}
+    environment:
+      # Lets the SPA's auth client retrieve the access token from the Hub bridge
+      # (EE) and inject it as a Bearer. Harmless in CE.
+      - INDUSTREAM_HUB_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
