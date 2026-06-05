@@ -1246,6 +1246,55 @@ if [ "$WITH_EE_OVERLAY" = "true" ]; then
 fi
 
 # =============================================================================
+# EE: seed a bootstrap Logto user so a fresh deployment is loginnable without
+# the interactive admin wizard.
+# =============================================================================
+# seed-logto.sh (shipped in the EE image at /app/oidc-seeds/logto/) creates the
+# viewer/editor/admin roles + one user + enables username/password sign-in — all
+# via DIRECT DB writes, no Management-API M2M (unlike scripts/setup/seed-logto.sh,
+# which needs an M2M app bootstrapped via the admin console and stays manual). We
+# reuse the same admin identity as the CE native admin (hub_backend_admin_*
+# secrets) so login is identical across editions. Without this, a greenfield EE
+# DB has the OIDC app but no user → you'd have to run the Logto admin wizard by
+# hand. Best-effort, non-fatal.
+if [ "$WITH_EE_OVERLAY" = "true" ]; then
+    USER_SEEDER=""
+    _hub_cid=$(docker ps -q \
+        --filter "label=com.docker.swarm.service.name=${STACK_NAME}_uifusion-api" | head -1)
+    if [ -n "$_hub_cid" ]; then
+        USER_SEEDER="$(mktemp -d)/seed-logto.sh"
+        docker cp "${_hub_cid}:/app/oidc-seeds/logto/seed-logto.sh" "$USER_SEEDER" 2>/dev/null \
+            || USER_SEEDER=""
+    fi
+
+    _admin_user=$(cat "$HUB_USER_FILE" 2>/dev/null)
+    _admin_pass=$(cat "$HUB_PASS_FILE" 2>/dev/null)
+
+    if [ -n "$USER_SEEDER" ] && [ -f "$USER_SEEDER" ] && [ -n "$_admin_user" ] && [ -n "$_admin_pass" ]; then
+        echo ""
+        echo -e "${BLUE}EE: seeding Logto roles + bootstrap user '${_admin_user}'...${NC}"
+        # Quiet: keep the password out of the deploy log (seeder echoes a psql row).
+        # NOTE: seed-logto.sh also upserts the OIDC app and would otherwise reset
+        # its redirect_uri to its localhost dev default — clobbering the correct
+        # one seed-logto-stack.sh derived from the service label (which ran just
+        # above). Pass the SAME redirect so the app stays consistent and login
+        # doesn't break with `invalid_redirect_uri`.
+        if SWARM_STACK="$STACK_NAME" bash "$USER_SEEDER" \
+            --client-id "${OIDC_CLIENT_ID:-industream-hub-app}" \
+            --redirect "https://${INDUSTREAM_DOMAIN:-localhost}/" \
+            --user "$_admin_user" --password "$_admin_pass" \
+            --email "${_admin_user}@${INDUSTREAM_DOMAIN:-localhost}" --role admin \
+            --runtime swarm --stack "$STACK_NAME" >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ Logto roles + bootstrap user '${_admin_user}' seeded (login enabled)${NC}"
+        else
+            echo -e "${YELLOW}⚠ Logto user seeding failed (non-fatal — re-run seed-logto.sh manually or use the admin wizard)${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ seed-logto.sh (EE image) or admin secrets unavailable — no bootstrap Logto user created (use the admin wizard).${NC}"
+    fi
+fi
+
+# =============================================================================
 # Register Hub launchpad apps (CE + EE) — populates the menu AND the auth-bridge
 # origin allowlist served at uifusion-api:3050/origins.
 # =============================================================================
