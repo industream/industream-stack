@@ -1,0 +1,149 @@
+# =============================================================================
+# runtime/swarm/core.yml — SWARM-only plumbing (deploy:/Traefik labels/docker
+# secrets/overlay nets). Merged LAST over base/core.yml.
+# =============================================================================
+# Owns everything orchestrator-specific for the core group:
+#   - Traefik router/service labels under deploy.labels
+#   - the `industream-hub-backend` network alias on uifusion-api (JWKS resolution)
+#   - external docker secrets for minio root user/password (named by *_SECRET_NAME
+#     in runtime.swarm.env, consumed by base/core.yml interpolation)
+#   - ${ENV}-* overlay networks + named volumes
+# =============================================================================
+services:
+  uifusion-api:
+    networks:
+      traefik-public: {}
+      ${ENV}-platform:
+        aliases:
+          - industream-hub-backend
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-uifusion-api-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-uifusion-api-secure.rule=Host(`${INDUSTREAM_DOMAIN}`) && PathPrefix(`/api/uifusion`)
+        - traefik.http.routers.${ENV}-uifusion-api-secure.tls=true
+        - traefik.http.routers.${ENV}-uifusion-api-secure.service=${ENV}-uifusion-api
+        - traefik.http.routers.${ENV}-uifusion-api-secure.middlewares=${ENV}-uifusion-api-stripprefix,security-headers@file
+        - traefik.http.routers.${ENV}-uifusion-api.entrypoints=web
+        - traefik.http.routers.${ENV}-uifusion-api.rule=Host(`${INDUSTREAM_DOMAIN}`) && PathPrefix(`/api/uifusion`)
+        - traefik.http.routers.${ENV}-uifusion-api.middlewares=redirect-to-https@file
+        - traefik.http.middlewares.${ENV}-uifusion-api-stripprefix.stripprefix.prefixes=/api/uifusion
+        - traefik.http.services.${ENV}-uifusion-api.loadbalancer.server.port=3050
+        # Uploads route (no prefix strip — API handles /api/uploads directly)
+        - traefik.http.routers.${ENV}-uifusion-uploads-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-uifusion-uploads-secure.rule=Host(`${INDUSTREAM_DOMAIN}`) && PathPrefix(`/api/uploads`)
+        - traefik.http.routers.${ENV}-uifusion-uploads-secure.tls=true
+        - traefik.http.routers.${ENV}-uifusion-uploads-secure.service=${ENV}-uifusion-api
+        - traefik.http.routers.${ENV}-uifusion-uploads-secure.middlewares=security-headers@file
+      resources:
+        limits:       { cpus: '0.25', memory: 64M }
+        reservations: { cpus: '0.03', memory: 32M }
+      restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
+
+  uifusion:
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-uifusion-ui-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-uifusion-ui-secure.rule=Host(`${INDUSTREAM_DOMAIN}`) && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)
+        - traefik.http.routers.${ENV}-uifusion-ui-secure.tls=true
+        - traefik.http.routers.${ENV}-uifusion-ui-secure.service=${ENV}-uifusion-ui
+        - traefik.http.routers.${ENV}-uifusion-ui-secure.middlewares=security-headers@file
+        - traefik.http.routers.${ENV}-uifusion-ui.entrypoints=web
+        - traefik.http.routers.${ENV}-uifusion-ui.rule=Host(`${INDUSTREAM_DOMAIN}`) && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)
+        - traefik.http.routers.${ENV}-uifusion-ui.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-uifusion-ui.loadbalancer.server.port=80
+      resources:
+        limits:       { cpus: '0.5', memory: 128M }
+        reservations: { cpus: '0.03', memory: 32M }
+      restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
+
+  minio:
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    secrets:
+      - ${MINIO_ROOT_USER_SECRET_NAME}
+      - ${MINIO_ROOT_PASSWORD_SECRET_NAME}
+    deploy:
+      labels:
+        - traefik.enable=true
+        # MinIO API (S3)
+        - traefik.http.routers.${ENV}-minio-api-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-minio-api-secure.rule=Host(`s3.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-minio-api-secure.tls=true
+        - traefik.http.routers.${ENV}-minio-api-secure.service=${ENV}-minio-api
+        - traefik.http.routers.${ENV}-minio-api-secure.middlewares=security-headers@file
+        - traefik.http.services.${ENV}-minio-api.loadbalancer.server.port=9000
+        # MinIO Console
+        - traefik.http.routers.${ENV}-minio-console-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-minio-console-secure.rule=Host(`minio.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-minio-console-secure.tls=true
+        - traefik.http.routers.${ENV}-minio-console-secure.service=${ENV}-minio-console
+        - traefik.http.services.${ENV}-minio-console.loadbalancer.server.port=9001
+        # CSP frame-ancestors allowlist so the UIFusion shell may iframe the
+        # console without disabling clickjacking defence for arbitrary origins.
+        - traefik.http.middlewares.${ENV}-minio-headers.headers.contentsecuritypolicy=frame-ancestors 'self' https://${INDUSTREAM_DOMAIN} https://*.${INDUSTREAM_DOMAIN}
+        - traefik.http.routers.${ENV}-minio-console-secure.middlewares=${ENV}-minio-headers,allow-iframe@file
+      resources:
+        limits:       { cpus: '1.0', memory: 768M }
+        reservations: { cpus: '0.08', memory: 256M }
+      restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
+
+  cdn-server:
+    networks:
+      - ${ENV}-platform
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:       { cpus: '0.25', memory: 128M }
+        reservations: { cpus: '0.03', memory: 64M }
+      restart_policy: { condition: any, delay: 5s, max_attempts: 5, window: 120s }
+
+  cdn-cache:
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-cdn-cache.rule=Host(`cdn.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-cdn-cache.entrypoints=websecure
+        - traefik.http.routers.${ENV}-cdn-cache.tls=true
+        - traefik.http.services.${ENV}-cdn-cache.loadbalancer.server.port=8080
+        - traefik.http.routers.${ENV}-cdn-cache-http.rule=Host(`cdn.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-cdn-cache-http.entrypoints=web
+      resources:
+        limits:       { cpus: '1.0', memory: 128M }
+        reservations: { cpus: '0.08', memory: 64M }
+      restart_policy: { condition: any, delay: 5s, max_attempts: 5, window: 120s }
+
+secrets:
+  ${MINIO_ROOT_USER_SECRET_NAME}:
+    external: true
+  ${MINIO_ROOT_PASSWORD_SECRET_NAME}:
+    external: true
+
+volumes:
+  uifusion-config:
+    name: ${ENV}-uifusion-config
+  minio-data:
+    name: ${ENV}-minio-data
+  cdn-server-storage:
+    name: ${ENV}-cdn-server-storage
+  cdn-cache-storage:
+    name: ${ENV}-cdn-cache-storage
+
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  ${ENV}-platform:
+    driver: overlay
+    attachable: true

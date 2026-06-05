@@ -1,0 +1,201 @@
+# =============================================================================
+# base/workers.yml — orchestrator-neutral (image + functional env only).
+# =============================================================================
+# The flow-box worker fleet. Runnable as-is under plain `docker compose` when
+# merged with a runtime overlay. Carries NO deploy:/labels/secrets-backend/
+# net-names — the runtime.<swarm|compose>.yml overlay owns those.
+#
+# RECONCILIATION (swarm docker-stack.workers* vs compose docker-compose.workers):
+#   - SHORT image names ONLY (flowmaker.boxes/<x>) — the compose tree's
+#     `flow-box-<x>` long names are WRONG and dropped here.
+#   - Tags ONLY from versions.env (WORKER_*_VERSION), NO inline `:-default` —
+#     a missing var must fail loudly, never pull a stale tag.
+#   - Shared worker shape via the x-worker YAML anchor (FM_WORKER_ID / RUNTIME /
+#     ROUTER / LOG / CDN / DATACATALOG_URL, tcp://*:5560).
+#   - community workers  → COMMUNITY_REGISTRY (anonymous GHCR).
+#   - the 4 premium (opc-ua / rtsp / luminosity / minio-sink) → ENTERPRISE_REGISTRY.
+#
+# Functional defaults (`:-`) are allowed for non-image, non-password env only —
+# CDN + DataCatalog service URLs. Image tags + passwords never carry defaults.
+# =============================================================================
+
+# --- shared worker shape -----------------------------------------------------
+# Every flow-box worker speaks the same scheduler/logging/router/CDN contract.
+# FM_WORKER_ID and FM_WORKER_TRANSPORT_ADV_ADDRESS are per-worker and set on
+# each service via `<<: *worker` + a service-local `environment` (compose merges
+# the two environment maps).
+x-worker: &worker
+  environment: &worker-env
+    FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
+    FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
+    FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
+    FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8080}
+  # NOTE: no `depends_on: flowmaker-scheduler/-logging` here — those services
+  # live in the core group, not this file. Cross-group start ordering is a
+  # full-stack-compose concern; a per-group render must stay self-contained.
+
+services:
+  # ==========================================
+  # CORE WORKERS (community → COMMUNITY_REGISTRY)
+  # ==========================================
+  worker-data-logger:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/data-logger:${WORKER_DATA_LOGGER_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-data-logger001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-data-logger:5560
+
+  worker-timer:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/timer:${WORKER_TIMER_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-timer001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-timer:5560
+
+  worker-js-expression:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/js-expression:${WORKER_JS_EXPRESSION_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-js-expression001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-js-expression:5560
+      FM_CDN_URL: ${CDN_URL:-http://cdn-cache:8080}
+
+  worker-http-client:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/http:${WORKER_HTTP_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-http-client001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-http-client:5560
+
+  worker-postgres-client:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/postgres-client:${WORKER_POSTGRES_CLIENT_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-postgres-client001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-postgres-client:5560
+
+  worker-timeseries:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/timeseries-workers:${WORKER_TIMESERIES_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-timeseries001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-timeseries:5560
+
+  worker-influx-client-dc:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/influx-client:${WORKER_INFLUX_CLIENT_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-influx-client-dc001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-influx-client-dc:5560
+
+  worker-notifications:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/notification:${WORKER_NOTIFICATIONS_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-notifications001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-notifications:5560
+
+  # ==========================================
+  # INDUSTRIAL PROTOCOL WORKERS (community)
+  # ==========================================
+  worker-mqtt-client:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/mqtt-client:${WORKER_MQTT_CLIENT_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-mqtt-client001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-mqtt-client:5560
+
+  worker-modbus-tcp:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/modbus-tcp:${WORKER_MODBUS_TCP_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-modbus-tcp001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-modbus-tcp:5560
+
+  worker-test-data-generator:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/test-data-generator:${WORKER_TEST_DATA_GENERATOR_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-test-data-generator001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-test-data-generator:5560
+
+  worker-conditional-validator:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/conditional-dataset-validator:${WORKER_CONDITIONAL_DATASET_VALIDATOR_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-conditional-validator001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-conditional-validator:5560
+
+  worker-enqueue:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/enqueue:${WORKER_ENQUEUE_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-js-enqueue001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-enqueue:5560
+
+  equation-solver:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/equation-solver:${WORKER_EQUATION_SOLVER_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-eqsolver001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://equation-solver:5560
+
+  worker-datacatalog-mapper:
+    <<: *worker
+    image: ${COMMUNITY_REGISTRY}/flowmaker.boxes/datacatalog-mapper:${WORKER_DATACATALOG_MAPPER_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-datacatalog-mapper001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-datacatalog-mapper:5560
+
+  # ==========================================
+  # PREMIUM WORKERS (enterprise → ENTERPRISE_REGISTRY)
+  # Gated behind PRODUCT_DATACATALOG entitlement at deploy time.
+  # ==========================================
+  worker-opc-ua-client:
+    <<: *worker
+    image: ${ENTERPRISE_REGISTRY}/flowmaker.boxes/opc-ua-client:${WORKER_OPC_UA_CLIENT_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-opc-ua-client001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-opc-ua-client:5560
+
+  worker-rtsp-client:
+    <<: *worker
+    image: ${ENTERPRISE_REGISTRY}/flowmaker.boxes/rtsp-client:${WORKER_RTSP_CLIENT_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-rtsp-client001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-rtsp-client:5560
+
+  worker-luminosity-box:
+    <<: *worker
+    image: ${ENTERPRISE_REGISTRY}/flowmaker.boxes/luminosity-box:${WORKER_LUMINOSITY_BOX_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-luminosity-box001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-luminosity-box:5560
+
+  worker-minio-sink:
+    <<: *worker
+    image: ${ENTERPRISE_REGISTRY}/flowmaker.boxes/minio-sink:${WORKER_MINIO_SINK_VERSION}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-minio-sink001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-minio-sink:5560
+      MINIO_ENDPOINT: http://minio:9000

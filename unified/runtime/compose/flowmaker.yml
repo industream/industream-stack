@@ -1,0 +1,71 @@
+# =============================================================================
+# runtime/compose/flowmaker.yml — COMPOSE-only plumbing (Caddy labels/restart/
+# flowmaker-net/named volumes). Merged LAST over base/flowmaker.yml.
+# =============================================================================
+# Auth is already ON via base/flowmaker.yml (FM_AUTH_* block). For the JWKS URL
+# (http://uifusion-api:3050/auth/jwks) to resolve on this single-host network,
+# the hub backend must be reachable as `uifusion-api` on flowmaker-net — that
+# alias is owned by base/core.yml's compose overlay, not duplicated here. (The
+# legacy compose pointed FM_AUTH_JWKS_URL at industream-hub-backend:3050; the
+# canonical name is uifusion-api per the invariant — see gaps.)
+#
+# Canonical public ports proxied by Caddy: confighub 4001, logger 3001,
+# scheduler 3121, frontend 80.
+# =============================================================================
+services:
+  flowmaker-scheduler:
+    networks:
+      - flowmaker-net
+    depends_on:
+      - flowmaker-confighub
+    restart: unless-stopped
+    labels:
+      caddy: scheduler.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 3121}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  flowmaker-confighub:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      caddy: confighub.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 4001}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  flowmaker-logging:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      caddy: logger.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 3001}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  flowmaker-frontend:
+    environment:
+      # confighub PUBLIC URL — domain-shaped, compose topology.
+      - FMUI_CONFIG_HUB_URL=${FM_PROTOCOL:-https}://confighub.${FM_DOMAIN}
+    networks:
+      - flowmaker-net
+    depends_on:
+      - flowmaker-confighub
+      - flowmaker-scheduler
+    restart: unless-stopped
+    labels:
+      caddy: frontend.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 80}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+volumes:
+  flowmaker-launcher-data:
+  flowmaker-confighub-data:
+
+networks:
+  flowmaker-net:
+    external: true
+    name: ${FM_NETWORK}

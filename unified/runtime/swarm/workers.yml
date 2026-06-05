@@ -1,0 +1,122 @@
+# =============================================================================
+# runtime/swarm/workers.yml — Swarm overlay for the flow-box worker fleet.
+# =============================================================================
+# Owns ONLY the swarm-topology concerns the neutral base must not carry:
+#   - deploy: (resource limits/reservations + restart_policy)
+#   - the ${ENV}-platform overlay network
+#   - healthcheck NONE (workers are dumb ZMQ pipes; the scheduler tracks them)
+# Image + functional env come from base/workers.yml. No Traefik labels: workers
+# are not web-exposed (worker-manager — the only routed worker-plane service —
+# lives in its own group, not here).
+# =============================================================================
+
+# Shared swarm shape: every worker gets the same deploy envelope, overlay net,
+# and a disabled healthcheck. Per-worker overrides are unnecessary.
+x-swarm-worker: &swarm-worker
+  networks:
+    - ${ENV}-platform
+  healthcheck:
+    test: ["NONE"]
+  deploy:
+    resources:
+      limits:
+        cpus: "0.25"
+        memory: 128M
+      reservations:
+        cpus: "0.03"
+        memory: 64M
+    restart_policy:
+      condition: any
+      delay: 10s
+      window: 120s
+
+# Premium workers carry a heavier envelope (protocol/codec workloads).
+x-swarm-worker-premium: &swarm-worker-premium
+  networks:
+    - ${ENV}-platform
+  healthcheck:
+    test: ["NONE"]
+  deploy:
+    resources:
+      limits:
+        cpus: "0.5"
+        memory: 256M
+      reservations:
+        cpus: "0.08"
+        memory: 128M
+    restart_policy:
+      condition: any
+      delay: 10s
+      window: 120s
+
+services:
+  worker-data-logger:
+    <<: *swarm-worker
+  worker-timer:
+    <<: *swarm-worker
+  worker-js-expression:
+    <<: *swarm-worker
+  worker-http-client:
+    <<: *swarm-worker
+  worker-postgres-client:
+    <<: *swarm-worker
+  worker-timeseries:
+    <<: *swarm-worker
+  worker-influx-client-dc:
+    <<: *swarm-worker
+  worker-notifications:
+    <<: *swarm-worker
+  worker-mqtt-client:
+    <<: *swarm-worker
+  worker-modbus-tcp:
+    <<: *swarm-worker
+  worker-test-data-generator:
+    <<: *swarm-worker
+  worker-conditional-validator:
+    <<: *swarm-worker
+  worker-enqueue:
+    <<: *swarm-worker
+  equation-solver:
+    <<: *swarm-worker
+  worker-datacatalog-mapper:
+    <<: *swarm-worker
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+        reservations:
+          cpus: "0.03"
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+  # --- premium ---
+  worker-opc-ua-client:
+    <<: *swarm-worker-premium
+  worker-rtsp-client:
+    <<: *swarm-worker-premium
+  worker-luminosity-box:
+    <<: *swarm-worker
+  worker-minio-sink:
+    <<: *swarm-worker
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 384M
+        reservations:
+          cpus: "0.03"
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+# =============================================================================
+# NETWORKS — overlay, per-env isolated (attachable so worker-manager can inspect).
+# =============================================================================
+networks:
+  ${ENV}-platform:

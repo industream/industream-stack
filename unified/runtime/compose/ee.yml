@@ -1,0 +1,33 @@
+# runtime/compose/ee.yml — compose plumbing for the EE overlay (Logto).
+# Merged after base/ee.yml when EDITION=ee && RUNTIME=compose.
+services:
+  logto:
+    networks: [ flowmaker-net ]
+    restart: unless-stopped
+    secrets: [ logto_db_url ]
+    labels:
+      caddy: auth.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 3001}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  logto-postgres:
+    networks: [ flowmaker-net ]
+    restart: unless-stopped
+    secrets: [ logto_db_password ]
+    volumes:
+      - logto-pgdata:/var/lib/postgresql/data
+
+secrets:
+  logto_db_url:
+    file: ${SECRETS_DIR:-./secrets}/logto_db_url
+  logto_db_password:
+    file: ${SECRETS_DIR:-./secrets}/logto_db_password
+
+volumes:
+  logto-pgdata:
+
+networks:
+  flowmaker-net:
+    external: true
+    name: ${FM_NETWORK}

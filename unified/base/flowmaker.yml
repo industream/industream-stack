@@ -1,0 +1,113 @@
+# =============================================================================
+# base/flowmaker.yml — orchestrator-neutral (image + functional env only).
+# =============================================================================
+# FlowMaker core: scheduler (launcher v2), confighub v2 (LMDB), logging, frontend.
+# Runnable as-is under plain `docker compose` when merged with a runtime overlay.
+# Carries NO deploy:/labels/secrets-backend/net-names — runtime.<swarm|compose>.yml
+# owns those.
+#
+# This file is also the AUTH FIX for the swarm tree, which today OMITS the
+# FM_AUTH_* block entirely → scheduler/confighub/logging accept UNAUTHENTICATED
+# traffic. Auth is now ON EVERYWHERE: every core service validates a Hub-minted
+# JWT against the SAME JWKS (the invariant from auth.env). CE (native admin) and
+# EE (Logto) mint the same token — only the identity SOURCE differs.
+#
+# JWT CONTRACT (THE INVARIANT — never change): iss=hub-backend, aud=industream-hub,
+# JWKS at http://uifusion-api:3050/auth/jwks. Both runtimes alias the hub backend
+# so this URL resolves on their respective networks.
+# =============================================================================
+services:
+  # ==========================================
+  # FLOWMAKER SCHEDULER (launcher v2)
+  # ==========================================
+  flowmaker-scheduler:
+    image: ${COMMUNITY_REGISTRY}/flowmaker.core/flowmaker-launcher:${FLOWMAKER_CORE_VERSION}
+    stop_grace_period: 30s
+    environment:
+      # Two HTTP ports — the SPA/operator UI talk to the PUBLIC one (3121),
+      # workers register on the BACKEND one (3120). Only 3121 is proxied.
+      - FM_RUNTIME_BACKEND_PORT=3120
+      - FM_RUNTIME_PUBLIC_PORT=3121
+      # Internal service-to-service endpoints (backend ports, internal network).
+      - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+      - FM_CONFIGHUB_URL=http://flowmaker-confighub:4000
+      - FM_LAUNCHER_DATA_PATH=/data
+      # --- Hub JWT validation (was MISSING on swarm) — the auth INVARIANT ---
+      - FM_AUTH_JWKS_URL=${HUB_AUTH_JWKS_URL}
+      - FM_AUTH_ISSUER=${HUB_AUTH_ISSUER}
+      - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
+    volumes:
+      - flowmaker-launcher-data:/data
+    depends_on:
+      - flowmaker-confighub
+      - flowmaker-logging
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/3120) 2>/dev/null' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ==========================================
+  # FLOWMAKER CONFIGHUB v2 (LMDB-backed)
+  # ==========================================
+  flowmaker-confighub:
+    image: ${COMMUNITY_REGISTRY}/flowmaker.core/flowmaker-confighub-v2:${FLOWMAKER_CORE_VERSION}
+    environment:
+      # 4000 = backend (internal, scheduler talks here); 4001 = public (proxied).
+      - FM_CONFIGHUB_PORT=4000
+      - FM_CONFIGHUB_PUBLIC_PORT=4001
+      - FM_CONFIGHUB_DATA_PATH=/data
+      # --- Hub JWT validation (was MISSING on swarm) — the auth INVARIANT ---
+      - FM_AUTH_JWKS_URL=${HUB_AUTH_JWKS_URL}
+      - FM_AUTH_ISSUER=${HUB_AUTH_ISSUER}
+      - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
+    volumes:
+      - flowmaker-confighub-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/4000) 2>/dev/null' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ==========================================
+  # FLOWMAKER LOGGING (socket.io)
+  # ==========================================
+  flowmaker-logging:
+    image: ${COMMUNITY_REGISTRY}/flowmaker.core/flowmaker-logger:${FLOWMAKER_LOGGER_VERSION}
+    environment:
+      # 3000 = backend (internal, scheduler streams logs here); 3001 = public.
+      - FM_LOGGER_PORT=3000
+      - FM_LOGGER_PUBLIC_PORT=3001
+      # --- Hub JWT validation (was MISSING on swarm) — the auth INVARIANT ---
+      - FM_AUTH_JWKS_URL=${HUB_AUTH_JWKS_URL}
+      - FM_AUTH_ISSUER=${HUB_AUTH_ISSUER}
+      - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/3000) 2>/dev/null' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ==========================================
+  # FLOWMAKER FRONTEND (static SPA)
+  # ==========================================
+  flowmaker-frontend:
+    image: ${COMMUNITY_REGISTRY}/flowmaker.core/flowmaker-front:${FLOWMAKER_FRONTEND_VERSION}
+    environment:
+      # confighub PUBLIC URL (domain-shaped) is set per-runtime in the overlay.
+      # The SPA dynamically imports ${INDUSTREAM_HUB_ORIGIN}/industream-login.js
+      # for the cross-subdomain auth bridge; the baked-in test stub crashes
+      # bootstrap (ERR_NAME_NOT_RESOLVED), so this MUST be the real hub origin.
+      - FMUI_INDUSTREAM_HUB_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
+    depends_on:
+      - flowmaker-confighub
+      - flowmaker-scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:80/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

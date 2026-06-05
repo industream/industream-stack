@@ -1,0 +1,234 @@
+# =============================================================================
+# base/monitoring.yml — orchestrator-neutral (image + functional env only).
+# =============================================================================
+# Runnable as-is under plain `docker compose` when merged with a runtime overlay.
+# Carries NO deploy:/labels/secrets-backend/net-names/volume-driver — the
+# runtime.<swarm|compose>.yml overlay owns those.
+#
+# Services: grafana, grafana-wrapper, prometheus, node-exporter, cadvisor,
+#           postgres-exporter, alertmanager.
+#
+# AUTH INVARIANT (DECISION #4): Grafana is now in scope for compose too. Both
+# runtimes run Grafana behind the grafana-wrapper Hub-SSO bridge with JWT auth
+# validated against the Hub backend's JWKS. The expected claims are the platform
+# JWT contract and NEVER change:
+#       GF_AUTH_JWT_EXPECT_CLAIMS={"iss":"hub-backend","aud":"industream-hub"}
+# The JWKS URL is reached over the PUBLIC https hostname (Grafana refuses
+# http:// for jwk_set_url). The presented cert MUST be genuinely trusted by
+# Grafana — Grafana 13 ignores tls_skip_verify for the JWKS fetch:
+#   - swarm: platform self-signed CA mounted via runtime/swarm overlay
+#            (mirror of docker-stack.grafana-wrapper-selfsigned.yml).
+#   - compose: Caddy serves the wrapper over an internal cert; that internal CA
+#              must be trusted by Grafana — see runtime/compose/monitoring.yml.
+#
+# NO inline image tag (versions.env owns every tag) and NO inline password.
+# Secret VALUES are read from /run/secrets/<name>; the per-runtime secret NAME
+# is supplied via runtime.<swarm|compose>.env interpolation, identical mechanism
+# on swarm (docker secret) and compose (file secret).
+# =============================================================================
+services:
+  # ==========================================
+  # GRAFANA DASHBOARD
+  # ==========================================
+  grafana:
+    # Vanilla upstream Grafana OSS — the DataBridge datasource + extra panels are
+    # installed at runtime via GF_INSTALL_PLUGINS (no custom grafana-industream
+    # build).
+    image: grafana/grafana-oss:${GRAFANA_VERSION}
+    environment:
+      - TERM=linux
+      - GF_DEFAULT_APP_MODE=${GF_APP_MODE}
+      - GF_LOG_LEVEL=${GF_LOG_LEVEL}
+      - GF_DATAPROXY_LOGGING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      # --- Hub SSO: JWT-only (the wrapper SPA injects Authorization: Bearer
+      # <hub-jwt>). BASIC + login form disabled so unauthenticated requests are
+      # rejected on both runtimes.
+      - GF_AUTH_BASIC_ENABLED=false
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_AUTH_DISABLE_SIGNOUT_MENU=false
+      - GF_AUTH_LOGIN_COOKIE_NAME=grafana_session
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/${GRAFANA_ADMIN_PASSWORD_SECRET_NAME}
+      - GF_FEATURE_TOGGLES_ENABLE=accessControlOnCall,idForwarding,externalServiceAccounts
+      - GF_ALERTING_ENABLED=false
+      - GF_UNIFIED_ALERTING_ENABLED=false
+      - GF_LOG_FILTERS=plugin.mahendrapaipuri-dashboardreporter-app:debug
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      # Mount Grafana at /grafana/ behind the wrapper so the iframe stays
+      # same-origin (no third-party cookie / X-Frame-Options issues).
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SERVER_ROOT_URL=https://dashboard.${INDUSTREAM_DOMAIN}/grafana/
+      - GF_DATABASE_TYPE=postgres
+      - GF_DATABASE_HOST=${GRAFANA_DB_HOST}:5432
+      - GF_DATABASE_NAME=${GRAFANA_DB_NAME}
+      - GF_DATABASE_USER=${GRAFANA_DB_USER}
+      - GF_DATABASE_PASSWORD__FILE=/run/secrets/${GRAFANA_DB_PASSWORD_SECRET_NAME}
+      # `disable` is correct for the BUNDLED Postgres (no TLS configured);
+      # traffic stays on the encrypted network. Override via .env for an
+      # external TLS Postgres.
+      - GF_DATABASE_SSL_MODE=${GF_DATABASE_SSL_MODE}
+      - TZ=${TZ}
+      # Runtime plugin install. DataBridge datasource (private Go plugin) is
+      # appended only when GRAFANA_DATABRIDGE_PLUGIN is set (${VAR:+,${VAR}}
+      # expansion) so a blank value cleanly drops it (no trailing comma).
+      - GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource,marcusolsson-json-datasource,volkovlabs-echarts-panel${GRAFANA_DATABRIDGE_PLUGIN:+,${GRAFANA_DATABRIDGE_PLUGIN}}
+      # The DataBridge plugin ships unsigned → Grafana must be told to load it.
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=industream-databridge-datasource
+      - INDUSTREAM_DOMAIN=${INDUSTREAM_DOMAIN}
+      # --- Hub JWT validation (the auth INVARIANT) --------------------------
+      # JWKS fetched over the public https hostname (Grafana refuses http://).
+      # The runtime overlay must (a) route ${INDUSTREAM_DOMAIN} back to the
+      # proxy and (b) make the proxy's cert trusted by Grafana.
+      - GF_AUTH_JWT_ENABLED=true
+      - GF_AUTH_JWT_ENABLE_LOGIN_TOKEN=true
+      - GF_AUTH_JWT_HEADER_NAME=Authorization
+      - GF_AUTH_JWT_URL_LOGIN=true
+      - GF_AUTH_JWT_JWK_SET_URL=https://${INDUSTREAM_DOMAIN}/api/uifusion/auth/jwks
+      # Grafana 13 does NOT honor tls_skip_verify for the JWKS fetch — the cert
+      # must be genuinely trusted (see header note + runtime overlays).
+      - GF_AUTH_JWT_TLS_SKIP_VERIFY_INSECURE=false
+      - GF_AUTH_JWT_EXPECT_CLAIMS={"iss":"hub-backend","aud":"industream-hub"}
+      - GF_AUTH_JWT_USERNAME_CLAIM=sub
+      - GF_AUTH_JWT_EMAIL_CLAIM=email
+      - GF_AUTH_JWT_AUTO_SIGN_UP=true
+      - GF_AUTH_JWT_ROLE_ATTRIBUTE_PATH=contains(roles, 'admin') && 'Admin' || 'Editor'
+      # Datasource provisioning variables (secrets read by the provisioning YAML
+      # from /run/secrets/* via the __file suffix, NOT exported here).
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - DATACATALOG_DB_USER=${DATACATALOG_DB_USER}
+      - POSTGRES_ADMIN_USER=${POSTGRES_ADMIN_USER}
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    # depends_on for the DB (shared `postgres` on swarm, dedicated
+    # `grafana-postgresql` on compose) + uifusion-api lives in the runtime
+    # overlays — those services are defined in other groups, so the base stays
+    # standalone-renderable.
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==========================================
+  # GRAFANA HUB-SSO WRAPPER
+  # ==========================================
+  # Hub auth bridge in front of Grafana: nginx SPA that fetches the Hub JWT and
+  # injects it into <iframe src=/grafana/>. Enterprise image (proprietary).
+  grafana-wrapper:
+    image: ${ENTERPRISE_REGISTRY}/industream/grafana-hub-wrapper:${GRAFANA_WRAPPER_VERSION}
+    environment:
+      # The wrapper SPA loads ${INDUSTREAM_HUB_ORIGIN}/industream-login.js for the
+      # auth client — same host as the rest of the Hub UI so cookies +
+      # service-worker share an origin.
+      - INDUSTREAM_HUB_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
+    depends_on:
+      - grafana
+    # uifusion-api depends_on (cross-group) lives in the runtime overlays.
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ==========================================
+  # PROMETHEUS + EXPORTERS
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION}
+    hostname: prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      # --web.enable-lifecycle deliberately OMITTED (no remote /-/reload /-/quit).
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.external-url=https://prometheus.${INDUSTREAM_DOMAIN}'
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - node-exporter
+      - cadvisor
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:9090/-/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  node-exporter:
+    image: prom/node-exporter:${NODE_EXPORTER_VERSION}
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/host'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro,rslave
+
+  cadvisor:
+    # Upstream moved to ghcr.io/google/cadvisor in v0.56+. Set CADVISOR_IMAGE to a
+    # private mirror if regressions appear.
+    image: ${CADVISOR_IMAGE}:${CADVISOR_VERSION}
+    command:
+      - --housekeeping_interval=30s
+      - --disable_metrics=disk,diskIO,tcp,udp,percpu,sched,process
+      - --store_container_labels=true
+      - --docker_only=true
+      - --containerd=/run/containerd/containerd.sock
+      - --containerd-namespace=moby
+    volumes:
+      - /:/rootfs:ro,rslave
+      - /var/run:/var/run:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
+      - /sys:/sys:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /dev/disk/:/dev/disk:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:${POSTGRES_EXPORTER_VERSION}
+    environment:
+      - DATA_SOURCE_URI=${POSTGRES_EXPORTER_DB_HOST}:5432/postgres?sslmode=disable
+      - DATA_SOURCE_USER=${POSTGRES_ADMIN_USER}
+      - DATA_SOURCE_PASS_FILE=/run/secrets/${POSTGRES_ADMIN_PASSWORD_SECRET_NAME}
+      - PG_EXPORTER_DISABLE_DEFAULT_METRICS=false
+      - PG_EXPORTER_DISABLE_SETTINGS_METRICS=false
+    # depends_on the shared `postgres` (other group) lives in the runtime
+    # overlays so the base renders standalone.
+
+  # ==========================================
+  # ALERTING
+  # ==========================================
+  alertmanager:
+    image: prom/alertmanager:${ALERTMANAGER_VERSION}
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=https://alertmanager.${INDUSTREAM_DOMAIN}'
+      - '--cluster.listen-address='
+    volumes:
+      - ./config/alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    depends_on:
+      - prometheus
+
+# =============================================================================
+# VOLUMES (intent only — driver/name resolved by the runtime overlay)
+# =============================================================================
+volumes:
+  grafana-data:
+  prometheus-data:
+  alertmanager-data:

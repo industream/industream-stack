@@ -1,0 +1,131 @@
+# =============================================================================
+# base/core.yml — orchestrator-neutral (image + functional env only).
+# =============================================================================
+# Runnable as-is under plain `docker compose` when merged with a runtime overlay
+# (CE no-CLI fallback). Carries NO deploy:/labels/secrets-backend/net-names —
+# the runtime.<swarm|compose>.yml overlay owns those.
+#
+# Group: core — uifusion (Hub shell), uifusion-api (Hub backend), minio,
+# cdn-server (Verdaccio npm registry), cdn-cache (esm.sh).
+#
+# Reconciliation invariants enforced here ONCE, inherited by both runtimes:
+#   - uifusion-api carries the FULL IH_* env, incl. issuer=${HUB_AUTH_ISSUER} and
+#     audience=${HUB_AUTH_AUDIENCE} — the JWT contract (NEVER changes).
+#   - JWKS is served at uifusion-api:3050/auth/jwks; the swarm overlay adds the
+#     network alias `industream-hub-backend` so downstream verifiers resolve it
+#     identically on both trees (decision #3: keep `uifusion-api` canonical).
+#   - minio root password comes from a secret (NO inline value); the runtime
+#     overlay names the secret and mounts it via *_FILE.
+#
+# NO inline image tag (every image uses a versions.env var with NO `:-default`,
+# so a missing var fails loudly) and NO inline password.
+# =============================================================================
+services:
+  # ==========================================
+  # UIFUSION-API — Hub backend (canonical name; alias industream-hub-backend
+  # added by the swarm overlay). Exposes /auth/jwks on :3050 → the JWKS source
+  # for every downstream verifier (FlowMaker core, DataCatalog, DataBridge,
+  # Grafana wrapper). EE overlay flips IH_AUTH_METHOD to OAUTH.
+  # ==========================================
+  uifusion-api:
+    image: ${COMMUNITY_REGISTRY}/uifusion/api:${UIFUSION_API_VERSION}
+    environment:
+      - CONFIG_PATH=/app/data/config.json
+      - IH_PUBLIC_PORT=3050
+      - IH_INTERNAL_PORT=3051
+      - IH_AUTH_METHOD=${IH_AUTH_METHOD:-BASIC}
+      # uifusion-api does NOT honour *_FILE for these; the deploy path exports
+      # HUB_BACKEND_ADMIN_* (read from the secret store) into the env before
+      # launch. The :-admin default keeps the CE no-CLI fallback runnable.
+      - IH_USERNAME=${HUB_BACKEND_ADMIN_USER:-admin}
+      - IH_PASSWORD=${HUB_BACKEND_ADMIN_PASSWORD:-admin}
+      - IH_EMAIL=admin@${INDUSTREAM_DOMAIN:-localhost}
+      - IH_FIRSTNAME=Admin
+      - IH_LASTNAME=User
+      - IH_ROLE=admin
+      - IH_ACCOUNT_NAME=industream
+      # --- JWT CONTRACT (THE INVARIANT — NEVER CHANGES) ---
+      - IH_ISSUER=${HUB_AUTH_ISSUER}
+      - IH_AUDIENCE=${HUB_AUTH_AUDIENCE}
+      - IH_ACCESS_TOKEN_TTL_SECONDS=900
+      - IH_REFRESH_TOKEN_TTL_SECONDS=2592000
+      - IH_BACKEND_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
+      - HUB_DATA_PATH=/app/data/hub
+    volumes:
+      - uifusion-config:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3050/auth/jwks"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+
+  # ==========================================
+  # UIFUSION — Hub shell (SPA). Auth flows through uifusion-api in hub-backend
+  # mode. UF_CONFIG_URL points the shell at the API's /config endpoint.
+  # ==========================================
+  uifusion:
+    image: ${COMMUNITY_REGISTRY}/uifusion/ui:${UIFUSION_UI_VERSION}
+    environment:
+      - NODE_ENV=production
+      - UF_CONFIG_URL=${INDUSTREAM_HUB_ORIGIN}/api/uifusion/api/config
+    depends_on:
+      - uifusion-api
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ==========================================
+  # MINIO — S3-compatible object storage. Root credentials come from a secret;
+  # the runtime overlay names the secret and points MINIO_ROOT_*_FILE at it
+  # (NO inline password here).
+  # ==========================================
+  minio:
+    image: minio/minio:${MINIO_VERSION}
+    hostname: minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER_FILE=/run/secrets/${MINIO_ROOT_USER_SECRET_NAME}
+      - MINIO_ROOT_PASSWORD_FILE=/run/secrets/${MINIO_ROOT_PASSWORD_SECRET_NAME}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ==========================================
+  # CDN-SERVER — Verdaccio npm registry. Internal only: workers pull from
+  # http://cdn-server:4873. No proxy exposure.
+  # ==========================================
+  cdn-server:
+    image: ${COMMUNITY_REGISTRY}/flowmaker.core/cdn-server:${CDN_SERVER_VERSION}
+    hostname: cdn-server
+    volumes:
+      - cdn-server-storage:/verdaccio/storage
+
+  # ==========================================
+  # CDN-CACHE — esm.sh ES-module CDN, backed by cdn-server. Exposed by the
+  # runtime overlay at cdn.<domain>.
+  # ==========================================
+  cdn-cache:
+    image: ${COMMUNITY_REGISTRY}/flowmaker.core/cdn-cache:${CDN_CACHE_VERSION}
+    hostname: cdn-cache
+    environment:
+      - ESMPORT=8080
+      - NPM_REGISTRY=http://cdn-server:4873
+    volumes:
+      - cdn-cache-storage:/esm/.cache
+    depends_on:
+      - cdn-server
+
+volumes:
+  uifusion-config:
+  minio-data:
+  cdn-server-storage:
+  cdn-cache-storage:
