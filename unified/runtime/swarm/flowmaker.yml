@@ -110,8 +110,8 @@ services:
       restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
 
 volumes:
-  flowmaker-launcher-data:  { name: ${ENV}-flowmaker-launcher-data }
-  flowmaker-confighub-data: { name: ${ENV}-flowmaker-confighub-data }
+  flowmaker-launcher-data:  { name: "${ENV}-flowmaker-launcher-data" }
+  flowmaker-confighub-data: { name: "${ENV}-flowmaker-confighub-data" }
 
 networks:
   traefik-public:

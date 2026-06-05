@@ -17,7 +17,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
-RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false
+RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -27,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     --stack)     STACK="$2"; shift 2 ;;
     --project)   PROJECT="$2"; shift 2 ;;
     --community) COMMUNITY=true; shift ;;
+    --render)    RENDER=true; shift ;;
     -h|--help)   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -57,17 +58,36 @@ fi
 echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV}"
 echo "  files: ${FILES[*]//-f /}"
 
+# ---- Render-only gate (validate the assembled config, deploy nothing) -------
+if [[ "$RENDER" == true ]]; then
+  if [[ "$RUNTIME" == compose ]]; then
+    ENV=$ENV docker compose "${ENV_FILES[@]}" "${FILES[@]}" config
+    exit $?
+  fi
+  # `docker compose config` can't render swarm overlays that use ${ENV} in
+  # network-map KEYS (e.g. ${ENV}-platform) — those only interpolate at
+  # `stack deploy` time. Validate each file is well-formed YAML instead.
+  for f in "${FILES[@]}"; do [[ "$f" == -f ]] && continue
+    python3 -c "import yaml; yaml.safe_load(open('$f'))" || { echo "✗ invalid YAML: $f" >&2; exit 1; }
+  done
+  echo "✓ ${#FILES[@]} swarm file refs are valid YAML (full validation = a live 'stack deploy')"
+  exit 0
+fi
+
 # ---- Dispatch ---------------------------------------------------------------
 if [[ "$RUNTIME" == compose ]]; then
   [[ -n "$PROJECT" ]] || { echo "✗ --project required for compose" >&2; exit 1; }
   exec docker compose -p "$PROJECT" "${ENV_FILES[@]}" "${FILES[@]}" up -d
 else
   [[ -n "$STACK" ]] || { echo "✗ --stack required for swarm" >&2; exit 1; }
-  # stack deploy can't read --env-file → render an interpolated file via compose
-  # config, then deploy it (deploy: keys are preserved by `compose config`).
-  RESOLVED="$(mktemp --suffix=.yml)"
-  ENV=$ENV docker compose "${ENV_FILES[@]}" "${FILES[@]}" config > "$RESOLVED"
-  echo "  resolved → $RESOLVED"
-  docker stack deploy --detach=false --with-registry-auth --prune -c "$RESOLVED" "$STACK"
+  # `docker stack deploy` interpolates ${VAR} from the PROCESS env (not
+  # --env-file), and unlike `compose config` it handles ${ENV}-* network/secret
+  # keys. Source the single env sources into the env, then deploy with -c.
+  set -a; export ENV
+  source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+  [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+  set +a
+  C_FILES=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] && C_FILES+=(-c) || C_FILES+=("$f"); done
+  docker stack deploy --detach=false --with-registry-auth --prune "${C_FILES[@]}" "$STACK"
   # TODO(Phase 4): run seeders/ (Logto app+user, launchpad) for --edition ee.
 fi

@@ -195,9 +195,9 @@ secrets:
     external: true
 
 volumes:
-  grafana-data:      { name: ${ENV}-grafana-data }
-  prometheus-data:   { name: ${ENV}-prometheus-data }
-  alertmanager-data: { name: ${ENV}-alertmanager-data }
+  grafana-data:      { name: "${ENV}-grafana-data" }
+  prometheus-data:   { name: "${ENV}-prometheus-data" }
+  alertmanager-data: { name: "${ENV}-alertmanager-data" }
 
 networks:
   traefik-public:
