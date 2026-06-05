@@ -14,11 +14,12 @@ services:
       - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     depends_on:
       - postgres
     secrets:
-      - ${ENV}_datacatalog_db_password
+      - source: datacatalog_db_password
+        target: ${ENV}_datacatalog_db_password
     deploy:
       labels:
         - traefik.enable=true
@@ -35,7 +36,7 @@ services:
   datacatalog-ui:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     deploy:
       labels:
         - traefik.enable=true
@@ -47,13 +48,15 @@ services:
         - traefik.http.services.${ENV}-datacatalog-ui.loadbalancer.server.port=8080
 
 secrets:
-  ${ENV}_datacatalog_db_password:
+  datacatalog_db_password:
+    name: ${ENV}_datacatalog_db_password
     external: true
 
 networks:
   traefik-public:
     external: true
     name: traefik-shared_traefik-public
-  ${ENV}-platform:
+  platform:
+    name: ${ENV}-platform
     driver: overlay
     attachable: true

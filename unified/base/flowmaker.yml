@@ -13,7 +13,7 @@
 # EE (Logto) mint the same token — only the identity SOURCE differs.
 #
 # JWT CONTRACT (THE INVARIANT — never change): iss=hub-backend, aud=industream-hub,
-# JWKS at http://uifusion-api:3050/auth/jwks. Both runtimes alias the hub backend
+# JWKS at http://industream-hub-backend:3050/auth/jwks. Both runtimes alias the hub backend
 # so this URL resolves on their respective networks.
 # =============================================================================
 services:

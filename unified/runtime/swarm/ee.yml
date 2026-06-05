@@ -4,9 +4,10 @@ services:
   logto:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     secrets:
-      - ${ENV}_logto_db_url
+      - source: logto_db_url
+        target: ${ENV}_logto_db_url
     deploy:
       labels:
         - traefik.enable=true
@@ -24,27 +25,31 @@ services:
 
   logto-postgres:
     networks:
-      - ${ENV}-platform
+      - platform
     secrets:
-      - ${ENV}_logto_db_password
+      - source: logto_db_password
+        target: ${ENV}_logto_db_password
     volumes:
-      - ${ENV}-logto-postgres-data:/var/lib/postgresql/data
+      - logto-postgres-data:/var/lib/postgresql/data
     deploy:
       restart_policy: { condition: any, delay: 5s, window: 120s }
 
 secrets:
-  ${ENV}_logto_db_url:
+  logto_db_url:
+    name: ${ENV}_logto_db_url
     external: true
-  ${ENV}_logto_db_password:
+  logto_db_password:
+    name: ${ENV}_logto_db_password
     external: true
 
 volumes:
-  ${ENV}-logto-postgres-data:
+  logto-postgres-data: { name: "${ENV}-logto-postgres-data" }
 
 networks:
   traefik-public:
     external: true
     name: traefik-shared_traefik-public
-  ${ENV}-platform:
+  platform:
+    name: ${ENV}-platform
     driver: overlay
     attachable: true

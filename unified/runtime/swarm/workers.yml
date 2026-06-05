@@ -14,7 +14,7 @@
 # and a disabled healthcheck. Per-worker overrides are unnecessary.
 x-swarm-worker: &swarm-worker
   networks:
-    - ${ENV}-platform
+    - platform
   healthcheck:
     test: ["NONE"]
   deploy:
@@ -33,7 +33,7 @@ x-swarm-worker: &swarm-worker
 # Premium workers carry a heavier envelope (protocol/codec workloads).
 x-swarm-worker-premium: &swarm-worker-premium
   networks:
-    - ${ENV}-platform
+    - platform
   healthcheck:
     test: ["NONE"]
   deploy:
@@ -119,4 +119,5 @@ services:
 # NETWORKS — overlay, per-env isolated (attachable so worker-manager can inspect).
 # =============================================================================
 networks:
-  ${ENV}-platform:
+  platform:
+    name: ${ENV}-platform

@@ -7,16 +7,45 @@
 # the databridge-postgresql variant; dedicated influxdb/timescaledb services.
 # =============================================================================
 services:
+  postgres:
+    hostname: postgres
+    networks:
+      - platform
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # init-postgres.sh reads each user's password from /run/secrets/*_<pattern>,
+    # so every app DB password must be mounted here (admin pw drives POSTGRES_PASSWORD_FILE).
+    secrets:
+      - source: postgres_admin_password
+        target: ${ENV}_postgres_admin_password
+      - source: grafana_db_password
+        target: ${ENV}_grafana_db_password
+      - source: datacatalog_db_password
+        target: ${ENV}_datacatalog_db_password
+      - source: databridge_pg_password
+        target: ${ENV}_databridge_pg_password
+    deploy:
+      resources:
+        limits:   { cpus: '1.0', memory: 1024M }
+        reservations: { cpus: '0.08', memory: 512M }
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+
   influxdb:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     volumes:
-      - ${ENV}-influxdb-data:/var/lib/influxdb2
-      - ${ENV}-influxdb-config:/etc/influxdb2
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
     secrets:
-      - ${ENV}_influx_admin_password
-      - ${ENV}_influx_admin_token
+      - source: influx_admin_password
+        target: ${ENV}_influx_admin_password
+      - source: influx_admin_token
+        target: ${ENV}_influx_admin_token
     deploy:
       labels:
         - traefik.enable=true
@@ -38,9 +67,10 @@ services:
   databridge:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     secrets:
-      - ${ENV}_influx_admin_token
+      - source: influx_admin_token
+        target: ${ENV}_influx_admin_token
     deploy:
       labels:
         - traefik.enable=true
@@ -65,11 +95,12 @@ services:
 
   timescaledb:
     networks:
-      - ${ENV}-platform
+      - platform
     volumes:
-      - ${ENV}-timescaledb-data:/var/lib/postgresql/data
+      - timescaledb-data:/var/lib/postgresql/data
     secrets:
-      - ${ENV}_timescaledb_password
+      - source: timescaledb_password
+        target: ${ENV}_timescaledb_password
     deploy:
       resources:
         limits:   { cpus: '2.0', memory: 1024M }
@@ -83,11 +114,12 @@ services:
   databridge-postgresql:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     depends_on:
       - postgres
     secrets:
-      - ${ENV}_databridge_pg_password
+      - source: databridge_pg_password
+        target: ${ENV}_databridge_pg_password
     deploy:
       labels:
         - traefik.enable=true
@@ -112,9 +144,10 @@ services:
   databridge-timescaledb:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     secrets:
-      - ${ENV}_timescaledb_password
+      - source: timescaledb_password
+        target: ${ENV}_timescaledb_password
     deploy:
       labels:
         - traefik.enable=true
@@ -137,24 +170,39 @@ services:
         window: 120s
 
 secrets:
-  ${ENV}_influx_admin_password:
+  influx_admin_password:
+    name: ${ENV}_influx_admin_password
     external: true
-  ${ENV}_influx_admin_token:
+  influx_admin_token:
+    name: ${ENV}_influx_admin_token
     external: true
-  ${ENV}_timescaledb_password:
+  timescaledb_password:
+    name: ${ENV}_timescaledb_password
     external: true
-  ${ENV}_databridge_pg_password:
+  databridge_pg_password:
+    name: ${ENV}_databridge_pg_password
+    external: true
+  postgres_admin_password:
+    name: ${ENV}_postgres_admin_password
+    external: true
+  grafana_db_password:
+    name: ${ENV}_grafana_db_password
+    external: true
+  datacatalog_db_password:
+    name: ${ENV}_datacatalog_db_password
     external: true
 
 volumes:
-  ${ENV}-influxdb-data:
-  ${ENV}-influxdb-config:
-  ${ENV}-timescaledb-data:
+  influxdb-data: { name: "${ENV}-influxdb-data" }
+  influxdb-config: { name: "${ENV}-influxdb-config" }
+  timescaledb-data: { name: "${ENV}-timescaledb-data" }
+  postgres-data: { name: "${ENV}-postgres-data" }
 
 networks:
   traefik-public:
     external: true
     name: traefik-shared_traefik-public
-  ${ENV}-platform:
+  platform:
+    name: ${ENV}-platform
     driver: overlay
     attachable: true

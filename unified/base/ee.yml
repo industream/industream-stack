@@ -2,7 +2,7 @@
 # base/ee.yml — Enterprise Edition transform (orchestrator-neutral).
 # =============================================================================
 # Appended (after base/core.yml) ONLY when EDITION=ee. Turns the community Hub
-# into EE: swaps uifusion-api to the enterprise image + OAUTH against a self-
+# into EE: swaps industream-hub-backend to the enterprise image + OAUTH against a self-
 # hosted Logto, flips the shell to OAUTH, and adds Logto (+ its Postgres).
 #
 # The Hub JWT it MINTS is UNCHANGED (same iss=hub-backend / aud=industream-hub)
@@ -15,7 +15,7 @@
 # =============================================================================
 services:
   # ---- Hub backend → enterprise image + OAUTH against Logto ----
-  uifusion-api:
+  industream-hub-backend:
     image: ${ENTERPRISE_REGISTRY}/uifusion/api-enterprise:${UIFUSION_API_EE_VERSION}
     environment:
       - IH_AUTH_METHOD=OAUTH
@@ -32,7 +32,7 @@ services:
       - IH_REVOCATION_HARD_FAIL_AFTER_SECONDS=${IH_REVOCATION_HARD_FAIL_AFTER_SECONDS:-900}
 
   # ---- Shell → OAUTH (so the SPA auth-config points at Logto, not BASIC) ----
-  uifusion:
+  industream-hub-frontend:
     environment:
       - AUTH_METHOD=OAUTH
       - OIDC_ISSUER=${OIDC_ISSUER:-https://auth.${INDUSTREAM_DOMAIN}/oidc}
