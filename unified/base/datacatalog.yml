@@ -13,7 +13,7 @@
 # =============================================================================
 services:
   datacatalog-api:
-    image: ${COMMUNITY_REGISTRY}/datacatalog/api:${DATACATALOG_API_VERSION}
+    image: ${DATACATALOG_API_IMAGE}
     # The image bakes ASPNETCORE_HTTP_PORTS=8080 → override so BOTH runtimes use
     # the dual-port split: 8002 frontend (Hub JWT) / 8003 backend (API key).
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
@@ -40,7 +40,7 @@ services:
       start_period: 30s
 
   datacatalog-ui:
-    image: ${COMMUNITY_REGISTRY}/datacatalog/ui:${DATACATALOG_UI_VERSION}
+    image: ${DATACATALOG_UI_IMAGE}
     environment:
       # Lets the SPA's auth client retrieve the access token from the Hub bridge
       # (EE) and inject it as a Bearer. Harmless in CE.
