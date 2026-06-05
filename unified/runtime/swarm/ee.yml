@@ -1,0 +1,50 @@
+# runtime/swarm/ee.yml — swarm plumbing for the EE overlay (Logto).
+# Merged after base/ee.yml when EDITION=ee && RUNTIME=swarm.
+services:
+  logto:
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    secrets:
+      - ${ENV}_logto_db_url
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-logto-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-logto-secure.rule=Host(`auth.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-logto-secure.tls=true
+        - traefik.http.routers.${ENV}-logto-secure.service=${ENV}-logto
+        - traefik.http.services.${ENV}-logto.loadbalancer.server.port=3001
+        - traefik.http.routers.${ENV}-logto-admin-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-logto-admin-secure.rule=Host(`auth-admin.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-logto-admin-secure.tls=true
+        - traefik.http.routers.${ENV}-logto-admin-secure.service=${ENV}-logto-admin
+        - traefik.http.services.${ENV}-logto-admin.loadbalancer.server.port=3002
+      restart_policy: { condition: any, delay: 5s, window: 120s }
+
+  logto-postgres:
+    networks:
+      - ${ENV}-platform
+    secrets:
+      - ${ENV}_logto_db_password
+    volumes:
+      - ${ENV}-logto-postgres-data:/var/lib/postgresql/data
+    deploy:
+      restart_policy: { condition: any, delay: 5s, window: 120s }
+
+secrets:
+  ${ENV}_logto_db_url:
+    external: true
+  ${ENV}_logto_db_password:
+    external: true
+
+volumes:
+  ${ENV}-logto-postgres-data:
+
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  ${ENV}-platform:
+    driver: overlay
+    attachable: true
