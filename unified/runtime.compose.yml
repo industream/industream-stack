@@ -1,0 +1,64 @@
+# =============================================================================
+# runtime.compose.yml — COMPOSE-only plumbing (Caddy labels/file secrets/
+# restart/dedicated DB). Merged LAST over base/*.yml.
+# =============================================================================
+# SECURITY FIX lands here: compose datacatalog-api now reads its DB password from
+# a FILE secret mounted at /run/secrets/<name> and resolved by the SAME
+# dotnet-entrypoint as swarm — replacing the previous inline `industream4370`.
+# It also inherits the Hub-JWT block + dual-port from base/datacatalog.yml.
+# =============================================================================
+services:
+  datacatalog-api:
+    # DB host + secret name come from runtime.compose.env (consumed by base
+    # interpolation), not here, so base/datacatalog.yml renders correctly.
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    secrets:
+      - datacatalog_db_password
+    depends_on:
+      - datacatalog-postgresql
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      caddy: datacatalog-api.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8002}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  datacatalog-ui:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      caddy: datacatalog-ui.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  # Dedicated DataCatalog Postgres (compose topology; swarm uses the shared one).
+  datacatalog-postgresql:
+    image: postgres:${POSTGRES_VERSION}
+    environment:
+      - POSTGRES_DB=${DATACATALOG_DB_NAME:-DataCatalog}
+      - POSTGRES_USER=${DATACATALOG_DB_USER:-datacatalog}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/datacatalog_db_password
+    secrets:
+      - datacatalog_db_password
+    volumes:
+      - datacatalog-pgdata:/var/lib/postgresql/data
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+
+secrets:
+  datacatalog_db_password:
+    file: ${SECRETS_DIR:-./secrets}/datacatalog_db_password
+
+volumes:
+  datacatalog-pgdata:
+
+networks:
+  flowmaker-net:
+    external: true
+    name: ${FM_NETWORK}
