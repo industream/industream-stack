@@ -113,7 +113,14 @@ services:
     # ${ENV} (expanded by envsubst in deploy-swarm.sh) — referencing the
     # DB_URL_FILE env var here would be mangled by envsubst at deploy-time
     # (it strips unknown $VAR), so the literal path is used instead.
-    entrypoint: ["sh", "-c", "export DB_URL=$(cat /run/secrets/${ENV}_logto_db_url) && npm run cli db alteration deploy latest && npm run cli db seed -- --swe && npm start"]
+    # DB init order matters: on a FRESH database `db seed` builds the schema (it
+    # runs the full alteration history) AND seeds defaults; on an already-seeded
+    # DB it exits non-zero, so we fall back to `alteration deploy latest` to apply
+    # pending upgrades. The old order (`alteration deploy` first) crash-looped on a
+    # fresh DB — the early alterations reference a base schema (e.g. the
+    # `application_type` enum) that only `db seed` creates → `type "application_type"
+    # does not exist`.
+    entrypoint: ["sh", "-c", "export DB_URL=$(cat /run/secrets/${ENV}_logto_db_url) && (npm run cli db seed -- --swe || npm run cli db alteration deploy latest) && npm start"]
     environment:
     - TRUST_PROXY_HEADER=1
     - DB_URL_FILE=/run/secrets/${ENV}_logto_db_url
