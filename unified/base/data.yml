@@ -1,0 +1,136 @@
+# =============================================================================
+# base/data.yml — orchestrator-neutral (image + functional env only).
+# =============================================================================
+# Group: data — influxdb, databridge (influx + postgresql + timescaledb
+# variants), timescaledb.
+#
+# Carries NO deploy:/labels/secrets-backend/net-names/volumes — the
+# runtime.<swarm|compose>.yml overlay owns those. Runnable as-is under plain
+# `docker compose` only when merged with a runtime overlay.
+#
+# Secret/token resolution is identical on both runtimes via the mounted
+# entrypoint scripts:
+#   - influxdb-entrypoint.sh   finds /run/secrets/*_influx_admin_{password,token}
+#   - dotnet-entrypoint.sh     finds /run/secrets/*_${DB_SECRET_PATTERN} and
+#     replaces __DB_PASSWORD_PLACEHOLDER__ / __INFLUX_TOKEN_PLACEHOLDER__.
+# The base NEVER inlines an image tag (versions.env) or a password (placeholder).
+#
+# The databridge (influx variant) is the timeseries API talking to InfluxDB; the
+# -postgresql / -timescaledb variants are the same image pointed at a SQL store.
+# DATABRIDGE_*_DB_HOST differs per topology (shared `postgres` on swarm vs a
+# dedicated DB on compose) and is supplied by runtime.<runtime>.env interpolation.
+# =============================================================================
+services:
+  # ---------------------------------------------------------------------------
+  # InfluxDB — time-series store. Token/password injected by entrypoint from the
+  # mounted secrets (names resolved by the runtime overlay's secret backend).
+  # ---------------------------------------------------------------------------
+  influxdb:
+    image: influxdb:${INFLUXDB_VERSION}
+    entrypoint: ["/bin/sh", "/scripts/influxdb-entrypoint.sh"]
+    command: ["influxd"]
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUX_ADMIN_USERNAME:-admin}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUX_ORG:-industream}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUX_BUCKET:-industream}
+      - INFLUXD_REPORTING_DISABLED=true
+      # InfluxDB 2.8+: store API tokens hashed on disk. MUST be set before the
+      # initial setup runs — not reversible without wiping the data volume.
+      - INFLUXD_USE_HASHED_TOKENS=true
+    volumes:
+      - ./config/influxdb-entrypoint.sh:/scripts/influxdb-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "influx ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # DataBridge (InfluxDB variant) — timeseries API over InfluxDB.
+  # ---------------------------------------------------------------------------
+  databridge:
+    image: ${COMMUNITY_REGISTRY}/timeseries/api:${DATABRIDGE_API_VERSION}
+    entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
+    command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
+    environment:
+      - InfluxDB__Connection__Url=http://influxdb:8086
+      # Replaced at startup by dotnet-entrypoint.sh from the mounted influx token
+      # secret — same mechanism on swarm (docker secret) and compose (file secret).
+      - InfluxDB__Connection__Token=__INFLUX_TOKEN_PLACEHOLDER__
+      - InfluxDB__Connection__Organization=${INFLUX_ORG:-industream}
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    depends_on:
+      - influxdb
+    healthcheck:
+      # /health endpoint was removed in DataBridge 2.x — fall back to swagger probe.
+      test: ["CMD-SHELL", "wget --spider -qS http://localhost:8080/swagger 2>&1 | grep -qE 'HTTP/1.. (200|301|302)' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # TimescaleDB — Postgres + time-series extension. Password via file secret
+  # (POSTGRES_PASSWORD_FILE) — the path is supplied by the runtime overlay.
+  # ---------------------------------------------------------------------------
+  timescaledb:
+    image: timescale/timescaledb:${TIMESCALEDB_VERSION}
+    environment:
+      - POSTGRES_USER=${TIMESCALEDB_ADMIN_USER:-postgres}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/${TIMESCALEDB_DB_SECRET_NAME}
+      - POSTGRES_DB=${TIMESCALEDB_DB_NAME:-industream}
+      # Pin PGDATA inside the mounted volume to guard against Postgres 18+ moving
+      # the default path and silently bypassing the mount (data loss on restart).
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALEDB_ADMIN_USER:-postgres} -d ${TIMESCALEDB_DB_NAME:-industream}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # DataBridge (PostgreSQL variant) — same image, SQL store. DB host differs per
+  # topology (shared `postgres` on swarm / dedicated on compose) via runtime env.
+  # ---------------------------------------------------------------------------
+  databridge-postgresql:
+    image: ${COMMUNITY_REGISTRY}/timeseries/api:${DATABRIDGE_API_VERSION}
+    entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
+    command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
+    environment:
+      # dotnet-entrypoint.sh matches /run/secrets/*_${DB_SECRET_PATTERN} and
+      # replaces __DB_PASSWORD_PLACEHOLDER__ in the connection string below.
+      - DB_SECRET_PATTERN=${DATABRIDGE_PG_DB_SECRET_PATTERN}
+      - PostgreSql__ConnectionString=Server=${DATABRIDGE_PG_DB_HOST};Port=5432;User Id=${DATABRIDGE_PG_DB_USER:-databridge};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${DATABRIDGE_PG_DB_NAME:-DataBridge};
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -qS http://localhost:8080/swagger 2>&1 | grep -qE 'HTTP/1.. (200|301|302)' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # DataBridge (TimescaleDB variant) — same image, pointed at timescaledb.
+  # ---------------------------------------------------------------------------
+  databridge-timescaledb:
+    image: ${COMMUNITY_REGISTRY}/timeseries/api:${DATABRIDGE_API_VERSION}
+    entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
+    command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
+    environment:
+      - DB_SECRET_PATTERN=${TIMESCALEDB_DB_SECRET_PATTERN}
+      - PostgreSql__ConnectionString=Server=timescaledb;Port=5432;User Id=${TIMESCALEDB_ADMIN_USER:-postgres};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${TIMESCALEDB_DB_NAME:-industream};
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    depends_on:
+      - timescaledb
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -qS http://localhost:8080/swagger 2>&1 | grep -qE 'HTTP/1.. (200|301|302)' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

@@ -1,0 +1,84 @@
+# =============================================================================
+# runtime/compose/core.yml — COMPOSE-only plumbing (Caddy labels/file secrets/
+# restart/flowmaker-net). Merged LAST over base/core.yml.
+# =============================================================================
+# Owns everything orchestrator-specific for the core group on the compose tree:
+#   - Caddy reverse-proxy labels
+#   - file secrets for minio root user/password (named by *_SECRET_NAME in
+#     runtime.compose.env, consumed by base/core.yml interpolation) — this
+#     REPLACES the previous inline `MINIO_ROOT_USER=ROOTUSER /
+#     MINIO_ROOT_PASSWORD=CHANGEME123` leak in the source compose.
+#   - restart policy + flowmaker-net wiring
+#
+# The `industream-hub-backend` JWKS alias is NOT needed here: on the compose
+# tree the canonical service is already named `industream-hub-backend` upstream,
+# but under the unified base the canonical name is `uifusion-api`. Downstream
+# compose consumers (flowmaker-*, datacatalog) must resolve JWKS via the
+# uifusion-api service; the swarm tree supplies the alias, the compose tree
+# relies on the canonical service name reachable on flowmaker-net.
+# =============================================================================
+services:
+  uifusion-api:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    mem_limit: 64m
+    mem_reservation: 32m
+    labels:
+      caddy: hub-api.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 3050}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  uifusion:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      caddy: hub.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 80}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  minio:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    secrets:
+      - minio_root_user
+      - minio_root_password
+    labels:
+      caddy: s3.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 9000}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  cdn-server:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+
+  cdn-cache:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      caddy: cdn.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+# Literal secret names on the compose tree (compose does NOT interpolate the
+# KEYS of the top-level secrets map). They MUST match MINIO_ROOT_USER_SECRET_NAME
+# / MINIO_ROOT_PASSWORD_SECRET_NAME in runtime.compose.env (= minio_root_user /
+# minio_root_password) so the /run/secrets/<name> paths in base/core.yml resolve.
+secrets:
+  minio_root_user:
+    file: ${SECRETS_DIR:-./secrets}/minio_root_user
+  minio_root_password:
+    file: ${SECRETS_DIR:-./secrets}/minio_root_password
+
+networks:
+  flowmaker-net:
+    external: true
+    name: ${FM_NETWORK}

@@ -1,0 +1,150 @@
+# =============================================================================
+# runtime/compose/monitoring.yml — COMPOSE-only plumbing for the monitoring group.
+# =============================================================================
+# Owns Caddy labels / file-secrets / restart / dedicated DB / flowmaker-net.
+# Merged LAST over base/monitoring.yml.
+#
+# DECISION #4: Grafana is NOW IN SCOPE for compose. This overlay wires
+# grafana + grafana-wrapper (Hub-SSO) plus the supporting monitoring services
+# (prometheus, exporters, alertmanager) into the Caddy/compose topology.
+#
+# ┌─ TODO (Caddy internal-CA ↔ Grafana JWKS trust) ─────────────────────────────
+# │ Grafana fetches the Hub JWKS over HTTPS at
+# │   https://${INDUSTREAM_DOMAIN}/api/uifusion/auth/jwks
+# │ which, in the compose topology, Caddy serves over an INTERNAL cert
+# │ (`caddy.tls.issuer: internal`). Grafana 13 IGNORES tls_skip_verify for the
+# │ JWKS fetch — so Caddy's internal CA root MUST be trusted by Grafana or the
+# │ keyset stays empty ("no keys found") and EVERY token is rejected (Grafana
+# │ falls back to its login page).
+# │
+# │ This is the COMPOSE mirror of the swarm grafana-wrapper-selfsigned CA-mount
+# │ (runtime/swarm/monitoring.yml). To wire it, export Caddy's local CA root and
+# │ mount it into Grafana's extra-CA dir WITHOUT running Grafana as root:
+# │   - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt   (keep Mozilla roots)
+# │   - SSL_CERT_DIR=/etc/grafana/extra-cas                (additive trust dir)
+# │   - mount: <caddy-data>/caddy/pki/authorities/local/root.crt
+# │            :/etc/grafana/extra-cas/caddy-internal-ca.crt:ro
+# │ The Caddy local CA root lives in the caddy-data volume at
+# │   /data/caddy/pki/authorities/local/root.crt
+# │ → expose it on the host (CADDY_LOCAL_CA path) and bind-mount read-only.
+# │ Until that bind is provisioned by the deployer, set CADDY_LOCAL_CA to a
+# │ readable PEM. GF_AUTH_JWT_EXPECT_CLAIMS stays
+# │   {"iss":"hub-backend","aud":"industream-hub"}  (the invariant, in base).
+# └─────────────────────────────────────────────────────────────────────────────
+services:
+  grafana:
+    # In the compose/FlowMaker topology the public Hub hostname is ${FM_DOMAIN:-flowmaker.localhost}
+    # (Caddy-served), not the swarm ${INDUSTREAM_DOMAIN}. Resolve it to the
+    # Caddy host so the JWKS fetch over https reaches Caddy's published :443.
+    # host-gateway = the Docker host.
+    extra_hosts:
+      - "${FM_DOMAIN:-flowmaker.localhost}:host-gateway"
+    environment:
+      # Override the JWKS URL + root URL to the Caddy public hostname (FM_DOMAIN).
+      - GF_AUTH_JWT_JWK_SET_URL=https://${FM_DOMAIN:-flowmaker.localhost}/api/uifusion/auth/jwks
+      - GF_SERVER_ROOT_URL=https://dashboard.${FM_DOMAIN:-flowmaker.localhost}/grafana/
+      # Trust Caddy's internal CA so the JWKS fetch validates (see TODO above).
+      # Go honors SSL_CERT_FILE (Mozilla roots) + SSL_CERT_DIR (extra roots)
+      # additively → Grafana stays non-root.
+      - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+      - SSL_CERT_DIR=/etc/grafana/extra-cas
+    volumes:
+      - ${CADDY_LOCAL_CA:-./secrets/caddy-internal-ca.crt}:/etc/grafana/extra-cas/caddy-internal-ca.crt:ro
+    secrets:
+      - grafana_admin_password
+      - grafana_db_password
+    depends_on:
+      - grafana-postgresql
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      # The wrapper owns dashboard.${FM_DOMAIN:-flowmaker.localhost}; grafana-direct.* is the
+      # back-door route straight to Grafana (admin/debug, no wrapper).
+      caddy: grafana-direct.${FM_DOMAIN:-flowmaker.localhost}
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  grafana-wrapper:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      # The wrapper SPA must be iframeable from the Hub origin — Caddy internal
+      # cert; the wrapper terminates the Hub auth-bridge in front of Grafana.
+      caddy: dashboard.${FM_DOMAIN:-flowmaker.localhost}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  # Dedicated Grafana Postgres (compose topology; swarm uses the shared one).
+  grafana-postgresql:
+    image: postgres:${POSTGRES_VERSION}
+    environment:
+      - POSTGRES_DB=${GRAFANA_DB_NAME}
+      - POSTGRES_USER=${GRAFANA_DB_USER}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/grafana_db_password
+    secrets:
+      - grafana_db_password
+    volumes:
+      - grafana-pgdata:/var/lib/postgresql/data
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+
+  prometheus:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      caddy: prometheus.${FM_DOMAIN:-flowmaker.localhost}
+      caddy.reverse_proxy: "{{upstreams 9090}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  node-exporter:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+
+  cadvisor:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+
+  postgres-exporter:
+    secrets:
+      - postgres_admin_password
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+
+  alertmanager:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      caddy: alertmanager.${FM_DOMAIN:-flowmaker.localhost}
+      caddy.reverse_proxy: "{{upstreams 9093}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+secrets:
+  grafana_admin_password:
+    file: ${SECRETS_DIR:-./secrets}/grafana_admin_password
+  grafana_db_password:
+    file: ${SECRETS_DIR:-./secrets}/grafana_db_password
+  postgres_admin_password:
+    file: ${SECRETS_DIR:-./secrets}/postgres_admin_password
+
+volumes:
+  grafana-data:
+  prometheus-data:
+  alertmanager-data:
+  grafana-pgdata:
+
+networks:
+  flowmaker-net:
+    external: true
+    name: ${FM_NETWORK}

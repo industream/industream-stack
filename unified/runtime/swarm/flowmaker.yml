@@ -1,0 +1,122 @@
+# =============================================================================
+# runtime/swarm/flowmaker.yml — SWARM-only plumbing (deploy:/Traefik labels/
+# overlay nets/volume names). Merged LAST over base/flowmaker.yml.
+# =============================================================================
+# The FM_AUTH_* fix lives in base/flowmaker.yml (auth-on everywhere). For the
+# JWKS URL (http://uifusion-api:3050/auth/jwks) to resolve on swarm, the hub
+# backend service must be reachable as `uifusion-api` on ${ENV}-platform — that
+# alias is owned by base/core.yml's swarm overlay (uifusion-api ↔
+# industream-hub-backend), not duplicated here.
+#
+# Canonical public ports (drift reconciled): confighub 4001, logger 3001,
+# scheduler 3121, frontend 80. Traefik routes to those.
+# =============================================================================
+services:
+  flowmaker-scheduler:
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    depends_on:
+      - flowmaker-confighub
+      - flowmaker-logging
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.rule=Host(`scheduler.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.tls=true
+        - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.service=${ENV}-flowmaker-scheduler
+        - traefik.http.routers.${ENV}-flowmaker-scheduler.entrypoints=web
+        - traefik.http.routers.${ENV}-flowmaker-scheduler.rule=Host(`scheduler.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-flowmaker-scheduler.middlewares=redirect-to-https@file
+        # 3121 = FM_RUNTIME_PUBLIC_PORT (SPA-facing). The worker-facing backend
+        # 3120 stays internal to the overlay — never expose it publicly.
+        - traefik.http.services.${ENV}-flowmaker-scheduler.loadbalancer.server.port=3121
+      resources:
+        limits:   { cpus: '1.0', memory: 256M }
+        reservations: { cpus: '0.08', memory: 128M }
+      restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
+
+  flowmaker-confighub:
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-flowmaker-confighub-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-flowmaker-confighub-secure.rule=Host(`confighub.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-flowmaker-confighub-secure.tls=true
+        - traefik.http.routers.${ENV}-flowmaker-confighub-secure.service=${ENV}-flowmaker-confighub
+        - traefik.http.routers.${ENV}-flowmaker-confighub.entrypoints=web
+        - traefik.http.routers.${ENV}-flowmaker-confighub.rule=Host(`confighub.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-flowmaker-confighub.middlewares=redirect-to-https@file
+        # 4001 = FM_CONFIGHUB_PUBLIC_PORT (canonical public port). 4000 stays internal.
+        - traefik.http.services.${ENV}-flowmaker-confighub.loadbalancer.server.port=4001
+      resources:
+        limits:   { cpus: '0.5', memory: 128M }
+        reservations: { cpus: '0.08', memory: 64M }
+      restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
+
+  flowmaker-logging:
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-flowmaker-logging-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-flowmaker-logging-secure.rule=Host(`logger.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-flowmaker-logging-secure.tls=true
+        - traefik.http.routers.${ENV}-flowmaker-logging-secure.service=${ENV}-flowmaker-logging
+        - traefik.http.routers.${ENV}-flowmaker-logging.entrypoints=web
+        - traefik.http.routers.${ENV}-flowmaker-logging.rule=Host(`logger.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-flowmaker-logging.middlewares=redirect-to-https@file
+        # 3001 = FM_LOGGER_PUBLIC_PORT (canonical public port). 3000 stays internal.
+        - traefik.http.services.${ENV}-flowmaker-logging.loadbalancer.server.port=3001
+      resources:
+        limits:   { cpus: '0.5', memory: 128M }
+        reservations: { cpus: '0.08', memory: 64M }
+      restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
+
+  flowmaker-frontend:
+    environment:
+      # confighub PUBLIC URL — domain-shaped, swarm topology.
+      - FMUI_CONFIG_HUB_URL=https://confighub.${INDUSTREAM_DOMAIN}
+    networks:
+      - traefik-public
+      - ${ENV}-platform
+    depends_on:
+      - flowmaker-confighub
+      - flowmaker-scheduler
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-flowmaker-frontend-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-flowmaker-frontend-secure.rule=Host(`flowmaker.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-flowmaker-frontend-secure.tls=true
+        - traefik.http.routers.${ENV}-flowmaker-frontend-secure.service=${ENV}-flowmaker-frontend
+        - traefik.http.routers.${ENV}-flowmaker-frontend-secure.priority=1
+        - traefik.http.routers.${ENV}-flowmaker-frontend.entrypoints=web
+        - traefik.http.routers.${ENV}-flowmaker-frontend.rule=Host(`flowmaker.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-flowmaker-frontend.middlewares=redirect-to-https@file
+        - traefik.http.routers.${ENV}-flowmaker-frontend.priority=1
+        - traefik.http.middlewares.${ENV}-flowmaker-frontend-stripprefix.stripprefix.prefixes=/flowmaker
+        - traefik.http.middlewares.${ENV}-flowmaker-add-prefix.addprefix.prefix=/flowmaker
+        - traefik.http.services.${ENV}-flowmaker-frontend.loadbalancer.server.port=80
+      resources:
+        limits:   { cpus: '0.25', memory: 64M }
+        reservations: { cpus: '0.03', memory: 32M }
+      restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
+
+volumes:
+  flowmaker-launcher-data:  { name: ${ENV}-flowmaker-launcher-data }
+  flowmaker-confighub-data: { name: ${ENV}-flowmaker-confighub-data }
+
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  ${ENV}-platform:
+    driver: overlay
+    attachable: true
