@@ -28,7 +28,7 @@ compose overhaul) — don't lose any of his features.
 | **T5** port v2 extras | ✅ done — invariants verified + 4 env ported from master (ApiKey as secret-store export, Cors, FM_CORS_ORIGIN, IH_OIDC_INTROSPECTION_URL); 4-combo render green |
 | **T6** 3 deployment-v2 bugs | ❌ deferred (PR on David's branch) |
 | **T7** live VM gate (deploy 4 combos on .233/.41) | ❌ **not done — the real test** |
-| **T8** decommission legacy trees | ❌ not started |
+| **T8** decommission legacy trees | ❌ not started — scope = OUR swarm `docker-stack.*`. David's `fm` is left to HIM (#8 locked: complete stack in industream-stack; he deletes his fm on his own timeline). |
 
 ## David's v2 IS available — it's on `master` (corrected 2026-06-07)
 Earlier note said "v2 not on remote" — WRONG. David's v2 landed on **`master`** of

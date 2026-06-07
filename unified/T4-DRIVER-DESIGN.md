@@ -25,10 +25,12 @@ Source audited: `industream-flowmaker@master:deployment/fm` (19 commands).
 | `hosts` | print/append /etc/hosts (dev) | `driver hosts` | dev convenience |
 | `help` | usage | `driver help` + wrapper passthrough | |
 
-## The wrapper
-`fm` → thin shim: `fm <cmd> <args>` ⇒ `industream <cmd> <args>` (1:1 names above).
-Ships in `industream-flowmaker/deployment/fm` at T8, replacing the 1658-line script
-with a ~30-line passthrough. David types the same commands; one implementation runs.
+## The wrapper (OPTIONAL — #8 locked 2026-06-07)
+The complete stack lives in `industream-stack`; David's `fm` is left as-is and he
+removes it himself if/when he migrates (not force-retired). The `fm`-wrapper shim —
+`fm <cmd> <args>` ⇒ `industream <cmd> <args>` (1:1 names above), a ~30-line passthrough
+in his repo — is an **optional migration aid** so his muscle memory keeps working when
+he opts in. Until then, his fm + our driver coexist; ours is canonical.
 
 ## What stays runtime-specific (must abstract, not duplicate)
 - **Proxy**: Caddy (compose) vs Traefik (swarm) — `driver proxy` dispatches per `--runtime`.
