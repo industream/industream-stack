@@ -71,6 +71,10 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_DB=logto
       - POSTGRES_PASSWORD_FILE=/run/secrets/${LOGTO_DB_PASSWORD_SECRET_NAME}
+      # postgres:18 refuses a volume mounted straight at /var/lib/postgresql/data;
+      # data must live in a SUBDIR. Point PGDATA at a subdir (matches base/data.yml's
+      # `postgres`). Without this, logto-postgres exits 1 on 18 (found at the VM gate).
+      - PGDATA=/var/lib/postgresql/data/pgdata
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d logto || exit 1"]
       interval: 30s
