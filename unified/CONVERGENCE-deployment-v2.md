@@ -65,6 +65,20 @@ overlays or as the `*_FILE` secret pattern; not truly missing.)
    value becomes the literal string `{FM_AUTH_ISSUER:-hub-backend}`, breaking issuer
    validation. Should be `${FM_AUTH_ISSUER:-hub-backend}` (or `${HUB_AUTH_ISSUER}`, no default).
 
+## T0 decisions locked with the user (2026-06-07)
+- **#5 version-var naming → David's SHORT names** (`CORE_VERSION`, `FRONT_VERSION`,
+  `UIFUSION_API_ENTERPRISE_VERSION`); the bundle generator maps them.
+- **#6 entitlement → adopt David's `profiles:[premium]`** for gating premium workers.
+- **#7 seeding → keep OUR `seed-*.sh`** (standalone, non-interactive `--stack/--domain`,
+  declarative apps table, cross-runtime container discovery, + Logto OIDC bootstrap which
+  his `fm init` lacks). The unified driver's `init` orchestrates them. His `cmd_init`
+  logic (env/cdn + scheduler params) is verified-matched, not copied.
+- **#8 canonical tree → `industream-stack`** (platform deploy repo; the deploy spans
+  flowmaker + datacatalog + hub + databridge + monitoring + logto, so it's platform-level,
+  not app-level). `industream-flowmaker/deployment/fm` becomes a thin `fm`-wrapper shim
+  calling the industream-stack driver — David keeps `./fm`, implementation centralizes.
+  *(user said "je ne sais pas" → this is the recommendation, confirm at T0.)*
+
 ## Proposed next step
 30-min sync (T0) to lock: (a) bundle full-ref over inline+defaults [we keep ours;
 argument = same generation step, fail-loud, auditable release], (b) short vs long worker
