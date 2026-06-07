@@ -77,7 +77,7 @@ services:
   # DataBridge (InfluxDB variant) — timeseries API over InfluxDB.
   # ---------------------------------------------------------------------------
   databridge:
-    image: ${COMMUNITY_REGISTRY}/timeseries/api:${DATABRIDGE_API_VERSION}
+    image: ${DATABRIDGE_API_IMAGE}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
@@ -123,7 +123,7 @@ services:
   # topology (shared `postgres` on swarm / dedicated on compose) via runtime env.
   # ---------------------------------------------------------------------------
   databridge-postgresql:
-    image: ${COMMUNITY_REGISTRY}/timeseries/api:${DATABRIDGE_API_VERSION}
+    image: ${DATABRIDGE_API_IMAGE}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
@@ -144,7 +144,7 @@ services:
   # DataBridge (TimescaleDB variant) — same image, pointed at timescaledb.
   # ---------------------------------------------------------------------------
   databridge-timescaledb:
-    image: ${COMMUNITY_REGISTRY}/timeseries/api:${DATABRIDGE_API_VERSION}
+    image: ${DATABRIDGE_API_IMAGE}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:

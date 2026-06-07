@@ -41,13 +41,17 @@ Sync to confirm (recommended resolutions in parens):
 - **Gate:** `fm`-style commands drive all 4 combos via the unified driver.
 - Deps: T3.
 
-## T5 — Port v2 compose extras + apply fixes  [agent-able]
-- Port any v2 env not yet in `base/`: `Authentication__Backend__ApiKey`,
-  `Cors__AllowedOrigins`, etc. (the JWT block + dual-port are already in ours).
-- Confirm the security fix (no inline pw → file secret) holds; confirm issuer uses
-  `${...}` (not the literal-string bug).
-- **Gate:** render green; 0 inline secrets; issuer interpolates.
-- Deps: T1.
+## T5 — Port master compose extras + apply fixes  [DONE 2026-06-07]
+- ✅ Our-side invariants: 0 inline secrets (placeholder + DB_SECRET_NAME), all
+  issuers interpolate `${...}`, render green.
+- ✅ Ported from `industream-flowmaker@master` (NOT blocked — v2 is on master):
+  `Authentication__Backend__ApiKey=${BACKEND_API_KEY:-}` (datacatalog, credential
+  exported from the secret store by the deploy path — NEVER inline),
+  `Cors__AllowedOrigins=${DATACATALOG_CORS_ORIGINS:-…}` (datacatalog),
+  `FM_CORS_ORIGIN=${FLOWMAKER_CORS_ORIGIN:-…}` (flowmaker scheduler/confighub/logging),
+  `IH_OIDC_INTROSPECTION_URL` (ee hub-backend, defaults to logto introspection).
+- **Gate:** ✅ 4-combo render green; 0 inline secrets; issuer interpolates.
+- Deps: T1 (done). NOT dependent on a missing branch — master read directly.
 
 ## T6 — Fix the 3 deployment-v2 bugs  [quick — PR onto David's branch]
 - `industream4370` inline → file secret (datacatalog-api + datacatalog-postgresql).

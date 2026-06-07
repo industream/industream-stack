@@ -122,7 +122,7 @@ services:
   # Hub auth bridge in front of Grafana: nginx SPA that fetches the Hub JWT and
   # injects it into <iframe src=/grafana/>. Enterprise image (proprietary).
   grafana-wrapper:
-    image: ${ENTERPRISE_REGISTRY}/industream/grafana-hub-wrapper:${GRAFANA_WRAPPER_VERSION}
+    image: ${GRAFANA_WRAPPER_IMAGE}
     environment:
       # The wrapper SPA loads ${INDUSTREAM_HUB_ORIGIN}/industream-login.js for the
       # auth client — same host as the rest of the Hub UI so cookies +

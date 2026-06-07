@@ -1,76 +1,77 @@
-# Converging `deployment-v2` ↔ unified deploy
+# Converging FlowMaker `master` deploy ↔ unified deploy
 
-**TL;DR** — @dja-dsd and I independently built a deployment overhaul from opposite
-sides: your `industream-flowmaker@feat/deployment-v2` (compose) and the unified
-tree in `industream-stack/unified/` (one base + per-runtime overlays, covering
-**both** swarm and compose). We're ~80% aligned on direction — let's merge into
-**one** model before the two (plus the legacy swarm `docker-stack.*`) diverge
-further. This note maps the two, flags 3 bugs, and proposes the merged shape.
+**Corrected 2026-06-07 from a direct audit of `industream-flowmaker@master`** (the
+earlier version of this note relied on a pasted `CHANGES.md` that misdescribed the
+work — it claimed v2 used full-ref bundles and dropped defaults; master does neither).
 
-## We independently reached the same conclusions ✅
-| Principle | unified/ | deployment-v2 |
+**TL;DR** — @dja-dsd's compose overhaul is **merged on `master`** (not a separate
+`deployment-v2` branch; `feat/deployment` is 0 commits ahead). The unified tree in
+`industream-stack/unified/` (one base + per-runtime overlays, swarm + compose) and
+master are ~70% aligned in direction. This note maps them on REAL facts, flags the
+divergences, lists the env to port, and the 1 confirmed bug.
+
+## Where master and unified already agree ✅
+| Principle | unified/ | master |
 |---|---|---|
-| No fallback defaults; fail loud | `versions.env`, no `${VAR:-default}` | removes every `${VAR:-default}` ✅ |
-| Single versioned source for images | `versions.env` + `registries.env` | **release bundles** (`.env.{core,workers,datacatalog}`) ✅ |
-| Separate by lifecycle | `base/<group>.yml` groups | **core / workers instance types** ✅ |
-| DataCatalog Hub-JWT on compose | `base/datacatalog.yml` | you added the `Authentication__Frontend__*` block ✅ |
-| Dual-port DataCatalog | `8002;8003` | `ASPNETCORE_URLS=8002;8003` ✅ |
+| Service names | `industream-hub-backend/-frontend`, `flowmaker-*` | same ✅ |
+| Confighub v2 (LMDB) | `flowmaker-confighub-v2` | same ✅ (etcd retired) |
+| DataCatalog Hub-JWT on compose | `base/datacatalog.yml` | `Authentication__Frontend__{Issuer,Audience,JwksUrl}` ✅ |
+| Dual-port DataCatalog | `8002;8003` | `ASPNETCORE_URLS` dual-port ✅ |
+| Edition = overlay | `base/` + `ee.yml` | `community.yml` / `ee.yml` overlays ✅ |
+| A generation step exists | `render-bundles.sh` → bundle | `fm create` seds `.env.template` (`{{...}}`) ✅ |
+| Proxy = Caddy (compose) | runtime compose | `infra.yml` Caddy ✅ |
 
-Direction is shared. The rest is reconciling **shapes**.
+The "a generation step exists" row matters: David already accepts rendering config
+from a template, so our bundle generator is the **same shape**, just license-aware
+and full-ref instead of `sed` placeholders.
 
-## Differences to reconcile
-1. **Image references.** v2 = one full-ref var per service (`${DATACATALOG_API_IMAGE}`)
-   from a bundle. unified = `${REGISTRY}/name:${VERSION}` (registry **and** tag split),
-   where `registries.env` is **license-aware** (community→GHCR, enterprise→39t). The v2
-   bundle example pins `842775dh` (staging) for everything → loses the community/
-   enterprise split. **Proposal:** keep the bundle UX, but generate bundles per
-   *edition* from a license-aware registry map (or keep `versions.env`+`registries.env`
-   and render bundles from them). Either way: one tag source, license-aware registry.
-2. **Service naming.** v2 renamed to `industream-hub-backend` / `-frontend`. unified
-   kept `uifusion*` + a permanent `industream-hub-backend` network alias (less blast
-   radius). You already did the rename → **let's pick `industream-hub-backend` as
-   canonical** and I'll align the swarm side + the JWKS alias.
-3. **Instances vs overlays.** v2 = `core` + attachable `workers` instances. unified =
-   `base/core.yml` + `base/workers.yml` files in one project. These compose well: the
-   unified `base/` files can BE the content of your bundle/instance types. **Proposal:**
-   keep your core/workers instance UX on top of shared `base/*.yml`.
-4. **One driver.** v2 = the rewritten `fm`. unified = `scripts/deploy.sh` assembler
-   (+ the `industream-cli` thin driver). These must converge into ONE. The CLI already
-   has a runtime abstraction (swarm/compose); it can call the same assembly `fm` does.
-5. **EE version var.** `UIFUSION_API_ENTERPRISE_VERSION` (v2) vs `UIFUSION_API_EE_VERSION`
-   (unified). Pick one name.
+## Divergences to reconcile
+| # | Dimension | master | unified/ | Resolution |
+|---|---|---|---|---|
+| 1 | Image ref | inline `${COMMUNITY_REGISTRY:-ghcr.io/industream}/repo:${VER:-default}` | full-ref `${X_IMAGE}` from a license-aware bundle | **Keep bundle** (decided 2026-06-07). Sell at T0: same generation step, stricter. |
+| 2 | Defaults | `:-default` on registry AND version | none (fail-loud) | Keep fail-loud; defaults can pull stale tags. |
+| 3 | Worker image names | `flowmaker.boxes/flow-box-<x>` (long) | `flowmaker.boxes/<x>` (short) | **Verify which is pullable** before locking; align to the one that exists in the registry. |
+| 4 | Version var names | `CORE_VERSION`, `FRONT_VERSION`, `UIFUSION_API_ENTERPRISE_VERSION` | `FLOWMAKER_CORE_VERSION`, `FLOWMAKER_FRONTEND_VERSION`, `UIFUSION_API_EE_VERSION` | Pick one set; map in the bundle generator. |
+| 5 | Entitlement | compose `profiles:[premium]` (opc-ua/rtsp/luminosity) | deploy-time inclusion + ENTERPRISE_REGISTRY | Adopt `profiles:` — it's cleaner; our overlays can carry them. |
+| 6 | Instance model | multi-instance: `fm create/up --workers --uimaker/init`, per-inst `.env`+network+override | base groups + bundle | T3: fold `fm` instance UX onto the unified base (one driver). |
+| 7 | Driver | `fm` (1658 lines, instance-centric) | `scripts/deploy.sh` + industream-cli | T4: one driver + `fm`-compatible wrapper. |
 
-## 🔴 Bugs in `deployment-v2` (independent of the merge — worth fixing now)
-1. **Hardcoded DB password** `Password=industream4370` is still inline in
-   `docker-compose.datacatalog.yml` (both the API connection string and
-   `datacatalog-postgresql` `POSTGRES_PASSWORD`). → move to a file secret resolved by
-   the dotnet-entrypoint (the unified `base/datacatalog.yml` shows this pattern:
-   `__DB_PASSWORD_PLACEHOLDER__` + `/run/secrets/<name>`).
-2. **Missing `$`** in the JWT issuer:
-   `Authentication__Frontend__Issuer={FM_AUTH_ISSUER:-hub-backend}` → the value becomes
-   the literal string `{FM_AUTH_ISSUER:-hub-backend}`, so issuer validation breaks. Should
-   be `${FM_AUTH_ISSUER:-hub-backend}` (or, post-merge, `${HUB_AUTH_ISSUER}` with no default).
-3. `deployment/wget-log` looks accidentally committed → remove.
+## What unified/ ADDS (master doesn't have it) — additive, keep
+- **Monitoring** (grafana-wrapper + prometheus/node-exporter/cadvisor/alertmanager) —
+  master's compose deploys none. Decision #4 puts Grafana in compose scope.
+- **DataBridge / InfluxDB / TimescaleDB** (`base/data.yml`) — not in master's compose.
+- **Secret-file security** (`*_FILE` + `DB_SECRET_NAME` + `__DB_PASSWORD_PLACEHOLDER__`) —
+  master inlines passwords (see bug below).
+- **swarm runtime** from the same base — master is compose-only.
+- The Logto fresh-DB entrypoint fix (seed before alteration).
 
-## What the unified side adds (and v2 doesn't have yet)
-- **Both runtimes** from one base — v2 is compose-only; unified renders swarm too
-  (the swarm `docker-stack.*` is the third system we want to retire).
-- The **security fix** (no inline pw) and the **Logto fresh-DB entrypoint fix** (seed
-  before alteration — fixes the greenfield EE crash-loop).
-- License-aware registry split + JWT-contract lint (`iss=hub-backend`/`aud=industream-hub`
-  enforced, never changes).
+## Env to PORT from master into base/ (T5)
+Present on master, absent in our `base/` — functional, worth porting:
+- `Authentication__Backend__ApiKey=${BACKEND_API_KEY}` (datacatalog-api).
+- `Cors__AllowedOrigins=${...}` (datacatalog-api).
+- `FM_CORS_ORIGIN` (flowmaker core).
+- `IH_OIDC_INTROSPECTION_URL` (hub backend, EE).
+- `DATACATALOG_API_URL` — confirm vs our `FM_DATACATALOG_URL`/`DATACATALOG_URL` (likely alias).
 
-## Proposed merged model
-**`base/*.yml` (neutral, both runtimes) + `runtime.{swarm,compose}.yml` overlays + a
-single license-aware version/registry source rendered into your bundles + your
-core/workers instance UX, all driven by the one `industream-cli` thin driver.**
-CE deploys stay reproducible with plain `docker compose` (no CLI) for the BSL grant.
+(The rest of the env diff — `MINIO_ROOT_PASSWORD`, `POSTGRES_PASSWORD`, `FM_WORKER_ID`,
+`FM_CDN_*`, `CADDY_INGRESS_NETWORKS` — already exist in our tree under the runtime
+overlays or as the `*_FILE` secret pattern; not truly missing.)
+
+## 🔴 Confirmed bug on master (T6 — independent, fix onto master)
+`docker-compose.datacatalog.yml`:
+1. **Hardcoded DB password** `Password=industream4370` (API connection string + `POSTGRES_PASSWORD`).
+   → file secret resolved by the dotnet-entrypoint (unified pattern).
+2. **Missing `$`**: `Authentication__Frontend__Issuer={FM_AUTH_ISSUER:-hub-backend}` → the
+   value becomes the literal string `{FM_AUTH_ISSUER:-hub-backend}`, breaking issuer
+   validation. Should be `${FM_AUTH_ISSUER:-hub-backend}` (or `${HUB_AUTH_ISSUER}`, no default).
 
 ## Proposed next step
-A 30-min sync to lock: (a) bundle format vs versions/registries, (b) canonical naming
-(`industream-hub-backend`), (c) instances-on-top-of-base, (d) one driver (CLI). Then I
-fold `deployment-v2` and `unified/` into a single tree and we retire the legacy swarm
-`docker-stack.*`.
+30-min sync (T0) to lock: (a) bundle full-ref over inline+defaults [we keep ours;
+argument = same generation step, fail-loud, auditable release], (b) short vs long worker
+image names [verify registry], (c) version-var naming, (d) adopt `profiles:[premium]`,
+(e) one driver (`fm` UX on the unified base). Then fold master + unified/ into one tree
+and retire the legacy swarm `docker-stack.*`.
 
-— refs: unified tree `industream-stack/unified/` (PRs #24 merged, #25/#26/#27/#28),
-`UNIFICATION-PLAN.md`, `DRIFT-RECONCILED.md`.
+— refs: unified tree `industream-stack/unified/` (PRs #24 merged, #25/#26/#27/#28;
+drafts `feat/merge-v2-t1-naming`, `feat/merge-v2-t2-bundles`), `MERGE-DEPLOYMENT-V2-TODO.md`.
+Audit source: `industream-flowmaker@master` (2026-06-03).

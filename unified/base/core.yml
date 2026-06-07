@@ -28,7 +28,7 @@ services:
   # Grafana wrapper). EE overlay flips IH_AUTH_METHOD to OAUTH.
   # ==========================================
   industream-hub-backend:
-    image: ${COMMUNITY_REGISTRY}/uifusion/api:${UIFUSION_API_VERSION}
+    image: ${HUB_API_IMAGE}
     environment:
       - CONFIG_PATH=/app/data/config.json
       - IH_PUBLIC_PORT=3050
@@ -65,7 +65,7 @@ services:
   # mode. UF_CONFIG_URL points the shell at the API's /config endpoint.
   # ==========================================
   industream-hub-frontend:
-    image: ${COMMUNITY_REGISTRY}/uifusion/ui:${UIFUSION_UI_VERSION}
+    image: ${HUB_UI_IMAGE}
     environment:
       - NODE_ENV=production
       - UF_CONFIG_URL=${INDUSTREAM_HUB_ORIGIN}/api/uifusion/api/config
@@ -104,7 +104,7 @@ services:
   # http://cdn-server:4873. No proxy exposure.
   # ==========================================
   cdn-server:
-    image: ${COMMUNITY_REGISTRY}/flowmaker.core/cdn-server:${CDN_SERVER_VERSION}
+    image: ${CDN_SERVER_IMAGE}
     hostname: cdn-server
     volumes:
       - cdn-server-storage:/verdaccio/storage
@@ -114,7 +114,7 @@ services:
   # runtime overlay at cdn.<domain>.
   # ==========================================
   cdn-cache:
-    image: ${COMMUNITY_REGISTRY}/flowmaker.core/cdn-cache:${CDN_CACHE_VERSION}
+    image: ${CDN_CACHE_IMAGE}
     hostname: cdn-cache
     environment:
       - ESMPORT=8080

@@ -16,7 +16,7 @@
 services:
   # ---- Hub backend → enterprise image + OAUTH against Logto ----
   industream-hub-backend:
-    image: ${ENTERPRISE_REGISTRY}/uifusion/api-enterprise:${UIFUSION_API_EE_VERSION}
+    image: ${HUB_API_ENTERPRISE_IMAGE}
     environment:
       - IH_AUTH_METHOD=OAUTH
       - IH_OIDC_ISSUER=${OIDC_ISSUER:-https://auth.${INDUSTREAM_DOMAIN}/oidc}
@@ -26,6 +26,7 @@ services:
       - IH_OIDC_SCOPES=${OIDC_SCOPES:-openid profile email roles offline_access}
       - IH_OIDC_JWKS_URI=${OIDC_JWKS_URI:-http://logto:3001/oidc/jwks}
       - IH_OIDC_USERINFO_URI=${OIDC_USERINFO_URI:-http://logto:3001/oidc/me}
+      - IH_OIDC_INTROSPECTION_URL=${OIDC_INTROSPECTION_URL:-http://logto:3001/oidc/token/introspection}
       - IH_OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-https://${INDUSTREAM_DOMAIN}/}
       - IH_OIDC_REFRESH_GRANT_ENABLED=${OIDC_REFRESH_GRANT_ENABLED:-true}
       - IH_REVOCATION_CHECK_INTERVAL_SECONDS=${IH_REVOCATION_CHECK_INTERVAL_SECONDS:-300}
