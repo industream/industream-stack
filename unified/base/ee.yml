@@ -19,7 +19,9 @@ services:
     image: ${HUB_API_ENTERPRISE_IMAGE}
     environment:
       - IH_AUTH_METHOD=OAUTH
-      - IH_OIDC_ISSUER=${OIDC_ISSUER:-https://auth.${INDUSTREAM_DOMAIN}/oidc}
+      # single-level ${INDUSTREAM_DOMAIN} only (swarm won't expand a nested default;
+      # it's the override knob). Same class as the CORS fix.
+      - IH_OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
       - IH_OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-industream-hub-app}
       - IH_OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
       - IH_OIDC_AUDIENCE=${OIDC_AUDIENCE:-}
@@ -27,7 +29,7 @@ services:
       - IH_OIDC_JWKS_URI=${OIDC_JWKS_URI:-http://logto:3001/oidc/jwks}
       - IH_OIDC_USERINFO_URI=${OIDC_USERINFO_URI:-http://logto:3001/oidc/me}
       - IH_OIDC_INTROSPECTION_URL=${OIDC_INTROSPECTION_URL:-http://logto:3001/oidc/token/introspection}
-      - IH_OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-https://${INDUSTREAM_DOMAIN}/}
+      - IH_OIDC_REDIRECT_URI=https://${INDUSTREAM_DOMAIN}/
       - IH_OIDC_REFRESH_GRANT_ENABLED=${OIDC_REFRESH_GRANT_ENABLED:-true}
       - IH_REVOCATION_CHECK_INTERVAL_SECONDS=${IH_REVOCATION_CHECK_INTERVAL_SECONDS:-300}
       - IH_REVOCATION_HARD_FAIL_AFTER_SECONDS=${IH_REVOCATION_HARD_FAIL_AFTER_SECONDS:-900}
@@ -36,7 +38,7 @@ services:
   industream-hub-frontend:
     environment:
       - AUTH_METHOD=OAUTH
-      - OIDC_ISSUER=${OIDC_ISSUER:-https://auth.${INDUSTREAM_DOMAIN}/oidc}
+      - OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
       - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-industream-hub-app}
       - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile roles offline_access}
       - OIDC_REDIRECT_PATH=${OIDC_REDIRECT_PATH:-/}
@@ -55,8 +57,8 @@ services:
     entrypoint: ["sh", "-c", "export DB_URL=$$(cat /run/secrets/${LOGTO_DB_URL_SECRET_NAME}) && (npm run cli db seed -- --swe || npm run cli db alteration deploy latest) && npm start"]
     environment:
       - TRUST_PROXY_HEADER=1
-      - ENDPOINT=${LOGTO_ENDPOINT:-https://auth.${INDUSTREAM_DOMAIN}}
-      - ADMIN_ENDPOINT=${LOGTO_ADMIN_ENDPOINT:-https://auth-admin.${INDUSTREAM_DOMAIN}}
+      - ENDPOINT=https://auth.${INDUSTREAM_DOMAIN}
+      - ADMIN_ENDPOINT=https://auth-admin.${INDUSTREAM_DOMAIN}
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 3001 || exit 1"]
       interval: 30s
