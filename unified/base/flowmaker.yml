@@ -36,8 +36,9 @@ services:
       - FM_AUTH_JWKS_URL=${HUB_AUTH_JWKS_URL}
       - FM_AUTH_ISSUER=${HUB_AUTH_ISSUER}
       - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
-      # CORS: the FlowMaker frontend origin allowed to call this core service.
-      - FM_CORS_ORIGIN=${FLOWMAKER_CORS_ORIGIN:-${INDUSTREAM_HUB_ORIGIN}}
+      # CORS: single-level ${VAR} ONLY (swarm stack deploy won't expand a nested
+      # default ${A:-${B}} — it passes the literal string; found at the VM gate).
+      - FM_CORS_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
     volumes:
       - flowmaker-launcher-data:/data
     depends_on:
@@ -64,8 +65,9 @@ services:
       - FM_AUTH_JWKS_URL=${HUB_AUTH_JWKS_URL}
       - FM_AUTH_ISSUER=${HUB_AUTH_ISSUER}
       - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
-      # CORS: the FlowMaker frontend origin allowed to call this core service.
-      - FM_CORS_ORIGIN=${FLOWMAKER_CORS_ORIGIN:-${INDUSTREAM_HUB_ORIGIN}}
+      # CORS: single-level ${VAR} ONLY (swarm stack deploy won't expand a nested
+      # default ${A:-${B}} — it passes the literal string; found at the VM gate).
+      - FM_CORS_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
     volumes:
       - flowmaker-confighub-data:/data
     healthcheck:
@@ -88,8 +90,9 @@ services:
       - FM_AUTH_JWKS_URL=${HUB_AUTH_JWKS_URL}
       - FM_AUTH_ISSUER=${HUB_AUTH_ISSUER}
       - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
-      # CORS: the FlowMaker frontend origin allowed to call this core service.
-      - FM_CORS_ORIGIN=${FLOWMAKER_CORS_ORIGIN:-${INDUSTREAM_HUB_ORIGIN}}
+      # CORS: single-level ${VAR} ONLY (swarm stack deploy won't expand a nested
+      # default ${A:-${B}} — it passes the literal string; found at the VM gate).
+      - FM_CORS_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
     healthcheck:
       test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/3000) 2>/dev/null' || exit 1"]
       interval: 30s

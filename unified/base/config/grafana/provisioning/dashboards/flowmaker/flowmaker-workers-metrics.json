@@ -1,0 +1,343 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "CPU Usage par Worker",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(container_cpu_usage_seconds_total{name=~\"flowmaker-worker.*\"}[1m]) * 100",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      }
+    },
+    {
+      "title": "Memory Usage par Worker",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "container_memory_usage_bytes{name=~\"flowmaker-worker.*\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      }
+    },
+    {
+      "title": "Lectures/sec - OPC-UA",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(flowmaker_opcua_reads_total[1m])",
+          "legendFormat": "{{job_id}} - {{node_id}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2
+          }
+        }
+      }
+    },
+    {
+      "title": "Lectures/sec - S7",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(flowmaker_s7_reads_total[1m])",
+          "legendFormat": "{{job_id}} - {{node_id}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2
+          }
+        }
+      }
+    },
+    {
+      "title": "Lectures/sec - Modbus",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(flowmaker_modbus_reads_total[1m])",
+          "legendFormat": "{{job_id}} - {{node_id}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2
+          }
+        }
+      }
+    },
+    {
+      "title": "Erreurs/sec",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "rate(flowmaker_opcua_errors_total[1m])",
+          "legendFormat": "OPC-UA {{error_type}}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(flowmaker_s7_errors_total[1m])",
+          "legendFormat": "S7 {{error_type}}",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(flowmaker_modbus_errors_total[1m])",
+          "legendFormat": "Modbus {{error_type}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2
+          },
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    },
+    {
+      "title": "Latence p95 (ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(flowmaker_opcua_read_duration_seconds_bucket[5m])) * 1000",
+          "legendFormat": "OPC-UA p95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(flowmaker_s7_read_duration_seconds_bucket[5m])) * 1000",
+          "legendFormat": "S7 p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(flowmaker_modbus_read_duration_seconds_bucket[5m])) * 1000",
+          "legendFormat": "Modbus p95",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2
+          }
+        }
+      }
+    },
+    {
+      "title": "Connection Status OPC-UA",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "flowmaker_opcua_connection_status",
+          "legendFormat": "OPC-UA",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "0": { "text": "Disconnected", "color": "red" } }, "type": "value" },
+            { "options": { "1": { "text": "Connected", "color": "green" } }, "type": "value" }
+          ]
+        }
+      }
+    },
+    {
+      "title": "Connection Status S7",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 20 },
+      "targets": [
+        {
+          "expr": "flowmaker_s7_connection_status",
+          "legendFormat": "S7",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "0": { "text": "Disconnected", "color": "red" } }, "type": "value" },
+            { "options": { "1": { "text": "Connected", "color": "green" } }, "type": "value" }
+          ]
+        }
+      }
+    },
+    {
+      "title": "Connection Status Modbus",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 20 },
+      "targets": [
+        {
+          "expr": "flowmaker_modbus_connection_status",
+          "legendFormat": "Modbus",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "0": { "text": "Disconnected", "color": "red" } }, "type": "value" },
+            { "options": { "1": { "text": "Connected", "color": "green" } }, "type": "value" }
+          ]
+        }
+      }
+    },
+    {
+      "title": "Total Reads",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum(flowmaker_opcua_reads_total)",
+          "legendFormat": "OPC-UA",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(flowmaker_s7_reads_total)",
+          "legendFormat": "S7",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(flowmaker_modbus_reads_total)",
+          "legendFormat": "Modbus",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Total Errors",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum(flowmaker_opcua_errors_total)",
+          "legendFormat": "OPC-UA",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(flowmaker_s7_errors_total)",
+          "legendFormat": "S7",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(flowmaker_modbus_errors_total)",
+          "legendFormat": "Modbus",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 100 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Network I/O",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 24 },
+      "targets": [
+        {
+          "expr": "rate(container_network_receive_bytes_total{name=~\"flowmaker-worker.*\"}[1m])",
+          "legendFormat": "{{name}} RX",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(container_network_transmit_bytes_total{name=~\"flowmaker-worker.*\"}[1m])",
+          "legendFormat": "{{name}} TX",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1
+          }
+        }
+      }
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["flowmaker", "workers", "opc-ua", "modbus", "s7"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "FlowMaker Workers Metrics",
+  "uid": "flowmaker-workers-metrics",
+  "version": 1
+}

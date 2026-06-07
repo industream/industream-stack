@@ -1,0 +1,126 @@
+groups:
+  - name: container-alerts
+    rules:
+      # ============================================
+      # Container Health Alerts
+      # ============================================
+      - alert: ContainerKilled
+        expr: time() - container_last_seen{name=~".+"} > 60
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container killed: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} has been killed or stopped"
+
+      - alert: ContainerAbsent
+        expr: absent(container_last_seen{name=~".+"})
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No containers detected"
+          description: "No containers are being monitored by cAdvisor"
+
+      # ============================================
+      # Container CPU Alerts
+      # ============================================
+      - alert: ContainerHighCpuUsage
+        expr: (rate(container_cpu_usage_seconds_total{name=~".+"}[5m]) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage in container {{ $labels.name }}"
+          description: "Container {{ $labels.name }} CPU usage is above 80% (current: {{ $value | printf \"%.1f\" }}%)"
+
+      - alert: ContainerCriticalCpuUsage
+        expr: (rate(container_cpu_usage_seconds_total{name=~".+"}[5m]) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical CPU usage in container {{ $labels.name }}"
+          description: "Container {{ $labels.name }} CPU usage is above 95% (current: {{ $value | printf \"%.1f\" }}%)"
+
+      - alert: ContainerCpuThrottled
+        expr: rate(container_cpu_cfs_throttled_seconds_total{name=~".+"}[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container CPU throttled: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} is being CPU throttled"
+
+      # ============================================
+      # Container Memory Alerts
+      # ============================================
+      # Note: Only alert on containers WITH memory limits set (limit > 0)
+      - alert: ContainerHighMemoryUsage
+        expr: (container_memory_usage_bytes{name=~".+"} / container_spec_memory_limit_bytes{name=~".+"} * 100) > 80 and container_spec_memory_limit_bytes{name=~".+"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage in container {{ $labels.name }}"
+          description: "Container {{ $labels.name }} memory usage is above 80% of limit (current: {{ $value | printf \"%.1f\" }}%)"
+
+      - alert: ContainerCriticalMemoryUsage
+        expr: (container_memory_usage_bytes{name=~".+"} / container_spec_memory_limit_bytes{name=~".+"} * 100) > 95 and container_spec_memory_limit_bytes{name=~".+"} > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical memory usage in container {{ $labels.name }}"
+          description: "Container {{ $labels.name }} memory usage is above 95% of limit (current: {{ $value | printf \"%.1f\" }}%)"
+
+      - alert: ContainerMemoryNearLimit
+        expr: (container_memory_working_set_bytes{name=~".+"} / container_spec_memory_limit_bytes{name=~".+"}) > 0.9 and container_spec_memory_limit_bytes{name=~".+"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container memory near limit: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} is using {{ $value | printf \"%.0f\" }}% of memory limit"
+
+      # ============================================
+      # Container Network Alerts
+      # ============================================
+      - alert: ContainerHighNetworkInput
+        expr: rate(container_network_receive_bytes_total{name=~".+"}[5m]) > 100000000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High network input in container {{ $labels.name }}"
+          description: "Container {{ $labels.name }} is receiving >100MB/s of network traffic"
+
+      - alert: ContainerHighNetworkOutput
+        expr: rate(container_network_transmit_bytes_total{name=~".+"}[5m]) > 100000000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High network output in container {{ $labels.name }}"
+          description: "Container {{ $labels.name }} is transmitting >100MB/s of network traffic"
+
+      # ============================================
+      # Container Restart Alerts
+      # ============================================
+      - alert: ContainerRestarting
+        expr: increase(container_restart_count{name=~".+"}[15m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container restarting: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} has restarted multiple times in the last 15 minutes"
+
+      - alert: ContainerFrequentRestarts
+        expr: increase(container_restart_count{name=~".+"}[1h]) > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container frequent restarts: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} has restarted more than 3 times in the last hour"

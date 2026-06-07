@@ -28,8 +28,10 @@ services:
       # secret store by the deploy path (same pattern as the Hub admin creds in
       # base/core.yml), NEVER inline; the :- keeps the CE no-CLI fallback runnable.
       - Authentication__Backend__ApiKey=${BACKEND_API_KEY:-}
-      # --- CORS: origin(s) of the datacatalog-ui SPA allowed to call the API.
-      - Cors__AllowedOrigins=${DATACATALOG_CORS_ORIGINS:-${INDUSTREAM_HUB_ORIGIN}}
+      # --- CORS: origin allowed to call the API. Single-level ${VAR} ONLY —
+      # swarm `stack deploy` does NOT expand a nested default ${A:-${B}}, it
+      # passes the literal "${INDUSTREAM_HUB_ORIGIN}" (found at the VM gate).
+      - Cors__AllowedOrigins=${INDUSTREAM_HUB_ORIGIN}
       # --- DB connection: fully parametrized, NO inline password. The literal
       # __DB_PASSWORD_PLACEHOLDER__ is replaced at startup by dotnet-entrypoint.sh
       # from the mounted secret named by DB_SECRET_NAME — identical mechanism on

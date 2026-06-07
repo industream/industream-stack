@@ -1,0 +1,153 @@
+groups:
+  - name: node-alerts
+    rules:
+      # ============================================
+      # CPU Alerts
+      # ============================================
+      - alert: HostHighCpuLoad
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU load on {{ $labels.instance }}"
+          description: "CPU load is above 80% (current: {{ $value | printf \"%.1f\" }}%)"
+
+      - alert: HostCriticalCpuLoad
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical CPU load on {{ $labels.instance }}"
+          description: "CPU load is above 95% (current: {{ $value | printf \"%.1f\" }}%)"
+
+      # ============================================
+      # Memory Alerts
+      # ============================================
+      - alert: HostHighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 80% (current: {{ $value | printf \"%.1f\" }}%)"
+
+      - alert: HostCriticalMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 95% (current: {{ $value | printf \"%.1f\" }}%)"
+
+      - alert: HostOutOfMemory
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100 < 5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host out of memory on {{ $labels.instance }}"
+          description: "Node memory is almost exhausted (< 5% available)"
+
+      # ============================================
+      # Disk Alerts
+      # ============================================
+      - alert: HostHighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint="/"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",mountpoint="/"})) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }}"
+          description: "Disk usage is above 80% on {{ $labels.mountpoint }} (current: {{ $value | printf \"%.1f\" }}%)"
+
+      - alert: HostCriticalDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint="/"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",mountpoint="/"})) * 100 > 90
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical disk usage on {{ $labels.instance }}"
+          description: "Disk usage is above 90% on {{ $labels.mountpoint }} (current: {{ $value | printf \"%.1f\" }}%)"
+
+      - alert: HostDiskWillFillIn24Hours
+        expr: predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}[6h], 24 * 3600) < 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk will fill in 24 hours on {{ $labels.instance }}"
+          description: "Filesystem {{ $labels.mountpoint }} is predicted to run out of space within 24 hours"
+
+      # ============================================
+      # Disk I/O Alerts
+      # ============================================
+      # Note: Disk latency alerts removed - they tend to be noisy and less actionable
+      # than CPU/memory alerts. High disk I/O issues typically manifest as high CPU iowait
+      # or memory pressure, which are already covered by other alerts.
+
+      # Instead, monitor disk I/O saturation (queue depth) - more actionable
+      - alert: HostDiskIOSaturation
+        expr: rate(node_disk_io_time_weighted_seconds_total[5m]) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk I/O saturation on {{ $labels.instance }}"
+          description: "Disk {{ $labels.device }} is experiencing high I/O pressure for extended period"
+
+      # ============================================
+      # Network Alerts
+      # ============================================
+      # Note: Threshold increased to >10 errors/sec to avoid noise from sporadic errors
+      - alert: HostNetworkReceiveErrors
+        expr: rate(node_network_receive_errs_total{device!~"veth.*|docker.*|br-.*"}[5m]) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Network receive errors on {{ $labels.instance }}"
+          description: "Network interface {{ $labels.device }} has sustained receive errors ({{ $value | printf \"%.1f\" }}/sec)"
+
+      - alert: HostNetworkTransmitErrors
+        expr: rate(node_network_transmit_errs_total{device!~"veth.*|docker.*|br-.*"}[5m]) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Network transmit errors on {{ $labels.instance }}"
+          description: "Network interface {{ $labels.device }} has sustained transmit errors ({{ $value | printf \"%.1f\" }}/sec)"
+
+      # ============================================
+      # System Alerts
+      # ============================================
+      - alert: HostSystemdServiceFailed
+        expr: node_systemd_unit_state{state="failed"} == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Systemd service failed on {{ $labels.instance }}"
+          description: "Service {{ $labels.name }} has failed"
+
+      # OOM kills are critical events - keep for: 0m but upgrade to critical severity
+      - alert: HostOomKillDetected
+        expr: increase(node_vmstat_oom_kill[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OOM kill detected on {{ $labels.instance }}"
+          description: "Out of memory kill detected - a process was killed due to memory exhaustion"
+
+      - alert: HostClockSkew
+        expr: abs(node_timex_offset_seconds) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Clock skew detected on {{ $labels.instance }}"
+          description: "Clock skew detected. Clock is out of sync by {{ $value }}s"

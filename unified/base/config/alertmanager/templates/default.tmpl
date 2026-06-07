@@ -1,0 +1,72 @@
+{{ define "email.default.subject" }}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.SortedPairs.Values | join " " }}
+{{ end }}
+
+{{ define "email.default.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  .alert { padding: 15px; margin: 10px 0; border-radius: 5px; }
+  .critical { background-color: #ffebee; border-left: 5px solid #f44336; }
+  .warning { background-color: #fff3e0; border-left: 5px solid #ff9800; }
+  .resolved { background-color: #e8f5e9; border-left: 5px solid #4caf50; }
+  .header { font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+  .label { display: inline-block; background: #e0e0e0; padding: 2px 8px; margin: 2px; border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
+  th { background-color: #f5f5f5; }
+</style>
+</head>
+<body>
+<h2>🔔 Industream Alert Notification</h2>
+
+{{ if gt (len .Alerts.Firing) 0 }}
+<h3>🔴 Firing Alerts ({{ .Alerts.Firing | len }})</h3>
+{{ range .Alerts.Firing }}
+<div class="alert {{ .Labels.severity }}">
+  <div class="header">{{ .Labels.alertname }}</div>
+  <p><strong>Severity:</strong> {{ .Labels.severity }}</p>
+  <p><strong>Summary:</strong> {{ .Annotations.summary }}</p>
+  <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+  <p><strong>Started:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+  <p><strong>Labels:</strong>
+  {{ range .Labels.SortedPairs }}
+    <span class="label">{{ .Name }}={{ .Value }}</span>
+  {{ end }}
+  </p>
+</div>
+{{ end }}
+{{ end }}
+
+{{ if gt (len .Alerts.Resolved) 0 }}
+<h3>✅ Resolved Alerts ({{ .Alerts.Resolved | len }})</h3>
+{{ range .Alerts.Resolved }}
+<div class="alert resolved">
+  <div class="header">{{ .Labels.alertname }}</div>
+  <p><strong>Summary:</strong> {{ .Annotations.summary }}</p>
+  <p><strong>Resolved at:</strong> {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+</div>
+{{ end }}
+{{ end }}
+
+<hr>
+<p><small>Sent by Alertmanager - Industream Monitoring</small></p>
+</body>
+</html>
+{{ end }}
+
+{{ define "slack.default.title" }}
+{{ if eq .Status "firing" }}🔴{{ else }}✅{{ end }} [{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}
+{{ end }}
+
+{{ define "slack.default.text" }}
+{{ range .Alerts }}
+*Alert:* {{ .Labels.alertname }}
+*Severity:* {{ .Labels.severity }}
+*Summary:* {{ .Annotations.summary }}
+*Description:* {{ .Annotations.description }}
+{{ if .Labels.instance }}*Instance:* {{ .Labels.instance }}{{ end }}
+{{ end }}
+{{ end }}

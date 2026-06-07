@@ -1,0 +1,61 @@
+# Industream Datasources Configuration
+# This file provisions datasources automatically in Grafana on startup.
+# Grafana supports $VAR syntax for env variable substitution (NOT ${VAR:-default}).
+#
+# DESIGN — single funnel through DataBridge:
+# We deliberately ship ONLY the DataBridge plugin as a datasource. All
+# timeseries / DataCatalog access for dashboards goes through DataBridge so:
+#   - dashboards have ONE consistent query surface (no per-source syntax)
+#   - DataBridge centralises asset / displayname / unit / pattern logic
+#   - secrets live in one place (DataBridge api key) instead of N db passwords
+#   - downstream sources can change (Influx → Timescale, etc.) without
+#     touching dashboards
+#
+# Previously this file also provisioned: Industream-Timeseries (influxdb
+# direct), Industream-DataCatalog (infinity HTTP), Industream-DataCatalog-DB
+# (postgres direct), Industream-PostgreSQL (postgres direct),
+# Industream-Timeseries-API (json HTTP). Dropped on purpose — recreate via
+# the Grafana UI if you need a debug-time bypass, but do NOT re-add to YAML.
+#
+# SECRETS POLICY: secureJsonData fields use Grafana's `<field>__file`
+# convention so the value is read from /run/secrets/* at load time (no env
+# leakage via `docker inspect`).
+
+apiVersion: 1
+
+datasources:
+  # Industream DataBridge — custom Go plugin installed at runtime via
+  # GF_INSTALL_PLUGINS. `type` MUST match the plugin id shipped by
+  # github.com/industream/grafana-databridge. The plugin owns the connection
+  # to BOTH the timeseries API (databridge.) and DataCatalog API
+  # (datacatalog.), fanning out queries internally — Grafana sees one
+  # datasource.
+  - name: Industream-datasource
+    type: industream-databridge-datasource
+    access: proxy
+    isDefault: true
+    editable: true
+    uid: industream-datasource
+    # `url` is unused by this plugin (it routes through dataBridgeApiUrl /
+    # dataCatalogApiUrl in jsonData). Kept as the internal databridge
+    # endpoint for the Grafana datasource-test UI compatibility.
+    url: http://databridge:8080
+    jsonData:
+      # Internal swarm-overlay HTTP endpoints — no TLS, no public DNS, no
+      # Traefik stripprefix needed (the backends serve their bare paths).
+      # The Go plugin makes its own http.Client calls (jsonData.tlsSkipVerify
+      # is NOT honoured by it), so we MUST stay on plain HTTP intra-cluster
+      # to avoid x509 "signed by unknown authority" against the self-signed
+      # platform CA. For dev-time UI testing through `dashboard.${DOMAIN}/`,
+      # this is invisible — the SPA only talks to Grafana, which talks to
+      # the plugin, which talks here.
+      # Matches PluginSettings struct in pkg/models/settings.go — keep field
+      # names in sync if bumping the plugin version.
+      dataBridgeApiUrl: http://databridge:8080
+      dataCatalogApiUrl: http://datacatalog-api:8080
+    # No secureJsonData (apiKey) — DataBridge backend currently runs
+    # un-authenticated on the internal overlay network. Add when an API key
+    # is provisioned (see /home/cdm/industream-platform/secrets/<env>/
+    # databridge_api_key — to be created):
+    # secureJsonData:
+    #   apiKey__file: /run/secrets/${ENV}_databridge_api_key
