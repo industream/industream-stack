@@ -24,7 +24,7 @@ compose overhaul) — don't lose any of his features.
 | **T1** rename → `industream-hub-*` | ✅ draft branch `feat/merge-v2-t1-naming` |
 | **T2** license-aware bundles | ✅ done — all 32 industream images full-ref from bundle (6 groups: core/flowmaker/datacatalog/data/monitoring/workers), `deploy.sh --bundle` wired, 4-combo render green |
 | **T3** core/workers instances | ❌ not started — needs David's v2 (BLOCKED, see below) |
-| **T4** one driver (fm ⇄ CLI) | ❌ not started — needs David's v2 (BLOCKED) |
+| **T4** one driver (fm ⇄ CLI) | 🟡 DESIGNED — `T4-DRIVER-DESIGN.md` (19 fm cmds mapped → unified driver + fm wrapper; David's fm retired at T8). Decision 2026-06-07: new unified driver, not extend fm. NO fm code duplicated (our deploy.sh=116 l vs fm=1658). Build depends on T3. |
 | **T5** port v2 extras | ✅ done — invariants verified + 4 env ported from master (ApiKey as secret-store export, Cors, FM_CORS_ORIGIN, IH_OIDC_INTROSPECTION_URL); 4-combo render green |
 | **T6** 3 deployment-v2 bugs | ❌ deferred (PR on David's branch) |
 | **T7** live VM gate (deploy 4 combos on .233/.41) | ❌ **not done — the real test** |
