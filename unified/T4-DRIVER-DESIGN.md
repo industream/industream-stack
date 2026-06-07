@@ -7,6 +7,12 @@ behaviour is re-expressed on the unified base.
 
 Source audited: `industream-flowmaker@master:deployment/fm` (19 commands).
 
+**BUILD STATUS (2026-06-07):** MVP shipped — `scripts/industream` implements
+create/up/down/ps/logs/list/delete/init (cross-runtime, `--dry-run`), over the
+group-selectable `deploy.sh` (T3). `scripts/fm-wrapper.example` = the optional shim.
+Remaining: `sync`, `launch-worker`, `proxy` (caddy⇄traefik), `cdn-reset`, `hosts`
+(below) + live validation at the T7 VM gate.
+
 ## fm command surface → unified driver mapping
 | `fm` command | What it does | Maps to | Runtime notes |
 |---|---|---|---|

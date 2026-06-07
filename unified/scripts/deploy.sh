@@ -21,6 +21,9 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
 RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false BUNDLE=""
+# GROUP_SET = the base/<group>.yml set to assemble. Default = full platform; an
+# instance footprint narrows it (e.g. a core-only or a workers-only instance, T3).
+GROUP_SET="core flowmaker datacatalog workers data monitoring"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,6 +34,7 @@ while [[ $# -gt 0 ]]; do
     --project)   PROJECT="$2"; shift 2 ;;
     --community) COMMUNITY=true; shift ;;
     --bundle)    BUNDLE="$2"; shift 2 ;;
+    --groups)    GROUP_SET="$2"; shift 2 ;;
     --render)    RENDER=true; shift ;;
     -h|--help)   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -63,21 +67,23 @@ ENV_FILES=(--env-file registries.env --env-file versions.env --env-file auth.env
 for bf in "$BUNDLE_DIR"/.env.*; do ENV_FILES+=(--env-file "$bf"); done
 [[ -f ".env.${ENV}" ]] && ENV_FILES+=(--env-file ".env.${ENV}")
 
-# ---- FILES: neutral base + per-runtime overlays -----------------------------
+# ---- FILES: neutral base + per-runtime overlays (group-selectable) ----------
 FILES=()
-for b in core flowmaker datacatalog workers data monitoring; do
+for b in $GROUP_SET; do
+  [[ -f "base/${b}.yml" ]] || { echo "✗ unknown group '${b}' (no base/${b}.yml)" >&2; exit 1; }
   FILES+=(-f "base/${b}.yml")
   [[ -f "runtime/${RUNTIME}/${b}.yml" ]] && FILES+=(-f "runtime/${RUNTIME}/${b}.yml")
 done
-# datacatalog increment-1 top-level overlay (until folded into runtime/<r>/)
-[[ -f "runtime.${RUNTIME}.yml" ]] && FILES+=(-f "runtime.${RUNTIME}.yml")
+# datacatalog increment-1 top-level overlay (until folded into runtime/<r>/) —
+# only when the datacatalog group is in scope (else it merges onto a missing svc).
+[[ -f "runtime.${RUNTIME}.yml" && " $GROUP_SET " == *" datacatalog "* ]] && FILES+=(-f "runtime.${RUNTIME}.yml")
 # EE transform last (overrides win)
 if [[ "$EDITION" == ee ]]; then
   FILES+=(-f "base/ee.yml")
   [[ -f "runtime/${RUNTIME}/ee.yml" ]] && FILES+=(-f "runtime/${RUNTIME}/ee.yml")
 fi
 
-echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV} / bundle=${BUNDLE_DIR##*/}"
+echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV} / bundle=${BUNDLE_DIR##*/} / groups=[${GROUP_SET}]"
 echo "  files: ${FILES[*]//-f /}"
 
 # ---- Render-only gate (validate the assembled config, deploy nothing) -------
