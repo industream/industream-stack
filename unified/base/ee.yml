@@ -48,7 +48,11 @@ services:
     # and seeds defaults on a FRESH DB; fall back to `alteration deploy latest`
     # when already seeded. (`alteration deploy` first crash-loops a fresh DB —
     # `type "application_type" does not exist`. See industream-stack#22.)
-    entrypoint: ["sh", "-c", "export DB_URL=$(cat /run/secrets/${LOGTO_DB_URL_SECRET_NAME}) && (npm run cli db seed -- --swe || npm run cli db alteration deploy latest) && npm start"]
+    # NOTE: command substitution MUST be escaped as $$( … ) — docker compose/swarm
+    # interpolation eats a single `$(`, leaving `export DB_URL=(cat …)` → the
+    # container's sh then dies on `unexpected "("` (found at the VM gate). `$$`
+    # emits a literal `$`. ${LOGTO_DB_URL_SECRET_NAME} stays single-$ (we DO want it interpolated).
+    entrypoint: ["sh", "-c", "export DB_URL=$$(cat /run/secrets/${LOGTO_DB_URL_SECRET_NAME}) && (npm run cli db seed -- --swe || npm run cli db alteration deploy latest) && npm start"]
     environment:
       - TRUST_PROXY_HEADER=1
       - ENDPOINT=${LOGTO_ENDPOINT:-https://auth.${INDUSTREAM_DOMAIN}}
