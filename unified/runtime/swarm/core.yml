@@ -36,8 +36,10 @@ services:
         - traefik.http.routers.${ENV}-industream-hub-uploads-secure.service=${ENV}-industream-hub-backend
         - traefik.http.routers.${ENV}-industream-hub-uploads-secure.middlewares=security-headers@file
       resources:
-        limits:       { cpus: '0.25', memory: 64M }
-        reservations: { cpus: '0.03', memory: 32M }
+        # 256M (was 64M): the Node hub-backend OOM-killed (exit 137) at 64M with the
+        # EE `api-enterprise` image; the CE image was also very tight. Found at VM gate.
+        limits:       { cpus: '0.5', memory: 256M }
+        reservations: { cpus: '0.03', memory: 64M }
       restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
 
   industream-hub-frontend:
