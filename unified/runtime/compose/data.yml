@@ -81,6 +81,9 @@ services:
       - POSTGRES_DB=${DATABRIDGE_PG_DB_NAME:-DataBridge}
       - POSTGRES_USER=${DATABRIDGE_PG_DB_USER:-databridge}
       - POSTGRES_PASSWORD_FILE=/run/secrets/databridge_pg_password
+      # postgres:18 refuses a bare /var/lib/postgresql/data mount — pin PGDATA
+      # to a subdir (matches the shared postgres in base/data.yml).
+      - PGDATA=/var/lib/postgresql/data/pgdata
     secrets:
       - databridge_pg_password
     volumes:
@@ -89,7 +92,20 @@ services:
       - flowmaker-net
     restart: unless-stopped
 
+  # The shared `postgres` from base/data.yml leaks into compose (base is neutral);
+  # compose uses dedicated DBs but postgres-exporter still targets host `postgres`,
+  # so give it the compose secret + network so it starts. PGDATA is already pinned
+  # in base/data.yml.
+  postgres:
+    networks:
+      - flowmaker-net
+    secrets:
+      - postgres_admin_password
+    restart: unless-stopped
+
 secrets:
+  postgres_admin_password:
+    file: ${SECRETS_DIR:-./secrets}/postgres_admin_password
   influx_admin_password:
     file: ${SECRETS_DIR:-./secrets}/influx_admin_password
   influx_admin_token:
