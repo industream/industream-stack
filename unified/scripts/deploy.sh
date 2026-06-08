@@ -21,6 +21,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
 RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false BUNDLE=""
+TYPE="" ATTACH=false
 # GROUP_SET = the base/<group>.yml set to assemble. Default = full platform; an
 # instance footprint narrows it (e.g. a core-only or a workers-only instance, T3).
 GROUP_SET="core flowmaker datacatalog workers data monitoring"
@@ -35,6 +36,7 @@ while [[ $# -gt 0 ]]; do
     --community) COMMUNITY=true; shift ;;
     --bundle)    BUNDLE="$2"; shift 2 ;;
     --groups)    GROUP_SET="$2"; shift 2 ;;
+    --type)      TYPE="$2"; shift 2 ;;
     --render)    RENDER=true; shift ;;
     -h|--help)   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -43,6 +45,24 @@ done
 
 [[ "$RUNTIME" == swarm || "$RUNTIME" == compose ]] || { echo "✗ --runtime swarm|compose required" >&2; exit 1; }
 [[ "$EDITION" == ce || "$EDITION" == ee ]]         || { echo "✗ --edition ce|ee required" >&2; exit 1; }
+
+# ---- TYPE: core/workers split-stack footprint (deployment-v2 model) ---------
+# --type core    = the platform MINUS workers (it creates the platform network).
+# --type workers = base/workers.yml ALONE, ATTACHING to an existing core's
+#                  ${FM_ATTACHED_CORE}-platform overlay — so a 2nd workers stack
+#                  with newer worker versions registers with the SAME scheduler
+#                  (canary/parallel). On compose the attach is already native
+#                  (workers join the external ${FM_NETWORK} / flowmaker-net).
+case "$TYPE" in
+  core)    GROUP_SET="core flowmaker datacatalog data monitoring" ;;
+  workers) GROUP_SET="workers"; ATTACH=true ;;
+  "")      : ;;   # full platform, or an explicit --groups
+  *) echo "✗ --type core|workers" >&2; exit 1 ;;
+esac
+# Which core a workers stack joins. David's convention: an env var (FM_ATTACHED_CORE),
+# defaulting to this deploy's ENV. Exported so swarm `stack deploy` interpolates the
+# external network name (flat — stack deploy can't nest ${A:-${B}}).
+export FM_ATTACHED_CORE="${FM_ATTACHED_CORE:-$ENV}"
 cd "$HERE"
 
 # ---- BUNDLE: resolve the release bundle holding the full-ref ${X_IMAGE} vars -
@@ -81,6 +101,12 @@ done
 if [[ "$EDITION" == ee ]]; then
   FILES+=(-f "base/ee.yml")
   [[ -f "runtime/${RUNTIME}/ee.yml" ]] && FILES+=(-f "runtime/${RUNTIME}/ee.yml")
+fi
+# workers-attach (swarm): the platform overlay then declares the network EXTERNAL
+# (the target core's ${FM_ATTACHED_CORE}-platform) instead of creating one, so the
+# workers stack lands on the core's scheduler. (compose attaches natively.)
+if [[ "$ATTACH" == true && "$RUNTIME" == swarm ]]; then
+  FILES+=(-f "runtime/swarm/_platform-attach.yml")
 fi
 
 echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV} / bundle=${BUNDLE_DIR##*/} / groups=[${GROUP_SET}]"

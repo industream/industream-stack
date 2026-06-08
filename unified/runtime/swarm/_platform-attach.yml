@@ -1,0 +1,21 @@
+# =============================================================================
+# runtime/swarm/_platform-attach.yml — workers-attach overlay (deployment-v2).
+# =============================================================================
+# Added by deploy.sh ONLY for `--type workers`. Declares the `platform` overlay
+# as EXTERNAL — the target core's ${FM_ATTACHED_CORE}-platform — so a standalone
+# workers stack joins the core's network + scheduler instead of standing up its
+# own isolated overlay.
+#
+# Why this enables David's split-stack model: multiple workers stacks (each a
+# different bundle / worker-version set, distinct --stack name) can attach to the
+# SAME core and all register with its flowmaker-scheduler (ZMQ + confighub,
+# dynamic) → deploy a 2nd workers stack with new versions next to the first,
+# both live on one scheduler, nothing static to wire.
+#
+# FM_ATTACHED_CORE is exported by deploy.sh (default = ENV); a flat ${VAR} is used
+# because `docker stack deploy` interpolation does not nest (${A:-${B}}).
+# =============================================================================
+networks:
+  platform:
+    external: true
+    name: ${FM_ATTACHED_CORE}-platform
