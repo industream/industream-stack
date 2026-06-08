@@ -90,3 +90,51 @@ and retire the legacy swarm `docker-stack.*`.
 — refs: unified tree `industream-stack/unified/` (PRs #24 merged, #25/#26/#27/#28;
 drafts `feat/merge-v2-t1-naming`, `feat/merge-v2-t2-bundles`), `MERGE-DEPLOYMENT-V2-TODO.md`.
 Audit source: `industream-flowmaker@master` (2026-06-03).
+
+---
+
+## 2026-06-08 — recheck + what landed
+
+**Repo recheck (canonical `industream-flowmaker@master` via GitHub API).** David's
+verbally-described simplification — *no templates, no defaults, a dedicated workers
+stack that asks "which core", a 2nd workers stack on the same scheduler* — is **NOT
+yet pushed**. What IS on master: a dedicated `docker-compose.workers.yml` (workers =
+separate compose project) + the `fm` v2 CLI + instances ce/ee — but still WITH
+`.env.defaults`, inline `${VAR:-default}`, and `{{CORE_VERSION}}` templating in `fm`.
+`feat/deployment-v2` is ahead 1 / behind 1 of master (effectively merged; nothing
+hides there). His new model is local/WIP ⇒ **we implemented the swarm side ahead of
+him; lock `FM_ATTACHED_CORE` semantics at the next sync before he pushes.** (Aligning
+signal: his open PR #222 "short worker image names" matches divergence #3's verdict.)
+
+**Landed in `industream-stack` since the 06-07 audit:**
+- **Split-stack workers-attach** (resolves row #6 for swarm): `deploy.sh --type
+  core|workers`; a workers stack ATTACHES to an existing core via `FM_ATTACHED_CORE`
+  (David's env convention, default = ENV) → joins `${FM_ATTACHED_CORE}-platform` and
+  registers with that core's `flowmaker-scheduler`. A 2nd workers stack (newer versions)
+  lands on the SAME scheduler. **Validated live (.233):** `workers-canary` joined the
+  existing `prod-platform` (no new net; 63 containers shared), resolved
+  `flowmaker-scheduler` cross-stack (`getent → 10.0.3.11`). Compose already attached
+  natively via external `flowmaker-net`. (`runtime/swarm/_platform-attach.yml`.)
+- **EE seeders wired into `deploy.sh`** (Phase 4): post-deploy Logto OIDC app + roles +
+  bootstrap user (direct-DB, no M2M) + launchpad → greenfield EE loginnable without the
+  admin wizard. Pairs with `industream-hub` #15 (republish `api-enterprise:2.1.3` — ships
+  the seeders + fixes the `/app/data` LMDB volume perms).
+- **Divergence #2 (no defaults) — gap closed for config:** the data-layer config vars
+  (`INFLUX_*`, `*_DB_USER/NAME`, `TIMESCALEDB_*`, `POSTGRES_ADMIN_USER`, `OIDC_CLIENT_ID`)
+  moved from inline `:-default` to explicit `runtime.{swarm,compose}.env` (fail-loud,
+  zero behavior change). KEPT: derived OIDC URLs (`auth.${INDUSTREAM_DOMAIN}`), stable
+  internal service URLs (`http://datacatalog-api:8080`, logto introspection/jwks),
+  optional-empty (`OIDC_CLIENT_SECRET`, `BACKEND_API_KEY`), and credential defaults —
+  stripping those would hardcode-per-env or remove a safe fallback.
+- Dead var removed: `versions.env` `UIFUSION_VERSION` (unused; real tags are
+  `UIFUSION_API/UI/API_EE_VERSION`).
+
+**4-combo VM gate — all green:** swarm CE 43/43 · swarm EE 45/45 · compose CE 42/42 ·
+compose EE 44/44.
+
+**Open follow-ups (from the dead-code audit):** ① one canonical config dir — yml mounts
+say `./config/*` but the files live under `base/config/*` (swarm resolves to the file
+dir, compose to the project dir) → pick one, drop the duplicate `init-postgres.sh`.
+② anchor candidates: the per-file swarm `networks:` block (×5) + `restart_policy` (×25).
+③ archive the completed planning notes (`RESUME.md`, `UNIFICATION-PLAN.md`,
+`DRIFT-RECONCILED.md`, `MERGE-DEPLOYMENT-V2-TODO.md`).
