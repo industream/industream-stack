@@ -38,7 +38,7 @@ services:
       - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
       # CORS: single-level ${VAR} ONLY (swarm stack deploy won't expand a nested
       # default ${A:-${B}} — it passes the literal string; found at the VM gate).
-      - FM_CORS_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
+      - FM_CORS_ORIGIN=https://flowmaker.${INDUSTREAM_DOMAIN}
     volumes:
       - flowmaker-launcher-data:/data
     depends_on:
@@ -67,7 +67,7 @@ services:
       - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
       # CORS: single-level ${VAR} ONLY (swarm stack deploy won't expand a nested
       # default ${A:-${B}} — it passes the literal string; found at the VM gate).
-      - FM_CORS_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
+      - FM_CORS_ORIGIN=https://flowmaker.${INDUSTREAM_DOMAIN}
     volumes:
       - flowmaker-confighub-data:/data
     healthcheck:
@@ -92,7 +92,7 @@ services:
       - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
       # CORS: single-level ${VAR} ONLY (swarm stack deploy won't expand a nested
       # default ${A:-${B}} — it passes the literal string; found at the VM gate).
-      - FM_CORS_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
+      - FM_CORS_ORIGIN=https://flowmaker.${INDUSTREAM_DOMAIN}
     healthcheck:
       test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/3000) 2>/dev/null' || exit 1"]
       interval: 30s

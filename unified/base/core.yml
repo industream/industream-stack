@@ -68,7 +68,16 @@ services:
     image: ${HUB_UI_IMAGE}
     environment:
       - NODE_ENV=production
-      - UF_CONFIG_URL=${INDUSTREAM_HUB_ORIGIN}/api/uifusion/api/config
+      # The UI shell bakes these into industream-auth-config.json at boot (image
+      # entrypoint 25-env-replace.sh). When unset the SPA falls back to
+      # http://localhost:3050 → "OAuth startup failed / Failed to fetch", and the
+      # DataCatalog tile gets no API URL. The per-runtime overlay overrides the two
+      # URLs for its topology (Traefik path-prefix on swarm, Caddy subdomain on
+      # compose). (UF_CONFIG_URL was removed — the api no longer serves /config;
+      # the shell is configured via this auth-config.json now.)
+      - HUB_BACKEND_URL=${INDUSTREAM_HUB_ORIGIN}/api/uifusion
+      - DATACATALOG_URL=https://datacatalog-api.${INDUSTREAM_DOMAIN}
+      - BRIDGE_PATH=/shared-worker.html
     depends_on:
       - industream-hub-backend
     healthcheck:

@@ -31,6 +31,12 @@ services:
       caddy.tls.issuer.lifetime: 24000h
 
   industream-hub-frontend:
+    # Compose topology: the Hub backend + DataCatalog API are reached on their
+    # OWN Caddy subdomains (not a path prefix like swarm's Traefik) — override the
+    # base URLs so the SPA's auth-config.json points at the right hosts.
+    environment:
+      - HUB_BACKEND_URL=${FM_PROTOCOL:-https}://hub-api.${FM_DOMAIN}
+      - DATACATALOG_URL=${FM_PROTOCOL:-https}://datacatalog-api.${FM_DOMAIN}
     networks:
       - flowmaker-net
     restart: unless-stopped
