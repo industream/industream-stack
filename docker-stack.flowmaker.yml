@@ -156,7 +156,7 @@ services:
   # FLOWMAKER FRONTEND
   # ==========================================
   flowmaker-frontend:
-    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.core/flowmaker-front:${FLOWMAKER_FRONTEND_VERSION:-2.1.0}
+    image: ${COMMUNITY_REGISTRY:-ghcr.io/industream}/flowmaker.core/flowmaker-front:${FLOWMAKER_FRONTEND_VERSION:-2.1.1}
     environment:
     - FMUI_CONFIG_HUB_URL=https://confighub.${INDUSTREAM_DOMAIN:-localhost}
     # The SPA dynamically imports ${industreamHubOrigin}/industream-login.js
