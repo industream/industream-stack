@@ -38,7 +38,7 @@ services:
       # swarm (docker secret) and compose (file secret). DATACATALOG_DB_HOST
       # differs per topology (shared `postgres` vs dedicated `datacatalog-postgresql`).
       - DB_SECRET_NAME=${DATACATALOG_DB_SECRET_NAME}
-      - PostgreSql__ConnectionString=Server=${DATACATALOG_DB_HOST};Port=5432;User Id=${DATACATALOG_DB_USER};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${DATACATALOG_DB_NAME};
+      - PostgreSql__ConnectionString=Server=${DATACATALOG_DB_HOST};Port=5432;User Id=${DATACATALOG_DB_USER:-datacatalog};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${DATACATALOG_DB_NAME:-DataCatalog};
       - Database__MigrateOnStartup=false
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8002/health || exit 1"]
@@ -53,3 +53,10 @@ services:
       # Lets the SPA's auth client retrieve the access token from the Hub bridge
       # (EE) and inject it as a Bearer. Harmless in CE.
       - INDUSTREAM_HUB_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
+      # The UI image bakes these into assets/config.json at boot (25-env-replace.sh).
+      # Unset → the placeholders (__DATACATALOG_API_URL__ …) leak literally and the
+      # Angular app throws "Failed to construct 'URL': Invalid base URL" on init.
+      # The compose overlay (runtime.compose.yml) overrides for its FM_DOMAIN hosts.
+      - DATACATALOG_API_URL=https://datacatalog-api.${INDUSTREAM_DOMAIN}
+      - SCHEMA_OPTIMIZER_API_URL=https://datacatalog-api.${INDUSTREAM_DOMAIN}
+      - FLOWMAKER_CONFIGHUB_URL=https://confighub.${INDUSTREAM_DOMAIN}
