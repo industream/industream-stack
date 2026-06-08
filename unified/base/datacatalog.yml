@@ -38,7 +38,7 @@ services:
       # swarm (docker secret) and compose (file secret). DATACATALOG_DB_HOST
       # differs per topology (shared `postgres` vs dedicated `datacatalog-postgresql`).
       - DB_SECRET_NAME=${DATACATALOG_DB_SECRET_NAME}
-      - PostgreSql__ConnectionString=Server=${DATACATALOG_DB_HOST};Port=5432;User Id=${DATACATALOG_DB_USER:-datacatalog};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${DATACATALOG_DB_NAME:-DataCatalog};
+      - PostgreSql__ConnectionString=Server=${DATACATALOG_DB_HOST};Port=5432;User Id=${DATACATALOG_DB_USER};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${DATACATALOG_DB_NAME};
       - Database__MigrateOnStartup=false
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8002/health || exit 1"]

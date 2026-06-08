@@ -22,7 +22,7 @@ services:
       # single-level ${INDUSTREAM_DOMAIN} only (swarm won't expand a nested default;
       # it's the override knob). Same class as the CORS fix.
       - IH_OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
-      - IH_OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-industream-hub-app}
+      - IH_OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
       - IH_OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
       - IH_OIDC_AUDIENCE=${OIDC_AUDIENCE:-}
       - IH_OIDC_SCOPES=${OIDC_SCOPES:-openid profile email roles offline_access}
@@ -39,7 +39,7 @@ services:
     environment:
       - AUTH_METHOD=OAUTH
       - OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
-      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-industream-hub-app}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
       - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile roles offline_access}
       - OIDC_REDIRECT_PATH=${OIDC_REDIRECT_PATH:-/}
 
