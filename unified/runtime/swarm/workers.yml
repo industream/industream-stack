@@ -116,10 +116,10 @@ services:
         window: 120s
 
 # =============================================================================
-# NETWORKS — overlay, per-env isolated (attachable so worker-manager can inspect).
+# NETWORKS — the `platform` overlay is NOT created here. In a full single-stack
+# deploy it is created by the core/data/monitoring groups; in the split-stack
+# model (deploy.sh --type workers) it is the target core's EXTERNAL network,
+# supplied by runtime/swarm/_platform-attach.yml. Workers reach the scheduler by
+# service name over that shared overlay — so a 2nd workers stack registers with
+# the same core. (Defining it here would conflict create-vs-external on attach.)
 # =============================================================================
-networks:
-  platform:
-    name: ${ENV}-platform
-    driver: overlay
-    attachable: true
