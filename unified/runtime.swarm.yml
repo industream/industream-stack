@@ -20,6 +20,8 @@ services:
     secrets:
       - source: datacatalog_db_password
         target: ${ENV}_datacatalog_db_password
+      - source: datacatalog_api_key
+        target: ${ENV}_datacatalog_api_key
     deploy:
       labels:
         - traefik.enable=true
@@ -50,6 +52,9 @@ services:
 secrets:
   datacatalog_db_password:
     name: ${ENV}_datacatalog_db_password
+    external: true
+  datacatalog_api_key:
+    name: ${ENV}_datacatalog_api_key
     external: true
 
 networks:

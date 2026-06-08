@@ -52,6 +52,7 @@ services:
       - ${CADDY_LOCAL_CA:-./secrets/caddy-internal-ca.crt}:/etc/grafana/extra-cas/caddy-internal-ca.crt:ro
     secrets:
       - grafana_admin_password
+      - datacatalog_api_key
       - grafana_db_password
     depends_on:
       - grafana-postgresql
@@ -85,7 +86,6 @@ services:
       - POSTGRES_DB=${GRAFANA_DB_NAME}
       - POSTGRES_USER=${GRAFANA_DB_USER}
       - POSTGRES_PASSWORD_FILE=/run/secrets/grafana_db_password
-      - PGDATA=/var/lib/postgresql/data/pgdata
     secrets:
       - grafana_db_password
     volumes:
@@ -134,6 +134,8 @@ services:
 secrets:
   grafana_admin_password:
     file: ${SECRETS_DIR:-./secrets}/grafana_admin_password
+  datacatalog_api_key:
+    file: ${SECRETS_DIR:-./secrets}/datacatalog_api_key
   grafana_db_password:
     file: ${SECRETS_DIR:-./secrets}/grafana_db_password
   postgres_admin_password:

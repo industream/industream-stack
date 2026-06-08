@@ -52,10 +52,16 @@ datasources:
       # Matches PluginSettings struct in pkg/models/settings.go — keep field
       # names in sync if bumping the plugin version.
       dataBridgeApiUrl: http://databridge:8080
-      dataCatalogApiUrl: http://datacatalog-api:8080
+      dataCatalogApiUrl: http://datacatalog-api:8003
+      maxRawRows: 50000
+      hardLimitRows: 1000000
+      cacheTtlSeconds: 300
+      defaultDisplayNamePreset: entryName
     # No secureJsonData (apiKey) — DataBridge backend currently runs
     # un-authenticated on the internal overlay network. Add when an API key
     # is provisioned (see /home/cdm/industream-platform/secrets/<env>/
     # databridge_api_key — to be created):
     # secureJsonData:
     #   apiKey__file: /run/secrets/${ENV}_databridge_api_key
+    secureJsonData:
+      apiKey: $__file{/run/secrets/datacatalog_api_key}

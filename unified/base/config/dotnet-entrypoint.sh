@@ -67,5 +67,13 @@ if [ -n "$TOKEN_FILE" ] && [ -f "$TOKEN_FILE" ]; then
     fi
 fi
 
+# DataCatalog backend API key (Authentication__Backend__ApiKey) from the mounted
+# secret — same find_secret/export pattern as the influx token above.
+API_KEY_FILE=$(find_secret "datacatalog_api_key" 2>/dev/null || true)
+if [ -n "$API_KEY_FILE" ]; then
+    export Authentication__Backend__ApiKey="$(read_secret "$API_KEY_FILE")"
+    echo "Loaded DataCatalog backend API key from $API_KEY_FILE"
+fi
+
 # Execute the original entrypoint (dotnet application)
 exec "$@"
