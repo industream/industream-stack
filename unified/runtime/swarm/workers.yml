@@ -121,3 +121,5 @@ services:
 networks:
   platform:
     name: ${ENV}-platform
+    driver: overlay
+    attachable: true
