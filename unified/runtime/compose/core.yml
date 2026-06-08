@@ -22,7 +22,7 @@ services:
     networks:
       - flowmaker-net
     restart: unless-stopped
-    mem_limit: 64m
+    mem_limit: 256m
     mem_reservation: 32m
     labels:
       caddy: hub-api.${FM_DOMAIN}

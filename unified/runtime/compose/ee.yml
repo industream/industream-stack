@@ -15,6 +15,9 @@ services:
     networks: [ flowmaker-net ]
     restart: unless-stopped
     secrets: [ logto_db_password ]
+    environment:
+      # postgres:18 needs PGDATA pinned to a subdir (bare data mount refused).
+      - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
       - logto-pgdata:/var/lib/postgresql/data
 
