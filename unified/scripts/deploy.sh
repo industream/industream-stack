@@ -102,10 +102,85 @@ if [[ "$RENDER" == true ]]; then
   exit 0
 fi
 
+# ---- EE post-deploy seeders -------------------------------------------------
+# A greenfield EE deploy is loginnable WITHOUT the interactive Logto admin
+# wizard: the EE hub image ships offline seeders (/app/oidc-seeds, /app/menu-seeds)
+# that write straight to logto-postgres (direct-DB, no Management-API M2M) and to
+# the Hub internal launchpad port. We extract + run them on the host, reusing the
+# same admin identity as the CE native admin (HUB_BACKEND_ADMIN_*) so login is
+# identical across editions. Best-effort and strictly NON-FATAL — a deploy never
+# fails because seeding did. Requires python3 + argon2-cffi on the host (Argon2i).
+seed_ee() {
+  local hub_cid pg_cid i tmp domain admin_user admin_pass hub_filter pg_filter
+  echo ""
+  echo "▶ EE seeders (Logto app/roles/user + launchpad)…"
+  if [[ "$RUNTIME" == swarm ]]; then
+    hub_filter="com.docker.swarm.service.name=${STACK}_industream-hub-backend"
+    pg_filter="com.docker.swarm.service.name=${STACK}_logto-postgres"
+  else
+    hub_filter="com.docker.compose.project=${PROJECT}"
+    pg_filter="com.docker.compose.project=${PROJECT}"
+  fi
+  hub_cid="$(docker ps -q --filter "label=${hub_filter}" \
+            $([[ "$RUNTIME" == compose ]] && echo --filter label=com.docker.compose.service=industream-hub-backend) \
+            2>/dev/null | head -1)"
+  [[ -z "$hub_cid" ]] && { echo "  ⚠ hub-backend container not found — skipping seeders" >&2; return 0; }
+
+  # logto-postgres must accept connections (compose `up -d` returns before ready).
+  for i in $(seq 1 30); do
+    pg_cid="$(docker ps -q --filter "label=${pg_filter}" \
+             $([[ "$RUNTIME" == compose ]] && echo --filter label=com.docker.compose.service=logto-postgres) \
+             2>/dev/null | head -1)"
+    [[ -n "$pg_cid" ]] && docker exec "$pg_cid" pg_isready -U postgres >/dev/null 2>&1 && break
+    sleep 2
+  done
+
+  # Extract the seeders shipped in the EE image (absent on pre-2.1.3 images).
+  tmp="$(mktemp -d)"
+  docker cp "${hub_cid}:/app/oidc-seeds/logto/seed-logto.sh" "$tmp/seed-logto.sh" 2>/dev/null \
+    || { echo "  ⚠ seeders absent from the hub image (pre-2.1.3) — run scripts/setup/ manually" >&2; rm -rf "$tmp"; return 0; }
+  docker cp "${hub_cid}:/app/menu-seeds/seed-menu-apps-stack.sh" "$tmp/seed-menu.sh" 2>/dev/null || true
+
+  local scope=(--runtime "$RUNTIME")
+  [[ "$RUNTIME" == swarm ]] && scope+=(--stack "$STACK") || scope+=(--project "$PROJECT")
+  domain="${INDUSTREAM_DOMAIN:-localhost}"
+  admin_user="${HUB_BACKEND_ADMIN_USER:-admin}"; admin_pass="${HUB_BACKEND_ADMIN_PASSWORD:-admin}"
+
+  # 1) Logto: OIDC app + roles + bootstrap user (Argon2i → needs python3 + argon2-cffi).
+  if python3 -c 'import argon2' 2>/dev/null; then
+    if bash "$tmp/seed-logto.sh" --client-id "${OIDC_CLIENT_ID:-industream-hub-app}" \
+         --redirect "https://${domain}/" --user "$admin_user" --password "$admin_pass" \
+         --email "admin@${domain}" --role admin "${scope[@]}" >/dev/null 2>&1; then
+      echo "  ✓ Logto: app '${OIDC_CLIENT_ID:-industream-hub-app}' + roles + user '${admin_user}'"
+    else echo "  ⚠ Logto seeding failed (non-fatal — see scripts/setup/seed-logto.sh)"; fi
+  else
+    echo "  ⚠ python3 argon2-cffi missing on host — Logto user bootstrap skipped"
+  fi
+
+  # 2) Launchpad menu apps + auth-bridge origin allowlist (internal port, no JWT).
+  if [[ -f "$tmp/seed-menu.sh" ]]; then
+    if HUB_BACKEND_SERVICE=industream-hub-backend bash "$tmp/seed-menu.sh" \
+         --domain "$domain" "${scope[@]}" >/dev/null 2>&1; then
+      echo "  ✓ launchpad menu apps + bridge origins seeded"
+    else echo "  ⚠ launchpad seeding failed (non-fatal)"; fi
+  fi
+  rm -rf "$tmp"
+}
+
 # ---- Dispatch ---------------------------------------------------------------
 if [[ "$RUNTIME" == compose ]]; then
   [[ -n "$PROJECT" ]] || { echo "✗ --project required for compose" >&2; exit 1; }
-  exec docker compose -p "$PROJECT" "${ENV_FILES[@]}" "${FILES[@]}" up -d
+  docker compose -p "$PROJECT" "${ENV_FILES[@]}" "${FILES[@]}" up -d
+  if [[ "$EDITION" == ee ]]; then
+    # Source the env so seed_ee sees INDUSTREAM_DOMAIN / OIDC_CLIENT_ID / admin creds
+    # (compose dispatch uses --env-file, which doesn't export into this process).
+    set -a; export ENV
+    source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+    for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+    [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+    set +a
+    seed_ee
+  fi
 else
   [[ -n "$STACK" ]] || { echo "✗ --stack required for swarm" >&2; exit 1; }
   # `docker stack deploy` interpolates ${VAR} from the PROCESS env (not
@@ -118,5 +193,5 @@ else
   set +a
   C_FILES=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] && C_FILES+=(-c) || C_FILES+=("$f"); done
   docker stack deploy --detach=false --with-registry-auth --prune "${C_FILES[@]}" "$STACK"
-  # TODO(Phase 4): run seeders/ (Logto app+user, launchpad) for --edition ee.
+  [[ "$EDITION" == ee ]] && seed_ee   # env already sourced above
 fi
