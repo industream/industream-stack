@@ -2,7 +2,7 @@
 # base/ee.yml — Enterprise Edition transform (orchestrator-neutral).
 # =============================================================================
 # Appended (after base/core.yml) ONLY when EDITION=ee. Turns the community Hub
-# into EE: swaps uifusion-api to the enterprise image + OAUTH against a self-
+# into EE: swaps industream-hub-backend to the enterprise image + OAUTH against a self-
 # hosted Logto, flips the shell to OAUTH, and adds Logto (+ its Postgres).
 #
 # The Hub JWT it MINTS is UNCHANGED (same iss=hub-backend / aud=industream-hub)
@@ -15,27 +15,30 @@
 # =============================================================================
 services:
   # ---- Hub backend → enterprise image + OAUTH against Logto ----
-  uifusion-api:
-    image: ${ENTERPRISE_REGISTRY}/uifusion/api-enterprise:${UIFUSION_API_EE_VERSION}
+  industream-hub-backend:
+    image: ${HUB_API_ENTERPRISE_IMAGE}
     environment:
       - IH_AUTH_METHOD=OAUTH
-      - IH_OIDC_ISSUER=${OIDC_ISSUER:-https://auth.${INDUSTREAM_DOMAIN}/oidc}
+      # single-level ${INDUSTREAM_DOMAIN} only (swarm won't expand a nested default;
+      # it's the override knob). Same class as the CORS fix.
+      - IH_OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
       - IH_OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-industream-hub-app}
       - IH_OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
       - IH_OIDC_AUDIENCE=${OIDC_AUDIENCE:-}
       - IH_OIDC_SCOPES=${OIDC_SCOPES:-openid profile email roles offline_access}
       - IH_OIDC_JWKS_URI=${OIDC_JWKS_URI:-http://logto:3001/oidc/jwks}
       - IH_OIDC_USERINFO_URI=${OIDC_USERINFO_URI:-http://logto:3001/oidc/me}
-      - IH_OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-https://${INDUSTREAM_DOMAIN}/}
+      - IH_OIDC_INTROSPECTION_URL=${OIDC_INTROSPECTION_URL:-http://logto:3001/oidc/token/introspection}
+      - IH_OIDC_REDIRECT_URI=https://${INDUSTREAM_DOMAIN}/
       - IH_OIDC_REFRESH_GRANT_ENABLED=${OIDC_REFRESH_GRANT_ENABLED:-true}
       - IH_REVOCATION_CHECK_INTERVAL_SECONDS=${IH_REVOCATION_CHECK_INTERVAL_SECONDS:-300}
       - IH_REVOCATION_HARD_FAIL_AFTER_SECONDS=${IH_REVOCATION_HARD_FAIL_AFTER_SECONDS:-900}
 
   # ---- Shell → OAUTH (so the SPA auth-config points at Logto, not BASIC) ----
-  uifusion:
+  industream-hub-frontend:
     environment:
       - AUTH_METHOD=OAUTH
-      - OIDC_ISSUER=${OIDC_ISSUER:-https://auth.${INDUSTREAM_DOMAIN}/oidc}
+      - OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
       - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-industream-hub-app}
       - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile roles offline_access}
       - OIDC_REDIRECT_PATH=${OIDC_REDIRECT_PATH:-/}
@@ -47,11 +50,15 @@ services:
     # and seeds defaults on a FRESH DB; fall back to `alteration deploy latest`
     # when already seeded. (`alteration deploy` first crash-loops a fresh DB —
     # `type "application_type" does not exist`. See industream-stack#22.)
-    entrypoint: ["sh", "-c", "export DB_URL=$(cat /run/secrets/${LOGTO_DB_URL_SECRET_NAME}) && (npm run cli db seed -- --swe || npm run cli db alteration deploy latest) && npm start"]
+    # NOTE: command substitution MUST be escaped as $$( … ) — docker compose/swarm
+    # interpolation eats a single `$(`, leaving `export DB_URL=(cat …)` → the
+    # container's sh then dies on `unexpected "("` (found at the VM gate). `$$`
+    # emits a literal `$`. ${LOGTO_DB_URL_SECRET_NAME} stays single-$ (we DO want it interpolated).
+    entrypoint: ["sh", "-c", "export DB_URL=$$(cat /run/secrets/${LOGTO_DB_URL_SECRET_NAME}) && (npm run cli db seed -- --swe || npm run cli db alteration deploy latest) && npm start"]
     environment:
       - TRUST_PROXY_HEADER=1
-      - ENDPOINT=${LOGTO_ENDPOINT:-https://auth.${INDUSTREAM_DOMAIN}}
-      - ADMIN_ENDPOINT=${LOGTO_ADMIN_ENDPOINT:-https://auth-admin.${INDUSTREAM_DOMAIN}}
+      - ENDPOINT=https://auth.${INDUSTREAM_DOMAIN}
+      - ADMIN_ENDPOINT=https://auth-admin.${INDUSTREAM_DOMAIN}
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 3001 || exit 1"]
       interval: 30s
@@ -66,6 +73,10 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_DB=logto
       - POSTGRES_PASSWORD_FILE=/run/secrets/${LOGTO_DB_PASSWORD_SECRET_NAME}
+      # postgres:18 refuses a volume mounted straight at /var/lib/postgresql/data;
+      # data must live in a SUBDIR. Point PGDATA at a subdir (matches base/data.yml's
+      # `postgres`). Without this, logto-postgres exits 1 on 18 (found at the VM gate).
+      - PGDATA=/var/lib/postgresql/data/pgdata
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d logto || exit 1"]
       interval: 30s

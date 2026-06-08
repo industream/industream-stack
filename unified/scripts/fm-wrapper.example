@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# =============================================================================
+# fm — compatibility shim (OPTIONAL migration aid).
+# =============================================================================
+# Drop this in industream-flowmaker/deployment/fm IF/WHEN David migrates off his
+# 1658-line fm onto the unified driver (#8: the complete stack is canonical in
+# industream-stack; his fm is left as-is until he chooses to switch). Keeps the
+# `fm <cmd>` muscle memory: every command forwards 1:1 to `industream <cmd>`.
+#
+# Point INDUSTREAM_DRIVER at the unified driver (clone/checkout of industream-stack).
+# =============================================================================
+set -euo pipefail
+INDUSTREAM_DRIVER="${INDUSTREAM_DRIVER:-/opt/industream-stack/unified/scripts/industream}"
+[[ -x "$INDUSTREAM_DRIVER" ]] || { echo "✗ unified driver not found at $INDUSTREAM_DRIVER (set INDUSTREAM_DRIVER)" >&2; exit 1; }
+# fm create/up/down/ps/logs/list/delete/init map 1:1; everything else passes through.
+exec "$INDUSTREAM_DRIVER" "$@"

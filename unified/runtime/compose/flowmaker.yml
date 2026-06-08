@@ -3,11 +3,11 @@
 # flowmaker-net/named volumes). Merged LAST over base/flowmaker.yml.
 # =============================================================================
 # Auth is already ON via base/flowmaker.yml (FM_AUTH_* block). For the JWKS URL
-# (http://uifusion-api:3050/auth/jwks) to resolve on this single-host network,
-# the hub backend must be reachable as `uifusion-api` on flowmaker-net — that
+# (http://industream-hub-backend:3050/auth/jwks) to resolve on this single-host network,
+# the hub backend must be reachable as `industream-hub-backend` on flowmaker-net — that
 # alias is owned by base/core.yml's compose overlay, not duplicated here. (The
 # legacy compose pointed FM_AUTH_JWKS_URL at industream-hub-backend:3050; the
-# canonical name is uifusion-api per the invariant — see gaps.)
+# canonical name is industream-hub-backend per the invariant — see gaps.)
 #
 # Canonical public ports proxied by Caddy: confighub 4001, logger 3001,
 # scheduler 3121, frontend 80.

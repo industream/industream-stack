@@ -1,0 +1,137 @@
+groups:
+  - name: swarm-alerts
+    rules:
+      # ============================================
+      # Docker Swarm Service Alerts
+      # ============================================
+      - alert: SwarmServiceDown
+        expr: count by (container_label_com_docker_swarm_service_name) (container_last_seen{container_label_com_docker_swarm_service_name=~".+"}) == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Swarm service down: {{ $labels.container_label_com_docker_swarm_service_name }}"
+          description: "Swarm service {{ $labels.container_label_com_docker_swarm_service_name }} has no running tasks"
+
+      - alert: SwarmServiceTaskFailed
+        expr: increase(container_last_seen{container_label_com_docker_swarm_service_name=~".+"}[5m]) < 0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Swarm task failed: {{ $labels.container_label_com_docker_swarm_service_name }}"
+          description: "A task from service {{ $labels.container_label_com_docker_swarm_service_name }} may have failed"
+
+      # ============================================
+      # Swarm Service Resource Alerts
+      # ============================================
+      - alert: SwarmServiceHighCpu
+        expr: sum by (container_label_com_docker_swarm_service_name) (rate(container_cpu_usage_seconds_total{container_label_com_docker_swarm_service_name=~".+"}[5m])) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage for service {{ $labels.container_label_com_docker_swarm_service_name }}"
+          description: "Service {{ $labels.container_label_com_docker_swarm_service_name }} CPU usage is above 80% (current: {{ $value | printf \"%.1f\" }}%)"
+
+      - alert: SwarmServiceHighMemory
+        expr: sum by (container_label_com_docker_swarm_service_name) (container_memory_usage_bytes{container_label_com_docker_swarm_service_name=~".+"}) > 1610612736
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage for service {{ $labels.container_label_com_docker_swarm_service_name }}"
+          description: "Service {{ $labels.container_label_com_docker_swarm_service_name }} is using more than 1GB of memory"
+
+      - alert: SwarmServiceCriticalMemory
+        expr: sum by (container_label_com_docker_swarm_service_name) (container_memory_usage_bytes{container_label_com_docker_swarm_service_name=~".+"}) > 3221225472
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical memory usage for service {{ $labels.container_label_com_docker_swarm_service_name }}"
+          description: "Service {{ $labels.container_label_com_docker_swarm_service_name }} is using more than 2GB of memory"
+
+      # ============================================
+      # Key Services Health Alerts
+      # ============================================
+      - alert: PostgresServiceDown
+        expr: absent(container_last_seen{container_label_com_docker_swarm_service_name="uifusion_postgres"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL service is down"
+          description: "The PostgreSQL database service is not running"
+
+      - alert: KeycloakServiceDown
+        expr: absent(container_last_seen{container_label_com_docker_swarm_service_name="uifusion_keycloak"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Keycloak service is down"
+          description: "The Keycloak authentication service is not running"
+
+      - alert: TraefikServiceDown
+        expr: absent(container_last_seen{container_label_com_docker_swarm_service_name="uifusion_traefik"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Traefik service is down"
+          description: "The Traefik reverse proxy service is not running"
+
+      - alert: GrafanaServiceDown
+        expr: absent(container_last_seen{container_label_com_docker_swarm_service_name="uifusion_grafana"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Grafana service is down"
+          description: "The Grafana dashboard service is not running"
+
+      - alert: InfluxDBServiceDown
+        expr: absent(container_last_seen{container_label_com_docker_swarm_service_name="uifusion_influxdb"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "InfluxDB service is down"
+          description: "The InfluxDB time series database service is not running"
+
+      - alert: PrometheusServiceDown
+        expr: absent(container_last_seen{container_label_com_docker_swarm_service_name="uifusion_prometheus"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus service is down"
+          description: "The Prometheus monitoring service is not running"
+
+      - alert: UIFusionServiceDown
+        expr: absent(container_last_seen{container_label_com_docker_swarm_service_name="uifusion_uifusion"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "UIFusion service is down"
+          description: "The UIFusion main application service is not running"
+
+      - alert: DataCatalogAPIServiceDown
+        expr: absent(container_last_seen{container_label_com_docker_swarm_service_name="uifusion_datacatalog-api"})
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DataCatalog API service is down"
+          description: "The DataCatalog API service is not running"
+
+      - alert: TimeseriesAPIServiceDown
+        expr: absent(container_last_seen{container_label_com_docker_swarm_service_name="uifusion_timeseries-api"})
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Timeseries API service is down"
+          description: "The Timeseries API service is not running"

@@ -19,11 +19,11 @@ services:
   # ---- Hub SPA: allow cross-subdomain iframe so the wrapper at
   # ---- dashboard.${DOMAIN} can embed the Hub auth-bridge iframe. Without it
   # ---- X-Frame-Options=SAMEORIGIN blocks the bridge → no JWT → Grafana 302
-  # ---- /login. NB: `uifusion` is the SPA shell; `uifusion-ui` is the router.
-  uifusion:
+  # ---- /login. NB: `uifusion` is the SPA shell; `industream-hub-frontend-ui` is the router.
+  industream-hub-frontend:
     deploy:
       labels:
-        - traefik.http.routers.${ENV}-uifusion-ui-secure.middlewares=allow-iframe@file
+        - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.middlewares=allow-iframe@file
 
   grafana:
     # Route the public Hub hostname back to the swarm host so Grafana can fetch
@@ -44,18 +44,23 @@ services:
       - ./certs/${INDUSTREAM_DOMAIN}.crt:/etc/grafana/extra-cas/platform.crt:ro
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     # Cross-group startup ordering (services defined in core group): swarm uses
     # the SHARED postgres for Grafana's DB.
     depends_on:
       - postgres
-      - uifusion-api
+      - industream-hub-backend
     secrets:
-      - ${ENV}_grafana_admin_password
-      - ${ENV}_grafana_db_password
-      - ${ENV}_influx_admin_token
-      - ${ENV}_datacatalog_db_password
-      - ${ENV}_postgres_admin_password
+      - source: grafana_admin_password
+        target: ${ENV}_grafana_admin_password
+      - source: grafana_db_password
+        target: ${ENV}_grafana_db_password
+      - source: influx_admin_token
+        target: ${ENV}_influx_admin_token
+      - source: datacatalog_db_password
+        target: ${ENV}_datacatalog_db_password
+      - source: postgres_admin_password
+        target: ${ENV}_postgres_admin_password
     deploy:
       labels:
         - traefik.enable=true
@@ -87,9 +92,9 @@ services:
   grafana-wrapper:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     depends_on:
-      - uifusion-api
+      - industream-hub-backend
     deploy:
       labels:
         - traefik.enable=true
@@ -110,7 +115,7 @@ services:
   prometheus:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     deploy:
       labels:
         - traefik.enable=true
@@ -130,7 +135,7 @@ services:
 
   node-exporter:
     networks:
-      - ${ENV}-platform
+      - platform
     deploy:
       mode: global
       resources:
@@ -140,7 +145,7 @@ services:
 
   cadvisor:
     networks:
-      - ${ENV}-platform
+      - platform
     deploy:
       mode: global
       resources:
@@ -150,11 +155,12 @@ services:
 
   postgres-exporter:
     networks:
-      - ${ENV}-platform
+      - platform
     depends_on:
       - postgres
     secrets:
-      - ${ENV}_postgres_admin_password
+      - source: postgres_admin_password
+        target: ${ENV}_postgres_admin_password
     deploy:
       resources:
         limits:       { cpus: '0.1', memory: 64M }
@@ -164,7 +170,7 @@ services:
   alertmanager:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     deploy:
       labels:
         - traefik.enable=true
@@ -183,15 +189,20 @@ services:
       restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
 
 secrets:
-  ${ENV}_grafana_admin_password:
+  grafana_admin_password:
+    name: ${ENV}_grafana_admin_password
     external: true
-  ${ENV}_grafana_db_password:
+  grafana_db_password:
+    name: ${ENV}_grafana_db_password
     external: true
-  ${ENV}_postgres_admin_password:
+  postgres_admin_password:
+    name: ${ENV}_postgres_admin_password
     external: true
-  ${ENV}_datacatalog_db_password:
+  datacatalog_db_password:
+    name: ${ENV}_datacatalog_db_password
     external: true
-  ${ENV}_influx_admin_token:
+  influx_admin_token:
+    name: ${ENV}_influx_admin_token
     external: true
 
 volumes:
@@ -203,6 +214,7 @@ networks:
   traefik-public:
     external: true
     name: traefik-shared_traefik-public
-  ${ENV}-platform:
+  platform:
+    name: ${ENV}-platform
     driver: overlay
     attachable: true

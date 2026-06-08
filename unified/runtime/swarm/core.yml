@@ -4,58 +4,60 @@
 # =============================================================================
 # Owns everything orchestrator-specific for the core group:
 #   - Traefik router/service labels under deploy.labels
-#   - the `industream-hub-backend` network alias on uifusion-api (JWKS resolution)
+#   - the `industream-hub-backend` network alias on industream-hub-backend (JWKS resolution)
 #   - external docker secrets for minio root user/password (named by *_SECRET_NAME
 #     in runtime.swarm.env, consumed by base/core.yml interpolation)
 #   - ${ENV}-* overlay networks + named volumes
 # =============================================================================
 services:
-  uifusion-api:
+  industream-hub-backend:
     networks:
       traefik-public: {}
-      ${ENV}-platform:
+      platform:
         aliases:
           - industream-hub-backend
     deploy:
       labels:
         - traefik.enable=true
-        - traefik.http.routers.${ENV}-uifusion-api-secure.entrypoints=websecure
-        - traefik.http.routers.${ENV}-uifusion-api-secure.rule=Host(`${INDUSTREAM_DOMAIN}`) && PathPrefix(`/api/uifusion`)
-        - traefik.http.routers.${ENV}-uifusion-api-secure.tls=true
-        - traefik.http.routers.${ENV}-uifusion-api-secure.service=${ENV}-uifusion-api
-        - traefik.http.routers.${ENV}-uifusion-api-secure.middlewares=${ENV}-uifusion-api-stripprefix,security-headers@file
-        - traefik.http.routers.${ENV}-uifusion-api.entrypoints=web
-        - traefik.http.routers.${ENV}-uifusion-api.rule=Host(`${INDUSTREAM_DOMAIN}`) && PathPrefix(`/api/uifusion`)
-        - traefik.http.routers.${ENV}-uifusion-api.middlewares=redirect-to-https@file
-        - traefik.http.middlewares.${ENV}-uifusion-api-stripprefix.stripprefix.prefixes=/api/uifusion
-        - traefik.http.services.${ENV}-uifusion-api.loadbalancer.server.port=3050
+        - traefik.http.routers.${ENV}-industream-hub-backend-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-industream-hub-backend-secure.rule=Host(`${INDUSTREAM_DOMAIN}`) && PathPrefix(`/api/uifusion`)
+        - traefik.http.routers.${ENV}-industream-hub-backend-secure.tls=true
+        - traefik.http.routers.${ENV}-industream-hub-backend-secure.service=${ENV}-industream-hub-backend
+        - traefik.http.routers.${ENV}-industream-hub-backend-secure.middlewares=${ENV}-industream-hub-backend-stripprefix,security-headers@file
+        - traefik.http.routers.${ENV}-industream-hub-backend.entrypoints=web
+        - traefik.http.routers.${ENV}-industream-hub-backend.rule=Host(`${INDUSTREAM_DOMAIN}`) && PathPrefix(`/api/uifusion`)
+        - traefik.http.routers.${ENV}-industream-hub-backend.middlewares=redirect-to-https@file
+        - traefik.http.middlewares.${ENV}-industream-hub-backend-stripprefix.stripprefix.prefixes=/api/uifusion
+        - traefik.http.services.${ENV}-industream-hub-backend.loadbalancer.server.port=3050
         # Uploads route (no prefix strip — API handles /api/uploads directly)
-        - traefik.http.routers.${ENV}-uifusion-uploads-secure.entrypoints=websecure
-        - traefik.http.routers.${ENV}-uifusion-uploads-secure.rule=Host(`${INDUSTREAM_DOMAIN}`) && PathPrefix(`/api/uploads`)
-        - traefik.http.routers.${ENV}-uifusion-uploads-secure.tls=true
-        - traefik.http.routers.${ENV}-uifusion-uploads-secure.service=${ENV}-uifusion-api
-        - traefik.http.routers.${ENV}-uifusion-uploads-secure.middlewares=security-headers@file
+        - traefik.http.routers.${ENV}-industream-hub-uploads-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-industream-hub-uploads-secure.rule=Host(`${INDUSTREAM_DOMAIN}`) && PathPrefix(`/api/uploads`)
+        - traefik.http.routers.${ENV}-industream-hub-uploads-secure.tls=true
+        - traefik.http.routers.${ENV}-industream-hub-uploads-secure.service=${ENV}-industream-hub-backend
+        - traefik.http.routers.${ENV}-industream-hub-uploads-secure.middlewares=security-headers@file
       resources:
-        limits:       { cpus: '0.25', memory: 64M }
-        reservations: { cpus: '0.03', memory: 32M }
+        # 256M (was 64M): the Node hub-backend OOM-killed (exit 137) at 64M with the
+        # EE `api-enterprise` image; the CE image was also very tight. Found at VM gate.
+        limits:       { cpus: '0.5', memory: 256M }
+        reservations: { cpus: '0.03', memory: 64M }
       restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
 
-  uifusion:
+  industream-hub-frontend:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     deploy:
       labels:
         - traefik.enable=true
-        - traefik.http.routers.${ENV}-uifusion-ui-secure.entrypoints=websecure
-        - traefik.http.routers.${ENV}-uifusion-ui-secure.rule=Host(`${INDUSTREAM_DOMAIN}`) && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)
-        - traefik.http.routers.${ENV}-uifusion-ui-secure.tls=true
-        - traefik.http.routers.${ENV}-uifusion-ui-secure.service=${ENV}-uifusion-ui
-        - traefik.http.routers.${ENV}-uifusion-ui-secure.middlewares=security-headers@file
-        - traefik.http.routers.${ENV}-uifusion-ui.entrypoints=web
-        - traefik.http.routers.${ENV}-uifusion-ui.rule=Host(`${INDUSTREAM_DOMAIN}`) && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)
-        - traefik.http.routers.${ENV}-uifusion-ui.middlewares=redirect-to-https@file
-        - traefik.http.services.${ENV}-uifusion-ui.loadbalancer.server.port=80
+        - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.rule=Host(`${INDUSTREAM_DOMAIN}`) && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)
+        - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.tls=true
+        - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.service=${ENV}-industream-hub-frontend-ui
+        - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.middlewares=security-headers@file
+        - traefik.http.routers.${ENV}-industream-hub-frontend-ui.entrypoints=web
+        - traefik.http.routers.${ENV}-industream-hub-frontend-ui.rule=Host(`${INDUSTREAM_DOMAIN}`) && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)
+        - traefik.http.routers.${ENV}-industream-hub-frontend-ui.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-industream-hub-frontend-ui.loadbalancer.server.port=80
       resources:
         limits:       { cpus: '0.5', memory: 128M }
         reservations: { cpus: '0.03', memory: 32M }
@@ -64,10 +66,12 @@ services:
   minio:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     secrets:
-      - ${MINIO_ROOT_USER_SECRET_NAME}
-      - ${MINIO_ROOT_PASSWORD_SECRET_NAME}
+      - source: minio_root_user
+        target: ${MINIO_ROOT_USER_SECRET_NAME}
+      - source: minio_root_password
+        target: ${MINIO_ROOT_PASSWORD_SECRET_NAME}
     deploy:
       labels:
         - traefik.enable=true
@@ -95,7 +99,7 @@ services:
 
   cdn-server:
     networks:
-      - ${ENV}-platform
+      - platform
     deploy:
       mode: replicated
       replicas: 1
@@ -107,7 +111,7 @@ services:
   cdn-cache:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     deploy:
       mode: replicated
       replicas: 1
@@ -125,14 +129,16 @@ services:
       restart_policy: { condition: any, delay: 5s, max_attempts: 5, window: 120s }
 
 secrets:
-  ${MINIO_ROOT_USER_SECRET_NAME}:
+  minio_root_user:
+    name: ${MINIO_ROOT_USER_SECRET_NAME}
     external: true
-  ${MINIO_ROOT_PASSWORD_SECRET_NAME}:
+  minio_root_password:
+    name: ${MINIO_ROOT_PASSWORD_SECRET_NAME}
     external: true
 
 volumes:
-  uifusion-config:
-    name: ${ENV}-uifusion-config
+  industream-hub-config:
+    name: ${ENV}-industream-hub-config
   minio-data:
     name: ${ENV}-minio-data
   cdn-server-storage:
@@ -144,6 +150,7 @@ networks:
   traefik-public:
     external: true
     name: traefik-shared_traefik-public
-  ${ENV}-platform:
+  platform:
+    name: ${ENV}-platform
     driver: overlay
     attachable: true

@@ -1,0 +1,146 @@
+# Alertmanager Configuration for Industrial 24/7 Monitoring
+# Documentation: https://prometheus.io/docs/alerting/latest/configuration/
+
+global:
+  # Default SMTP configuration (configure your SMTP server)
+  # smtp_smarthost: 'smtp.example.com:587'
+  # smtp_from: 'alertmanager@industream.platform.lan'
+  # smtp_auth_username: 'alertmanager'
+  # smtp_auth_password: 'password'
+
+  # Slack webhook URL (if using Slack)
+  # slack_api_url: 'https://hooks.slack.com/services/xxx/yyy/zzz'
+
+  # Resolve timeout - how long to wait before marking an alert as resolved
+  resolve_timeout: 5m
+
+# Templates for notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Inhibition rules - suppress certain alerts when others are firing
+inhibit_rules:
+  # If critical alert is firing, suppress warning alerts for same alertname
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+  # If host is down, suppress all other alerts from that host
+  - source_match:
+      alertname: 'HostDown'
+    target_match_re:
+      alertname: 'Host.*'
+    equal: ['instance']
+
+  # If PostgreSQL is down, suppress dependent service alerts
+  - source_match:
+      alertname: 'PostgresServiceDown'
+    target_match_re:
+      alertname: '(Keycloak|Grafana|DataCatalog)ServiceDown'
+
+# Routing tree for alerts
+route:
+  # Default receiver
+  receiver: 'default-receiver'
+
+  # Group alerts by these labels
+  group_by: ['alertname', 'severity', 'instance']
+
+  # Wait before sending first notification for a group
+  group_wait: 30s
+
+  # Wait before sending subsequent notifications for a group
+  group_interval: 5m
+
+  # Wait before resending a notification
+  repeat_interval: 4h
+
+  # Child routes for specific alert handling
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical-receiver'
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+      continue: true
+
+    # Warning alerts - standard handling
+    - match:
+        severity: warning
+      receiver: 'warning-receiver'
+      group_wait: 1m
+      group_interval: 10m
+      repeat_interval: 4h
+
+    # Infrastructure alerts (node/host level)
+    - match_re:
+        alertname: 'Host.*'
+      receiver: 'infrastructure-receiver'
+      group_by: ['alertname', 'instance']
+
+    # Service alerts (Docker/Swarm)
+    - match_re:
+        alertname: '(Container|Swarm|.*Service).*'
+      receiver: 'service-receiver'
+      group_by: ['alertname', 'container_label_com_docker_swarm_service_name']
+
+# Notification receivers
+# All receivers send to ntfy for push notifications
+# https://ntfy.sh/docs/publish/
+receivers:
+  # Default receiver - sends to ntfy
+  - name: 'default-receiver'
+    webhook_configs:
+      - url: 'http://ntfy/industream-alerts'
+        send_resolved: true
+
+  # Critical alerts receiver - high priority ntfy notifications
+  - name: 'critical-receiver'
+    webhook_configs:
+      - url: 'http://ntfy/industream-critical'
+        send_resolved: true
+
+    # Email configuration (uncomment and configure)
+    # email_configs:
+    #   - to: 'oncall@industream.platform.lan'
+    #     send_resolved: true
+    #     headers:
+    #       Subject: '[CRITICAL] {{ .GroupLabels.alertname }}'
+
+    # Slack configuration (uncomment and configure)
+    # slack_configs:
+    #   - channel: '#alerts-critical'
+    #     send_resolved: true
+    #     title: '{{ if eq .Status "firing" }}🔴{{ else }}✅{{ end }} {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+
+  # Warning alerts receiver
+  - name: 'warning-receiver'
+    webhook_configs:
+      - url: 'http://ntfy/industream-warnings'
+        send_resolved: true
+    # email_configs:
+    #   - to: 'monitoring@industream.platform.lan'
+    #     send_resolved: true
+
+  # Infrastructure receiver
+  - name: 'infrastructure-receiver'
+    webhook_configs:
+      - url: 'http://ntfy/industream-infra'
+        send_resolved: true
+    # email_configs:
+    #   - to: 'infra-team@industream.platform.lan'
+    #     send_resolved: true
+
+  # Service receiver
+  - name: 'service-receiver'
+    webhook_configs:
+      - url: 'http://ntfy/industream-services'
+        send_resolved: true
+    # email_configs:
+    #   - to: 'dev-team@industream.platform.lan'
+    #     send_resolved: true

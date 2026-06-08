@@ -22,6 +22,32 @@
 # =============================================================================
 services:
   # ---------------------------------------------------------------------------
+  # PostgreSQL — shared relational store for DataCatalog, Grafana (dashboard)
+  # and the DataBridge (postgresql variant). The mounted init-postgres.sh parses
+  # POSTGRES_MULTIPLE_DATABASES (db:user:FROM_SECRET) and idempotently
+  # reconciles each user/db, reading the per-user password from the matching
+  # /run/secrets/*_<pattern> file. Init runs ONLY on the first volume init
+  # (docker-entrypoint-initdb.d); rerun manually after rotating a secret.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:${POSTGRES_VERSION}
+    hostname: postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_ADMIN_USER:-postgres}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/${POSTGRES_ADMIN_PASSWORD_SECRET_NAME}
+      - POSTGRES_MULTIPLE_DATABASES=industream:dashboard:FROM_SECRET,DataCatalog:datacatalog:FROM_SECRET,DataBridge:databridge:FROM_SECRET
+      # Pin PGDATA inside the mounted volume (Postgres 18+ moved the default).
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - ./config/postgres-init/init-postgres.sh:/docker-entrypoint-initdb.d/init-postgres.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER:-postgres} -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
   # InfluxDB — time-series store. Token/password injected by entrypoint from the
   # mounted secrets (names resolved by the runtime overlay's secret backend).
   # ---------------------------------------------------------------------------
@@ -51,7 +77,7 @@ services:
   # DataBridge (InfluxDB variant) — timeseries API over InfluxDB.
   # ---------------------------------------------------------------------------
   databridge:
-    image: ${COMMUNITY_REGISTRY}/timeseries/api:${DATABRIDGE_API_VERSION}
+    image: ${DATABRIDGE_API_IMAGE}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
@@ -97,7 +123,7 @@ services:
   # topology (shared `postgres` on swarm / dedicated on compose) via runtime env.
   # ---------------------------------------------------------------------------
   databridge-postgresql:
-    image: ${COMMUNITY_REGISTRY}/timeseries/api:${DATABRIDGE_API_VERSION}
+    image: ${DATABRIDGE_API_IMAGE}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
@@ -118,7 +144,7 @@ services:
   # DataBridge (TimescaleDB variant) — same image, pointed at timescaledb.
   # ---------------------------------------------------------------------------
   databridge-timescaledb:
-    image: ${COMMUNITY_REGISTRY}/timeseries/api:${DATABRIDGE_API_VERSION}
+    image: ${DATABRIDGE_API_IMAGE}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:

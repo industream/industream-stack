@@ -5,15 +5,15 @@
 # (CE no-CLI fallback). Carries NO deploy:/labels/secrets-backend/net-names —
 # the runtime.<swarm|compose>.yml overlay owns those.
 #
-# Group: core — uifusion (Hub shell), uifusion-api (Hub backend), minio,
+# Group: core — uifusion (Hub shell), industream-hub-backend (Hub backend), minio,
 # cdn-server (Verdaccio npm registry), cdn-cache (esm.sh).
 #
 # Reconciliation invariants enforced here ONCE, inherited by both runtimes:
-#   - uifusion-api carries the FULL IH_* env, incl. issuer=${HUB_AUTH_ISSUER} and
+#   - industream-hub-backend carries the FULL IH_* env, incl. issuer=${HUB_AUTH_ISSUER} and
 #     audience=${HUB_AUTH_AUDIENCE} — the JWT contract (NEVER changes).
-#   - JWKS is served at uifusion-api:3050/auth/jwks; the swarm overlay adds the
+#   - JWKS is served at industream-hub-backend:3050/auth/jwks; the swarm overlay adds the
 #     network alias `industream-hub-backend` so downstream verifiers resolve it
-#     identically on both trees (decision #3: keep `uifusion-api` canonical).
+#     identically on both trees (decision #3: keep `industream-hub-backend` canonical).
 #   - minio root password comes from a secret (NO inline value); the runtime
 #     overlay names the secret and mounts it via *_FILE.
 #
@@ -27,14 +27,14 @@ services:
   # for every downstream verifier (FlowMaker core, DataCatalog, DataBridge,
   # Grafana wrapper). EE overlay flips IH_AUTH_METHOD to OAUTH.
   # ==========================================
-  uifusion-api:
-    image: ${COMMUNITY_REGISTRY}/uifusion/api:${UIFUSION_API_VERSION}
+  industream-hub-backend:
+    image: ${HUB_API_IMAGE}
     environment:
       - CONFIG_PATH=/app/data/config.json
       - IH_PUBLIC_PORT=3050
       - IH_INTERNAL_PORT=3051
       - IH_AUTH_METHOD=${IH_AUTH_METHOD:-BASIC}
-      # uifusion-api does NOT honour *_FILE for these; the deploy path exports
+      # industream-hub-backend does NOT honour *_FILE for these; the deploy path exports
       # HUB_BACKEND_ADMIN_* (read from the secret store) into the env before
       # launch. The :-admin default keeps the CE no-CLI fallback runnable.
       - IH_USERNAME=${HUB_BACKEND_ADMIN_USER:-admin}
@@ -52,7 +52,7 @@ services:
       - IH_BACKEND_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
       - HUB_DATA_PATH=/app/data/hub
     volumes:
-      - uifusion-config:/app/data
+      - industream-hub-config:/app/data
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3050/auth/jwks"]
       interval: 30s
@@ -61,16 +61,16 @@ services:
       start_period: 15s
 
   # ==========================================
-  # UIFUSION — Hub shell (SPA). Auth flows through uifusion-api in hub-backend
+  # UIFUSION — Hub shell (SPA). Auth flows through industream-hub-backend in hub-backend
   # mode. UF_CONFIG_URL points the shell at the API's /config endpoint.
   # ==========================================
-  uifusion:
-    image: ${COMMUNITY_REGISTRY}/uifusion/ui:${UIFUSION_UI_VERSION}
+  industream-hub-frontend:
+    image: ${HUB_UI_IMAGE}
     environment:
       - NODE_ENV=production
       - UF_CONFIG_URL=${INDUSTREAM_HUB_ORIGIN}/api/uifusion/api/config
     depends_on:
-      - uifusion-api
+      - industream-hub-backend
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 80 || exit 1"]
       interval: 30s
@@ -104,7 +104,7 @@ services:
   # http://cdn-server:4873. No proxy exposure.
   # ==========================================
   cdn-server:
-    image: ${COMMUNITY_REGISTRY}/flowmaker.core/cdn-server:${CDN_SERVER_VERSION}
+    image: ${CDN_SERVER_IMAGE}
     hostname: cdn-server
     volumes:
       - cdn-server-storage:/verdaccio/storage
@@ -114,7 +114,7 @@ services:
   # runtime overlay at cdn.<domain>.
   # ==========================================
   cdn-cache:
-    image: ${COMMUNITY_REGISTRY}/flowmaker.core/cdn-cache:${CDN_CACHE_VERSION}
+    image: ${CDN_CACHE_IMAGE}
     hostname: cdn-cache
     environment:
       - ESMPORT=8080
@@ -125,7 +125,7 @@ services:
       - cdn-server
 
 volumes:
-  uifusion-config:
+  industream-hub-config:
   minio-data:
   cdn-server-storage:
   cdn-cache-storage:

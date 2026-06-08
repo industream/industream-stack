@@ -6,8 +6,11 @@
 # env sources, then dispatches: `docker compose up` (compose) or render →
 # `docker stack deploy` (swarm). Same base/ + overlays for all 4 deploys.
 #
-#   ./deploy.sh --runtime swarm   --edition ee --env prod   --stack industream-prod
-#   ./deploy.sh --runtime compose --edition ce --env dev     --project fm-dev
+#   ./deploy.sh --runtime swarm   --edition ee --env prod --bundle 1.0.1 --stack industream-prod
+#   ./deploy.sh --runtime compose --edition ce --env dev  --bundle 1.0.1 --project fm-dev
+#
+# --bundle <ver> picks releases/bundle-platform-<ver>/ (the full-ref ${X_IMAGE}
+# vars). Omit it when exactly one bundle exists (auto-selected).
 #
 # The CLI thin driver (industream-cli) calls this same logic. Plain Compose-Spec
 # → the assembly is also reproducible by hand (BSL / CE no-CLI fallback).
@@ -17,7 +20,10 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
-RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false
+RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false BUNDLE=""
+# GROUP_SET = the base/<group>.yml set to assemble. Default = full platform; an
+# instance footprint narrows it (e.g. a core-only or a workers-only instance, T3).
+GROUP_SET="core flowmaker datacatalog workers data monitoring"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -27,6 +33,8 @@ while [[ $# -gt 0 ]]; do
     --stack)     STACK="$2"; shift 2 ;;
     --project)   PROJECT="$2"; shift 2 ;;
     --community) COMMUNITY=true; shift ;;
+    --bundle)    BUNDLE="$2"; shift 2 ;;
+    --groups)    GROUP_SET="$2"; shift 2 ;;
     --render)    RENDER=true; shift ;;
     -h|--help)   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -37,25 +45,45 @@ done
 [[ "$EDITION" == ce || "$EDITION" == ee ]]         || { echo "✗ --edition ce|ee required" >&2; exit 1; }
 cd "$HERE"
 
+# ---- BUNDLE: resolve the release bundle holding the full-ref ${X_IMAGE} vars -
+# base/*.yml reference ${HUB_API_IMAGE}, ${WORKER_*_IMAGE}, … which live ONLY in
+# a release bundle (scripts/render-bundles.sh renders them license-aware from
+# versions.env + registries.env). --bundle <ver> selects one; with exactly one
+# bundle present it auto-selects; otherwise --bundle is required.
+if [[ -n "$BUNDLE" ]]; then
+  BUNDLE_DIR="releases/bundle-platform-${BUNDLE}"
+  [[ -d "$BUNDLE_DIR" ]] || { echo "✗ no bundle at ${BUNDLE_DIR} — run: scripts/render-bundles.sh ${BUNDLE}" >&2; exit 1; }
+else
+  mapfile -t _bundles < <(ls -d releases/bundle-platform-*/ 2>/dev/null)
+  case ${#_bundles[@]} in
+    1) BUNDLE_DIR="${_bundles[0]%/}" ;;
+    0) echo "✗ no release bundle in releases/ — run: scripts/render-bundles.sh <version>" >&2; exit 1 ;;
+    *) echo "✗ multiple bundles in releases/ — pass --bundle <version>" >&2; exit 1 ;;
+  esac
+fi
+
 # ---- ENV: the single sources, in order (later wins) -------------------------
 ENV_FILES=(--env-file registries.env --env-file versions.env --env-file auth.env --env-file "runtime.${RUNTIME}.env")
+for bf in "$BUNDLE_DIR"/.env.*; do ENV_FILES+=(--env-file "$bf"); done
 [[ -f ".env.${ENV}" ]] && ENV_FILES+=(--env-file ".env.${ENV}")
 
-# ---- FILES: neutral base + per-runtime overlays -----------------------------
+# ---- FILES: neutral base + per-runtime overlays (group-selectable) ----------
 FILES=()
-for b in core flowmaker datacatalog workers data monitoring; do
+for b in $GROUP_SET; do
+  [[ -f "base/${b}.yml" ]] || { echo "✗ unknown group '${b}' (no base/${b}.yml)" >&2; exit 1; }
   FILES+=(-f "base/${b}.yml")
   [[ -f "runtime/${RUNTIME}/${b}.yml" ]] && FILES+=(-f "runtime/${RUNTIME}/${b}.yml")
 done
-# datacatalog increment-1 top-level overlay (until folded into runtime/<r>/)
-[[ -f "runtime.${RUNTIME}.yml" ]] && FILES+=(-f "runtime.${RUNTIME}.yml")
+# datacatalog increment-1 top-level overlay (until folded into runtime/<r>/) —
+# only when the datacatalog group is in scope (else it merges onto a missing svc).
+[[ -f "runtime.${RUNTIME}.yml" && " $GROUP_SET " == *" datacatalog "* ]] && FILES+=(-f "runtime.${RUNTIME}.yml")
 # EE transform last (overrides win)
 if [[ "$EDITION" == ee ]]; then
   FILES+=(-f "base/ee.yml")
   [[ -f "runtime/${RUNTIME}/ee.yml" ]] && FILES+=(-f "runtime/${RUNTIME}/ee.yml")
 fi
 
-echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV}"
+echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV} / bundle=${BUNDLE_DIR##*/} / groups=[${GROUP_SET}]"
 echo "  files: ${FILES[*]//-f /}"
 
 # ---- Render-only gate (validate the assembled config, deploy nothing) -------
@@ -85,6 +113,7 @@ else
   # keys. Source the single env sources into the env, then deploy with -c.
   set -a; export ENV
   source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+  for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
   C_FILES=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] && C_FILES+=(-c) || C_FILES+=("$f"); done

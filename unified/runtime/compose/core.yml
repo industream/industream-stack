@@ -12,13 +12,13 @@
 #
 # The `industream-hub-backend` JWKS alias is NOT needed here: on the compose
 # tree the canonical service is already named `industream-hub-backend` upstream,
-# but under the unified base the canonical name is `uifusion-api`. Downstream
+# but under the unified base the canonical name is `industream-hub-backend`. Downstream
 # compose consumers (flowmaker-*, datacatalog) must resolve JWKS via the
-# uifusion-api service; the swarm tree supplies the alias, the compose tree
+# industream-hub-backend service; the swarm tree supplies the alias, the compose tree
 # relies on the canonical service name reachable on flowmaker-net.
 # =============================================================================
 services:
-  uifusion-api:
+  industream-hub-backend:
     networks:
       - flowmaker-net
     restart: unless-stopped
@@ -30,7 +30,7 @@ services:
       caddy.tls.issuer: internal
       caddy.tls.issuer.lifetime: 24000h
 
-  uifusion:
+  industream-hub-frontend:
     networks:
       - flowmaker-net
     restart: unless-stopped

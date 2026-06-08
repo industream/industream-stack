@@ -3,9 +3,9 @@
 # overlay nets/volume names). Merged LAST over base/flowmaker.yml.
 # =============================================================================
 # The FM_AUTH_* fix lives in base/flowmaker.yml (auth-on everywhere). For the
-# JWKS URL (http://uifusion-api:3050/auth/jwks) to resolve on swarm, the hub
-# backend service must be reachable as `uifusion-api` on ${ENV}-platform — that
-# alias is owned by base/core.yml's swarm overlay (uifusion-api ↔
+# JWKS URL (http://industream-hub-backend:3050/auth/jwks) to resolve on swarm, the hub
+# backend service must be reachable as `industream-hub-backend` on ${ENV}-platform — that
+# alias is owned by base/core.yml's swarm overlay (industream-hub-backend ↔
 # industream-hub-backend), not duplicated here.
 #
 # Canonical public ports (drift reconciled): confighub 4001, logger 3001,
@@ -15,7 +15,7 @@ services:
   flowmaker-scheduler:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     depends_on:
       - flowmaker-confighub
       - flowmaker-logging
@@ -40,7 +40,7 @@ services:
   flowmaker-confighub:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     deploy:
       labels:
         - traefik.enable=true
@@ -61,7 +61,7 @@ services:
   flowmaker-logging:
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     deploy:
       labels:
         - traefik.enable=true
@@ -85,7 +85,7 @@ services:
       - FMUI_CONFIG_HUB_URL=https://confighub.${INDUSTREAM_DOMAIN}
     networks:
       - traefik-public
-      - ${ENV}-platform
+      - platform
     depends_on:
       - flowmaker-confighub
       - flowmaker-scheduler
@@ -117,6 +117,7 @@ networks:
   traefik-public:
     external: true
     name: traefik-shared_traefik-public
-  ${ENV}-platform:
+  platform:
+    name: ${ENV}-platform
     driver: overlay
     attachable: true
