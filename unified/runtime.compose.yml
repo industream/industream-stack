@@ -15,6 +15,7 @@ services:
       - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
     secrets:
       - datacatalog_db_password
+      - datacatalog_api_key
     depends_on:
       - datacatalog-postgresql
     networks:
@@ -60,6 +61,8 @@ services:
 secrets:
   datacatalog_db_password:
     file: ${SECRETS_DIR:-./secrets}/datacatalog_db_password
+  datacatalog_api_key:
+    file: ${SECRETS_DIR:-./secrets}/datacatalog_api_key
 
 volumes:
   datacatalog-pgdata:
