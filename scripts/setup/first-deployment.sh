@@ -31,6 +31,14 @@ DEMO_DIR="$PROJECT_DIR/../industream-platform-demo"
 DEPLOY_DEMO=false
 cd "$PROJECT_DIR"
 
+# On a freshly-booted host, unattended-upgrades holds the dpkg lock, so any
+# apt-get below fails after the default short wait ("Could not get lock
+# /var/lib/dpkg/lock-frontend"). Make apt WAIT for the lock (up to 10 min)
+# instead of erroring out. Idempotent — safe to re-run.
+if command -v apt-get >/dev/null 2>&1; then
+  echo 'DPkg::Lock::Timeout "600";' | sudo tee /etc/apt/apt.conf.d/99-industream-lock-timeout >/dev/null 2>&1 || true
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Helper Functions
 # ══════════════════════════════════════════════════════════════════════════════
