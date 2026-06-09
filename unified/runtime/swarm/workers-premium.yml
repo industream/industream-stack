@@ -1,0 +1,82 @@
+# =============================================================================
+# runtime/swarm/workers-premium.yml — Swarm overlay for the premium worker fleet.
+# =============================================================================
+# Group: workers-premium (Enterprise-only, opt-in). Owns ONLY the swarm-topology
+# concerns the neutral base must not carry:
+#   - deploy: (resource limits/reservations + restart_policy)
+#   - the ${ENV}-platform overlay network
+#   - healthcheck NONE (workers are dumb ZMQ pipes; the scheduler tracks them)
+# Image + functional env come from base/workers-premium.yml.
+#
+# YAML ANCHORS ARE FILE-LOCAL: this file re-declares the swarm worker anchors
+# (copied verbatim from runtime/swarm/workers.yml) so `<<: *swarm-worker` and
+# `<<: *swarm-worker-premium` resolve here.
+# =============================================================================
+
+# Shared swarm shape: every worker gets the same deploy envelope, overlay net,
+# and a disabled healthcheck. Per-worker overrides are unnecessary.
+x-swarm-worker: &swarm-worker
+  networks:
+    - platform
+  healthcheck:
+    test: ["NONE"]
+  deploy:
+    resources:
+      limits:
+        cpus: "0.25"
+        memory: 128M
+      reservations:
+        cpus: "0.03"
+        memory: 64M
+    restart_policy:
+      condition: any
+      delay: 10s
+      window: 120s
+
+# Premium workers carry a heavier envelope (protocol/codec workloads).
+x-swarm-worker-premium: &swarm-worker-premium
+  networks:
+    - platform
+  healthcheck:
+    test: ["NONE"]
+  deploy:
+    resources:
+      limits:
+        cpus: "0.5"
+        memory: 256M
+      reservations:
+        cpus: "0.08"
+        memory: 128M
+    restart_policy:
+      condition: any
+      delay: 10s
+      window: 120s
+
+services:
+  worker-opc-ua-client:
+    <<: *swarm-worker-premium
+  worker-rtsp-client:
+    <<: *swarm-worker-premium
+  worker-luminosity-box:
+    <<: *swarm-worker
+  worker-minio-sink:
+    <<: *swarm-worker
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 384M
+        reservations:
+          cpus: "0.03"
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+
+# =============================================================================
+# NETWORKS — the `platform` overlay is NOT created here (same rationale as
+# runtime/swarm/workers.yml): in a full single-stack deploy it is created by the
+# core/data/monitoring groups; in the split-stack model it is the target core's
+# EXTERNAL network, supplied by runtime/swarm/_platform-attach.yml.
+# =============================================================================

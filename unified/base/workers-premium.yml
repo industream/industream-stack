@@ -1,0 +1,81 @@
+# =============================================================================
+# base/workers-premium.yml — orchestrator-neutral (image + functional env only).
+# =============================================================================
+# Group: workers-premium — the 4 enterprise flow-box workers (opc-ua-client,
+# rtsp-client, luminosity-box, minio-sink), pulled from ENTERPRISE_REGISTRY.
+#
+# ENTERPRISE-ONLY and OPTIONAL (opt-in). It is NOT in the default group set;
+# deploy.sh rejects it unless --edition ee. Community deploys (both runtimes)
+# never run these workers — the community fleet in base/workers.yml stays the
+# CE default.
+#
+#   Enable (when entitled):
+#     ./scripts/deploy.sh --edition ee --runtime <swarm|compose> --env prod \
+#       --groups "core flowmaker datacatalog workers data monitoring workers-premium"
+#   (or via the industream-cli when the license entitles it).
+#
+# Carries NO deploy:/labels/secrets-backend/net-names — the
+# runtime.<swarm|compose>/workers-premium.yml overlay owns those. Runnable as-is
+# under plain `docker compose` only when merged with a runtime overlay.
+#
+# YAML ANCHORS ARE FILE-LOCAL: this file re-declares the x-worker / &worker-env
+# anchor block verbatim from base/workers.yml so `<<: *worker` resolves here.
+# Keep it in sync with workers.yml.
+#
+# Each worker is a full-ref bundle var ${WORKER_*_IMAGE}, NO inline `:-default`
+# — a missing var must fail loudly, never pull a stale tag. The bundle
+# (scripts/render-bundles.sh) resolves these 4 premium workers to
+# ENTERPRISE_REGISTRY at generation.
+# =============================================================================
+
+# --- shared worker shape (copied verbatim from base/workers.yml) -------------
+# Anchors are file-local; workers-premium services need their own copy so
+# `<<: *worker` / `<<: *worker-env` resolve when this file is merged.
+x-worker: &worker
+  environment: &worker-env
+    FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
+    FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
+    FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
+    FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8080}
+  # NOTE: no `depends_on: flowmaker-scheduler/-logging` here — those services
+  # live in the core group, not this file. Cross-group start ordering is a
+  # full-stack-compose concern; a per-group render must stay self-contained.
+
+services:
+  # ==========================================
+  # PREMIUM WORKERS (enterprise → ENTERPRISE_REGISTRY)
+  # Gated behind PRODUCT_DATACATALOG entitlement at deploy time.
+  # ==========================================
+  worker-opc-ua-client:
+    <<: *worker
+    image: ${WORKER_OPC_UA_CLIENT_IMAGE}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-opc-ua-client001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-opc-ua-client:5560
+
+  worker-rtsp-client:
+    <<: *worker
+    image: ${WORKER_RTSP_CLIENT_IMAGE}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-rtsp-client001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-rtsp-client:5560
+
+  worker-luminosity-box:
+    <<: *worker
+    image: ${WORKER_LUMINOSITY_BOX_IMAGE}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-luminosity-box001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-luminosity-box:5560
+
+  worker-minio-sink:
+    <<: *worker
+    image: ${WORKER_MINIO_SINK_IMAGE}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-minio-sink001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-minio-sink:5560
+      MINIO_ENDPOINT: http://minio:9000
