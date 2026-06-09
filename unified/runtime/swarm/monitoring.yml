@@ -61,6 +61,8 @@ services:
         target: ${ENV}_datacatalog_db_password
       - source: postgres_admin_password
         target: ${ENV}_postgres_admin_password
+      - source: datacatalog_api_key
+        target: datacatalog_api_key
     deploy:
       labels:
         - traefik.enable=true
@@ -85,8 +87,10 @@ services:
         - traefik.http.routers.${ENV}-grafana-live-secure.middlewares=allow-iframe@file
         - traefik.http.routers.${ENV}-grafana-live-secure.priority=200
       resources:
-        limits:       { cpus: '0.25', memory: 384M }
-        reservations: { cpus: '0.03', memory: 128M }
+        # grafana 13 OSS + provisioned plugins + the DataBridge datasource backend
+        # blow past 384M → OOM crash-loop (seen on the .233 gate, Jun 8). 1G + 256M.
+        limits:       { cpus: '0.5', memory: 1024M }
+        reservations: { cpus: '0.05', memory: 256M }
       restart_policy: { condition: any, delay: 10s, max_attempts: 0, window: 120s }
 
   grafana-wrapper:
@@ -203,6 +207,9 @@ secrets:
     external: true
   influx_admin_token:
     name: ${ENV}_influx_admin_token
+    external: true
+  datacatalog_api_key:
+    name: ${ENV}_datacatalog_api_key
     external: true
 
 volumes:
