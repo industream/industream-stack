@@ -180,7 +180,11 @@ seed_menu_apps() {
       hub_cid="$(docker ps -q --filter "name=${PROJECT}-industream-hub-backend" 2>/dev/null | head -1)"
       [[ -z "$hub_cid" ]] && hub_cid="$(docker ps -q --filter "name=${PROJECT}_industream-hub-backend" 2>/dev/null | head -1)"
     fi
-    if [[ -n "$hub_cid" ]] && docker exec "$hub_cid" wget -qO- http://localhost:3050/ >/dev/null 2>&1; then
+    # Readiness = the INTERNAL free-vend port (3051) the seeder writes to, on a
+    # real route (/apps → 200). The public API root (3050/) has NO route and
+    # 404s, which made wget exit non-zero → the seeder skipped every time even
+    # though the Hub was up (empty Hub menu on every install).
+    if [[ -n "$hub_cid" ]] && docker exec "$hub_cid" wget -qO- http://localhost:3051/apps >/dev/null 2>&1; then
       break
     fi
     hub_cid=""
