@@ -286,16 +286,17 @@ else
   for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
-  # Pre-pull serially BEFORE the stack deploy. `docker stack deploy` pulls one
-  # image per task in parallel, which can wedge containerd on small nodes (tasks
-  # stuck in 'Preparing' even when the image is already locally available, while a
-  # manual `docker pull` returns instantly). Pulling them up-front, one at a time,
-  # avoids that. Image refs are resolved from the assembled files with the env
-  # sourced above (python3 os.path.expandvars) → covers platform + third-party.
-  # Best-effort: failures are non-fatal (the stack deploy still retries).
+  # Pre-pull images BEFORE the stack deploy, a FEW at a time. `docker stack deploy`
+  # pulls one image per task ALL AT ONCE (~33 concurrent), which wedges containerd
+  # on small nodes (tasks stuck in 'Preparing' even when the image is locally
+  # available, while a manual `docker pull` returns instantly). A bounded pool
+  # (-P 4) is well under that threshold yet ~4× faster than serial. Image refs are
+  # resolved from the assembled files with the env sourced above (python3
+  # os.path.expandvars) → covers platform + third-party. Best-effort/NON-FATAL:
+  # any pull that fails is left for the stack deploy to retry.
   _pp_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _pp_files+=("$f"); done
-  echo "▶ pre-pulling images (serial, avoids swarm pull wedge)…"
-  python3 - "${_pp_files[@]}" <<'PY' | while IFS= read -r _img; do
+  echo "▶ pre-pulling images (≤4 in parallel, avoids swarm's all-at-once pull wedge)…"
+  python3 - "${_pp_files[@]}" <<'PY' | xargs -r -P 4 -n 1 sh -c 'docker pull "$1" >/dev/null 2>&1 && echo "  ✓ $1" || echo "  ⚠ $1 (deploy will retry)"' _
 import sys, os, re
 seen = set()
 for fn in sys.argv[1:]:
@@ -313,8 +314,6 @@ for fn in sys.argv[1:]:
         seen.add(img)
         print(img)
 PY
-    if docker pull "$_img" >/dev/null 2>&1; then echo "  ✓ ${_img}"; else echo "  ⚠ ${_img} (deploy will retry)"; fi
-  done
   C_FILES=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] && C_FILES+=(-c) || C_FILES+=("$f"); done
   docker stack deploy --detach=false --with-registry-auth --prune "${C_FILES[@]}" "$STACK"
   seed_menu_apps                       # both editions: seed the Hub launchpad
