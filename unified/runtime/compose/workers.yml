@@ -6,9 +6,12 @@
 #     flat bridge the compose FlowMaker stack joins (vs swarm's ${ENV}-platform
 #     overlay).
 #   - `restart: unless-stopped` (compose has no swarm restart_policy).
-#   - `profiles: [premium]` on the 4 enterprise workers so a CE `docker compose
-#     up` skips them; enable with `--profile premium` when entitled.
 # Image + functional env come from base/workers.yml.
+#
+# The 4 enterprise workers moved to the Enterprise-only, opt-in
+# `workers-premium` group (base/workers-premium.yml +
+# runtime/compose/workers-premium.yml). Gating is now by group membership
+# (deploy.sh's EE-only-group gate), no longer a `profiles: [premium]` flag.
 # =============================================================================
 
 # Shared compose shape: flat external network + restart policy.
@@ -49,20 +52,6 @@ services:
     <<: *compose-worker
   worker-datacatalog-mapper:
     <<: *compose-worker
-
-  # --- premium (entitlement-gated; `--profile premium`) ---
-  worker-opc-ua-client:
-    <<: *compose-worker
-    profiles: ["premium"]
-  worker-rtsp-client:
-    <<: *compose-worker
-    profiles: ["premium"]
-  worker-luminosity-box:
-    <<: *compose-worker
-    profiles: ["premium"]
-  worker-minio-sink:
-    <<: *compose-worker
-    profiles: ["premium"]
 
 # =============================================================================
 # NETWORKS — the shared external bridge created by the FlowMaker compose stack.

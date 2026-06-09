@@ -10,7 +10,8 @@
 #
 #   ./render-bundles.sh 1.0.1            # writes releases/bundle-platform-1.0.1/
 #
-# Output: .env.core / .env.workers / .env.datacatalog — each `IMAGE_VAR=full-ref`.
+# Output: .env.core / .env.workers / .env.workers-premium / .env.datacatalog —
+# each `IMAGE_VAR=full-ref`.
 # base/*.yml then reference ${X_IMAGE}; deploy.sh sources the chosen bundle.
 # =============================================================================
 set -eo pipefail
@@ -61,11 +62,11 @@ WORKER_CONDITIONAL_DATASET_VALIDATOR_IMAGE|flowmaker.boxes/conditional-dataset-v
 WORKER_ENQUEUE_IMAGE|flowmaker.boxes/enqueue|community|WORKER_ENQUEUE_VERSION|workers
 WORKER_EQUATION_SOLVER_IMAGE|flowmaker.boxes/equation-solver|community|WORKER_EQUATION_SOLVER_VERSION|workers
 WORKER_DATACATALOG_MAPPER_IMAGE|flowmaker.boxes/datacatalog-mapper|community|WORKER_DATACATALOG_MAPPER_VERSION|workers
-# --- workers (enterprise) ---
-WORKER_OPC_UA_CLIENT_IMAGE|flowmaker.boxes/opc-ua-client|enterprise|WORKER_OPC_UA_CLIENT_VERSION|workers
-WORKER_RTSP_CLIENT_IMAGE|flowmaker.boxes/rtsp-client|enterprise|WORKER_RTSP_CLIENT_VERSION|workers
-WORKER_LUMINOSITY_BOX_IMAGE|flowmaker.boxes/luminosity-box|enterprise|WORKER_LUMINOSITY_BOX_VERSION|workers
-WORKER_MINIO_SINK_IMAGE|flowmaker.boxes/minio-sink|enterprise|WORKER_MINIO_SINK_VERSION|workers
+# --- workers-premium (enterprise, opt-in EE-only group) ---
+WORKER_OPC_UA_CLIENT_IMAGE|flowmaker.boxes/opc-ua-client|enterprise|WORKER_OPC_UA_CLIENT_VERSION|workers-premium
+WORKER_RTSP_CLIENT_IMAGE|flowmaker.boxes/rtsp-client|enterprise|WORKER_RTSP_CLIENT_VERSION|workers-premium
+WORKER_LUMINOSITY_BOX_IMAGE|flowmaker.boxes/luminosity-box|enterprise|WORKER_LUMINOSITY_BOX_VERSION|workers-premium
+WORKER_MINIO_SINK_IMAGE|flowmaker.boxes/minio-sink|enterprise|WORKER_MINIO_SINK_VERSION|workers-premium
 '
 
 emit() {  # $1=bundle file suffix
@@ -86,4 +87,4 @@ emit() {  # $1=bundle file suffix
   echo "  ✓ $out ($(grep -c '=' "$out") images)"
 }
 echo "▶ bundle-platform-${VER}  (community=$COMMUNITY_REGISTRY / enterprise=$ENTERPRISE_REGISTRY)"
-emit core; emit flowmaker; emit datacatalog; emit data; emit monitoring; emit workers
+emit core; emit flowmaker; emit datacatalog; emit data; emit monitoring; emit workers; emit workers-premium

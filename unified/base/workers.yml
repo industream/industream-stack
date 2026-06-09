@@ -165,38 +165,9 @@ services:
       FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-datacatalog-mapper:5560
 
   # ==========================================
-  # PREMIUM WORKERS (enterprise → ENTERPRISE_REGISTRY)
-  # Gated behind PRODUCT_DATACATALOG entitlement at deploy time.
+  # PREMIUM WORKERS (enterprise → ENTERPRISE_REGISTRY) moved out to the
+  # Enterprise-only, opt-in `workers-premium` group: base/workers-premium.yml +
+  # runtime/<swarm|compose>/workers-premium.yml. deploy.sh gates that group on
+  # --edition ee (see the EE-only-group gate). This keeps a CE deploy — on BOTH
+  # runtimes — from ever assembling the 4 premium workers.
   # ==========================================
-  worker-opc-ua-client:
-    <<: *worker
-    image: ${WORKER_OPC_UA_CLIENT_IMAGE}
-    environment:
-      <<: *worker-env
-      FM_WORKER_ID: worker-opc-ua-client001
-      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-opc-ua-client:5560
-
-  worker-rtsp-client:
-    <<: *worker
-    image: ${WORKER_RTSP_CLIENT_IMAGE}
-    environment:
-      <<: *worker-env
-      FM_WORKER_ID: worker-rtsp-client001
-      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-rtsp-client:5560
-
-  worker-luminosity-box:
-    <<: *worker
-    image: ${WORKER_LUMINOSITY_BOX_IMAGE}
-    environment:
-      <<: *worker-env
-      FM_WORKER_ID: worker-luminosity-box001
-      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-luminosity-box:5560
-
-  worker-minio-sink:
-    <<: *worker
-    image: ${WORKER_MINIO_SINK_IMAGE}
-    environment:
-      <<: *worker-env
-      FM_WORKER_ID: worker-minio-sink001
-      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-minio-sink:5560
-      MINIO_ENDPOINT: http://minio:9000

@@ -1,0 +1,43 @@
+# =============================================================================
+# runtime/compose/workers-premium.yml — plain-compose overlay for the premium
+# worker fleet.
+# =============================================================================
+# Group: workers-premium (Enterprise-only, opt-in). Owns ONLY the
+# compose-topology concerns the neutral base must not carry:
+#   - the shared external `flowmaker-net` (named by ${FM_NETWORK}), the single
+#     flat bridge the compose FlowMaker stack joins.
+#   - `restart: unless-stopped` (compose has no swarm restart_policy).
+# Image + functional env come from base/workers-premium.yml.
+#
+# NO `profiles: [premium]` here — gating is now by group membership
+# (deploy.sh's EE-only-group gate), not a compose profile. A CE deploy never
+# assembles this group at all.
+#
+# YAML ANCHORS ARE FILE-LOCAL: this file re-declares the compose worker anchor
+# (copied verbatim from runtime/compose/workers.yml) so `<<: *compose-worker`
+# resolves here.
+# =============================================================================
+
+# Shared compose shape: flat external network + restart policy.
+x-compose-worker: &compose-worker
+  restart: unless-stopped
+  networks:
+    - flowmaker-net
+
+services:
+  worker-opc-ua-client:
+    <<: *compose-worker
+  worker-rtsp-client:
+    <<: *compose-worker
+  worker-luminosity-box:
+    <<: *compose-worker
+  worker-minio-sink:
+    <<: *compose-worker
+
+# =============================================================================
+# NETWORKS — the shared external bridge created by the FlowMaker compose stack.
+# =============================================================================
+networks:
+  flowmaker-net:
+    name: ${FM_NETWORK:-flowmaker-net}
+    external: true

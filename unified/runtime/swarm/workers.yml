@@ -30,24 +30,9 @@ x-swarm-worker: &swarm-worker
       delay: 10s
       window: 120s
 
-# Premium workers carry a heavier envelope (protocol/codec workloads).
-x-swarm-worker-premium: &swarm-worker-premium
-  networks:
-    - platform
-  healthcheck:
-    test: ["NONE"]
-  deploy:
-    resources:
-      limits:
-        cpus: "0.5"
-        memory: 256M
-      reservations:
-        cpus: "0.08"
-        memory: 128M
-    restart_policy:
-      condition: any
-      delay: 10s
-      window: 120s
+# NOTE: the premium workers (heavier envelope) moved to the Enterprise-only,
+# opt-in `workers-premium` group: runtime/swarm/workers-premium.yml carries its
+# own x-swarm-worker-premium anchor (anchors are file-local).
 
 services:
   worker-data-logger:
@@ -85,28 +70,6 @@ services:
         limits:
           cpus: "0.25"
           memory: 256M
-        reservations:
-          cpus: "0.03"
-          memory: 128M
-      restart_policy:
-        condition: any
-        delay: 10s
-        window: 120s
-
-  # --- premium ---
-  worker-opc-ua-client:
-    <<: *swarm-worker-premium
-  worker-rtsp-client:
-    <<: *swarm-worker-premium
-  worker-luminosity-box:
-    <<: *swarm-worker
-  worker-minio-sink:
-    <<: *swarm-worker
-    deploy:
-      resources:
-        limits:
-          cpus: "0.25"
-          memory: 384M
         reservations:
           cpus: "0.03"
           memory: 128M
