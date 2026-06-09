@@ -7,7 +7,7 @@
 #
 # This file is also the SECURITY + AUTH FIX for the compose tree, which today:
 #   - has NO Hub-JWT validation block  → datacatalog-api accepts unauthenticated
-#   - hardcodes `Password=industream4370` inline  → secret leak
+#   - hardcoded an inline DB password  → secret leak (now a file secret)
 #   - serves on 8080 instead of the dual-port 8002/8003
 # All three are corrected here ONCE and inherited by both runtimes.
 # =============================================================================

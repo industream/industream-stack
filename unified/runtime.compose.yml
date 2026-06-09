@@ -4,7 +4,7 @@
 # =============================================================================
 # SECURITY FIX lands here: compose datacatalog-api now reads its DB password from
 # a FILE secret mounted at /run/secrets/<name> and resolved by the SAME
-# dotnet-entrypoint as swarm — replacing the previous inline `industream4370`.
+# dotnet-entrypoint as swarm — replacing the previous inline DB password.
 # It also inherits the Hub-JWT block + dual-port from base/datacatalog.yml.
 # =============================================================================
 services:
