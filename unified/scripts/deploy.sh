@@ -160,6 +160,52 @@ if [[ "$RENDER" == true ]]; then
   exit 0
 fi
 
+# ---- Hub menu apps seeder (BOTH editions) -----------------------------------
+# The Hub launchpad menu (flowmaker / datacatalog / grafana / databridge tiles)
+# must be seeded for CE *and* EE — a fresh install otherwise shows an EMPTY menu.
+# We run the canonical seeder from the REPO (scripts/setup/seed-menu-apps-stack.sh,
+# always present) against the running hub-backend's INTERNAL free-vend port. The
+# seeder discovers the container itself via --runtime/--stack/--project.
+# Best-effort and strictly NON-FATAL — a deploy never fails because seeding did.
+seed_menu_apps() {
+  local hub_cid i domain scope
+  echo ""
+  echo "▶ Hub menu apps seeder (launchpad tiles)…"
+  # Resolve the hub-backend container id per runtime, polling until it appears
+  # AND answers on its public port (compose `up -d` / swarm deploy return early).
+  for i in $(seq 1 60); do
+    if [[ "$RUNTIME" == swarm ]]; then
+      hub_cid="$(docker ps -q --filter "name=${STACK}_industream-hub-backend" 2>/dev/null | head -1)"
+    else
+      hub_cid="$(docker ps -q --filter "name=${PROJECT}-industream-hub-backend" 2>/dev/null | head -1)"
+      [[ -z "$hub_cid" ]] && hub_cid="$(docker ps -q --filter "name=${PROJECT}_industream-hub-backend" 2>/dev/null | head -1)"
+    fi
+    if [[ -n "$hub_cid" ]] && docker exec "$hub_cid" wget -qO- http://localhost:3050/ >/dev/null 2>&1; then
+      break
+    fi
+    hub_cid=""
+    sleep 2
+  done
+  [[ -z "$hub_cid" ]] && { echo "  ⚠ hub-backend container not ready — skipping menu-apps seeding (non-fatal)" >&2; return 0; }
+
+  # Permission fix (NON-FATAL): the hub image's /app/data named volume initialises
+  # root:root, but the container runs as node(1000). Without this the /apps endpoint
+  # 500s with EACCES (mkdir '/app/data/hub'). The REAL fix belongs in the hub image
+  # (chown /app/data to node in its Dockerfile) — this is a deploy-side stopgap.
+  docker exec -u 0 "$hub_cid" chown -R node:node /app/data 2>/dev/null || true
+  sleep 2
+
+  # Run the seeder from the REPO (always present, preferred over the image copy).
+  domain="${INDUSTREAM_DOMAIN:-localhost}"
+  local scope_args=(--domain "$domain" --runtime "$RUNTIME")
+  [[ "$RUNTIME" == swarm ]] && scope_args+=(--stack "$STACK") || scope_args+=(--project "$PROJECT")
+  if HUB_BACKEND_SERVICE=industream-hub-backend bash scripts/setup/seed-menu-apps-stack.sh "${scope_args[@]}" >/dev/null 2>&1; then
+    echo "  ✓ Hub menu apps seeded"
+  else
+    echo "  ⚠ menu-apps seeding failed (non-fatal)"
+  fi
+}
+
 # ---- EE post-deploy seeders -------------------------------------------------
 # A greenfield EE deploy is loginnable WITHOUT the interactive Logto admin
 # wizard: the EE hub image ships offline seeders (/app/oidc-seeds, /app/menu-seeds)
@@ -197,7 +243,6 @@ seed_ee() {
   tmp="$(mktemp -d)"
   docker cp "${hub_cid}:/app/oidc-seeds/logto/seed-logto.sh" "$tmp/seed-logto.sh" 2>/dev/null \
     || { echo "  ⚠ seeders absent from the hub image (pre-2.1.3) — run scripts/setup/ manually" >&2; rm -rf "$tmp"; return 0; }
-  docker cp "${hub_cid}:/app/menu-seeds/seed-menu-apps-stack.sh" "$tmp/seed-menu.sh" 2>/dev/null || true
 
   local scope=(--runtime "$RUNTIME")
   [[ "$RUNTIME" == swarm ]] && scope+=(--stack "$STACK") || scope+=(--project "$PROJECT")
@@ -214,14 +259,6 @@ seed_ee() {
   else
     echo "  ⚠ python3 argon2-cffi missing on host — Logto user bootstrap skipped"
   fi
-
-  # 2) Launchpad menu apps + auth-bridge origin allowlist (internal port, no JWT).
-  if [[ -f "$tmp/seed-menu.sh" ]]; then
-    if HUB_BACKEND_SERVICE=industream-hub-backend bash "$tmp/seed-menu.sh" \
-         --domain "$domain" "${scope[@]}" >/dev/null 2>&1; then
-      echo "  ✓ launchpad menu apps + bridge origins seeded"
-    else echo "  ⚠ launchpad seeding failed (non-fatal)"; fi
-  fi
   rm -rf "$tmp"
 }
 
@@ -229,16 +266,16 @@ seed_ee() {
 if [[ "$RUNTIME" == compose ]]; then
   [[ -n "$PROJECT" ]] || { echo "✗ --project required for compose" >&2; exit 1; }
   docker compose -p "$PROJECT" "${ENV_FILES[@]}" "${FILES[@]}" up -d
-  if [[ "$EDITION" == ee ]]; then
-    # Source the env so seed_ee sees INDUSTREAM_DOMAIN / OIDC_CLIENT_ID / admin creds
-    # (compose dispatch uses --env-file, which doesn't export into this process).
-    set -a; export ENV
-    source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
-    for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
-    [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
-    set +a
-    seed_ee
-  fi
+  # Source the env so the seeders see INDUSTREAM_DOMAIN / OIDC_CLIENT_ID / admin creds
+  # (compose dispatch uses --env-file, which doesn't export into this process).
+  # Sourced UNCONDITIONALLY so seed_menu_apps runs for CE too.
+  set -a; export ENV
+  source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+  for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+  [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+  set +a
+  seed_menu_apps                              # both editions: seed the Hub launchpad
+  [[ "$EDITION" == ee ]] && seed_ee           # EE-only: Logto app/roles/user
 else
   [[ -n "$STACK" ]] || { echo "✗ --stack required for swarm" >&2; exit 1; }
   # `docker stack deploy` interpolates ${VAR} from the PROCESS env (not
@@ -280,5 +317,6 @@ PY
   done
   C_FILES=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] && C_FILES+=(-c) || C_FILES+=("$f"); done
   docker stack deploy --detach=false --with-registry-auth --prune "${C_FILES[@]}" "$STACK"
-  [[ "$EDITION" == ee ]] && seed_ee   # env already sourced above
+  seed_menu_apps                       # both editions: seed the Hub launchpad
+  [[ "$EDITION" == ee ]] && seed_ee    # EE-only: Logto app/roles/user (env sourced above)
 fi
