@@ -16,6 +16,12 @@ services:
       platform:
         aliases:
           - industream-hub-backend
+    secrets:
+      # mount the env-scoped external secret at the FIXED in-container path
+      # /run/secrets/hub_jwt_signing_key (IH_JWT_SIGNING_KEY_FILE in base/core.yml)
+      # — same convention as datacatalog_api_key (name env-scoped, target fixed).
+      - source: hub_jwt_signing_key
+        target: hub_jwt_signing_key
     deploy:
       labels:
         - traefik.enable=true
@@ -134,6 +140,9 @@ secrets:
     external: true
   minio_root_password:
     name: ${MINIO_ROOT_PASSWORD_SECRET_NAME}
+    external: true
+  hub_jwt_signing_key:
+    name: ${ENV}_hub_jwt_signing_key
     external: true
 
 volumes:
