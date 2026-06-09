@@ -133,6 +133,7 @@ BASE_SECRETS=(
     "grafana_admin_password"
     "grafana_db_password"
     "datacatalog_db_password"
+    "datacatalog_api_key"
     "influx_admin_password"
     "influx_admin_token"
     "minio_root_user"
