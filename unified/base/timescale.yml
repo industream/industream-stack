@@ -1,0 +1,68 @@
+# =============================================================================
+# base/timescale.yml — orchestrator-neutral (image + functional env only).
+# =============================================================================
+# Group: timescale — TimescaleDB timeseries backend (timescaledb + the
+# databridge-timescaledb API variant).
+#
+# ENTERPRISE-ONLY and OPTIONAL (opt-in). It is NOT in the default group set;
+# deploy.sh rejects it unless --edition ee. Community deploys use InfluxDB
+# (the `data` group's influxdb + databridge), which stays the CE default.
+#
+#   Enable (when entitled):
+#     ./scripts/deploy.sh --edition ee --runtime <swarm|compose> --env prod \
+#       --groups "core flowmaker datacatalog workers data monitoring timescale"
+#   (or via the industream-cli when the license entitles it).
+#
+# Carries NO deploy:/labels/secrets-backend/net-names/volumes — the
+# runtime.<swarm|compose>/timescale.yml overlay owns those. Runnable as-is under
+# plain `docker compose` only when merged with a runtime overlay.
+#
+# Secret/token resolution is identical on both runtimes via the mounted
+# dotnet-entrypoint.sh: it finds /run/secrets/*_${DB_SECRET_PATTERN} and
+# replaces __DB_PASSWORD_PLACEHOLDER__. The base NEVER inlines an image tag
+# (versions.env) or a password (placeholder).
+#
+# The databridge-timescaledb variant reuses the community DATABRIDGE_API_IMAGE
+# pointed at the timescaledb store (timescale/timescaledb is a third-party image).
+# =============================================================================
+services:
+  # ---------------------------------------------------------------------------
+  # TimescaleDB — Postgres + time-series extension. Password via file secret
+  # (POSTGRES_PASSWORD_FILE) — the path is supplied by the runtime overlay.
+  # ---------------------------------------------------------------------------
+  timescaledb:
+    image: timescale/timescaledb:${TIMESCALEDB_VERSION}
+    environment:
+      - POSTGRES_USER=${TIMESCALEDB_ADMIN_USER}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/${TIMESCALEDB_DB_SECRET_NAME}
+      - POSTGRES_DB=${TIMESCALEDB_DB_NAME}
+      # Pin PGDATA inside the mounted volume to guard against Postgres 18+ moving
+      # the default path and silently bypassing the mount (data loss on restart).
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALEDB_ADMIN_USER} -d ${TIMESCALEDB_DB_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # DataBridge (TimescaleDB variant) — same image, pointed at timescaledb.
+  # ---------------------------------------------------------------------------
+  databridge-timescaledb:
+    image: ${DATABRIDGE_API_IMAGE}
+    entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
+    command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
+    environment:
+      - DB_SECRET_PATTERN=${TIMESCALEDB_DB_SECRET_PATTERN}
+      - PostgreSql__ConnectionString=Server=timescaledb;Port=5432;User Id=${TIMESCALEDB_ADMIN_USER};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${TIMESCALEDB_DB_NAME};
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    depends_on:
+      - timescaledb
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -qS http://localhost:8080/swagger 2>&1 | grep -qE 'HTTP/1.. (200|301|302)' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

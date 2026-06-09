@@ -7,8 +7,9 @@
 # runtime.compose.env (consumed by base interpolation), not here.
 #
 # Compose has no shared `postgres`, so the databridge-postgresql variant gets a
-# dedicated DB (databridge-postgresql-db). InfluxDB/TimescaleDB secrets are FILE
-# secrets resolved by the SAME entrypoints as swarm.
+# dedicated DB (databridge-postgresql-db). InfluxDB secrets are FILE secrets
+# resolved by the SAME entrypoints as swarm. (TimescaleDB moved to the
+# Enterprise-only `timescale` group — runtime/compose/timescale.yml.)
 # =============================================================================
 services:
   influxdb:
@@ -39,15 +40,6 @@ services:
       caddy.tls.issuer: internal
       caddy.tls.issuer.lifetime: 24000h
 
-  timescaledb:
-    networks:
-      - flowmaker-net
-    volumes:
-      - timescaledb-data:/var/lib/postgresql/data
-    secrets:
-      - timescaledb_password
-    restart: unless-stopped
-
   databridge-postgresql:
     networks:
       - flowmaker-net
@@ -58,18 +50,6 @@ services:
     restart: unless-stopped
     labels:
       caddy: databridge-pg.${FM_DOMAIN}
-      caddy.reverse_proxy: "{{upstreams 8080}}"
-      caddy.tls.issuer: internal
-      caddy.tls.issuer.lifetime: 24000h
-
-  databridge-timescaledb:
-    networks:
-      - flowmaker-net
-    secrets:
-      - timescaledb_password
-    restart: unless-stopped
-    labels:
-      caddy: databridge-tsdb.${FM_DOMAIN}
       caddy.reverse_proxy: "{{upstreams 8080}}"
       caddy.tls.issuer: internal
       caddy.tls.issuer.lifetime: 24000h
@@ -110,15 +90,12 @@ secrets:
     file: ${SECRETS_DIR:-./secrets}/influx_admin_password
   influx_admin_token:
     file: ${SECRETS_DIR:-./secrets}/influx_admin_token
-  timescaledb_password:
-    file: ${SECRETS_DIR:-./secrets}/timescaledb_password
   databridge_pg_password:
     file: ${SECRETS_DIR:-./secrets}/databridge_pg_password
 
 volumes:
   influxdb-data:
   influxdb-config:
-  timescaledb-data:
   databridge-pgdata:
 
 networks:

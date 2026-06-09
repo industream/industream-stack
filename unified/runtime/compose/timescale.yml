@@ -1,0 +1,41 @@
+# =============================================================================
+# runtime/compose/timescale.yml — COMPOSE-only plumbing (Caddy labels/file
+# secrets/restart/named volumes). Merged LAST over base/timescale.yml.
+# =============================================================================
+# Group: timescale (Enterprise-only, opt-in). DB host + secret names/patterns
+# come from runtime.compose.env (consumed by base interpolation), not here.
+# TimescaleDB secrets are FILE secrets resolved by the SAME entrypoints as swarm.
+# =============================================================================
+services:
+  timescaledb:
+    networks:
+      - flowmaker-net
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+    secrets:
+      - timescaledb_password
+    restart: unless-stopped
+
+  databridge-timescaledb:
+    networks:
+      - flowmaker-net
+    secrets:
+      - timescaledb_password
+    restart: unless-stopped
+    labels:
+      caddy: databridge-tsdb.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+secrets:
+  timescaledb_password:
+    file: ${SECRETS_DIR:-./secrets}/timescaledb_password
+
+volumes:
+  timescaledb-data:
+
+networks:
+  flowmaker-net:
+    external: true
+    name: ${FM_NETWORK}
