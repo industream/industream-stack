@@ -36,7 +36,7 @@ docker stack deploy -c base/datacatalog.yml [-c base/...] -c runtime.swarm.yml <
 - **Increment 1 (this branch):** scaffold + version/registry/auth single sources +
   **datacatalog vertical slice**. Carries the **security + auth fix** for compose:
   - added the missing **Hub-JWT validation block** (was unauthenticated),
-  - removed the inline **`Password=industream4370`** → file secret + `dotnet-entrypoint`
+  - removed the inline **`Password=<old-db-password>`** → file secret + `dotnet-entrypoint`
     (same `/run/secrets/<name>` mechanism as swarm),
   - **dual-port 8002;8003** (was 8080).
   Compose render validated (`docker compose config`).

@@ -59,7 +59,7 @@ overlays or as the `*_FILE` secret pattern; not truly missing.)
 
 ## 🔴 Confirmed bug on master (T6 — independent, fix onto master)
 `docker-compose.datacatalog.yml`:
-1. **Hardcoded DB password** `Password=industream4370` (API connection string + `POSTGRES_PASSWORD`).
+1. **Hardcoded DB password** `Password=<old-db-password>` (API connection string + `POSTGRES_PASSWORD`).
    → file secret resolved by the dotnet-entrypoint (unified pattern).
 2. **Missing `$`**: `Authentication__Frontend__Issuer={FM_AUTH_ISSUER:-hub-backend}` → the
    value becomes the literal string `{FM_AUTH_ISSUER:-hub-backend}`, breaking issuer
