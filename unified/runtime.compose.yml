@@ -50,6 +50,9 @@ services:
       - POSTGRES_DB=${DATACATALOG_DB_NAME:-DataCatalog}
       - POSTGRES_USER=${DATACATALOG_DB_USER:-datacatalog}
       - POSTGRES_PASSWORD_FILE=/run/secrets/datacatalog_db_password
+      # postgres:18 refuses a bare /var/lib/postgresql/data mount — pin PGDATA to a
+      # subdir (Postgres 18+ moved the default). Matches base/data.yml's shared postgres.
+      - PGDATA=/var/lib/postgresql/data/pgdata
     secrets:
       - datacatalog_db_password
     volumes:
