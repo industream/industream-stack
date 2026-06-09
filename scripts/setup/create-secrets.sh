@@ -145,6 +145,7 @@ BASE_SECRETS=(
     "backup_monitor_htpasswd"
     "hub_backend_admin_user"
     "hub_backend_admin_password"
+    "hub_jwt_signing_key"
 )
 
 # =============================================================================

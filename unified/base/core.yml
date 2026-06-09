@@ -47,6 +47,12 @@ services:
       # --- JWT CONTRACT (THE INVARIANT — NEVER CHANGES) ---
       - IH_ISSUER=${HUB_AUTH_ISSUER}
       - IH_AUDIENCE=${HUB_AUTH_AUDIENCE}
+      # --- Stable JWT signing key. Without this the backend generates an
+      # EPHEMERAL key at boot ("Tokens will break on restart"). The value is
+      # read from the mounted file secret `hub_jwt_signing_key` — fixed name,
+      # same /run/secrets/<name> mechanism as datacatalog_api_key; the runtime
+      # overlay declares the secret object + per-env name.
+      - IH_JWT_SIGNING_KEY_FILE=/run/secrets/hub_jwt_signing_key
       - IH_ACCESS_TOKEN_TTL_SECONDS=900
       - IH_REFRESH_TOKEN_TTL_SECONDS=2592000
       - IH_BACKEND_ORIGIN=${INDUSTREAM_HUB_ORIGIN}

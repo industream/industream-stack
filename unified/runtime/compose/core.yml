@@ -24,6 +24,8 @@ services:
     restart: unless-stopped
     mem_limit: 256m
     mem_reservation: 32m
+    secrets:
+      - hub_jwt_signing_key
     labels:
       caddy: hub-api.${FM_DOMAIN}
       caddy.reverse_proxy: "{{upstreams 3050}}"
@@ -83,6 +85,8 @@ secrets:
     file: ${SECRETS_DIR:-./secrets}/minio_root_user
   minio_root_password:
     file: ${SECRETS_DIR:-./secrets}/minio_root_password
+  hub_jwt_signing_key:
+    file: ${SECRETS_DIR:-./secrets}/hub_jwt_signing_key
 
 networks:
   flowmaker-net:
