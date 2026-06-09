@@ -54,7 +54,7 @@ Sync to confirm (recommended resolutions in parens):
 - Deps: T1 (done). NOT dependent on a missing branch — master read directly.
 
 ## T6 — Fix the 3 deployment-v2 bugs  [quick — PR onto David's branch]
-- `industream4370` inline → file secret (datacatalog-api + datacatalog-postgresql).
+- `<old-db-password>` inline → file secret (datacatalog-api + datacatalog-postgresql).
 - `{FM_AUTH_ISSUER:-hub-backend}` → `${FM_AUTH_ISSUER:-hub-backend}` (missing `$`).
 - Remove `deployment/wget-log`.
 - Independent of the merge; do it on `feat/deployment-v2` so David benefits now.

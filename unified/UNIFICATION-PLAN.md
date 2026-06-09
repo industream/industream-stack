@@ -94,7 +94,7 @@ Derived from the diff finding. "Shared %" = image + functional env block + depen
 |---|---|---|---|---|
 | uifusion-api (Hub backend) | image, full `IH_*` env, JWKS port 3050/3051, issuer/audience | Traefik vs Caddy labels; secret injection (`.env` vs file); net alias `industream-hub-backend`; `deploy.resources` vs `mem_limit` | ~55/45 | **NAME: `uifusion-api` vs `industream-hub-backend`** |
 | uifusion (Hub shell) | image, NODE env, CONFIG_URL shape | router labels; EE OAUTH flip is swarm-only today | ~50/50 | NAME `uifusion` vs `industream-hub-frontend`; EE shell flip asymmetric |
-| datacatalog-api | image, `Authentication__Frontend__Issuer/Audience/JwksUrl`, ports 8002/8003 | secret-name vs inline pw; labels; nets | ~40/60 | **compose has NO Hub-JWT block + inline pw `industream4370`** |
+| datacatalog-api | image, `Authentication__Frontend__Issuer/Audience/JwksUrl`, ports 8002/8003 | secret-name vs inline pw; labels; nets | ~40/60 | **compose has NO Hub-JWT block + inline pw `<old-db-password>`** |
 | datacatalog-ui | image, `NODE_ENV`, `DATACATALOG_API_URL` shape | host value; labels; nets | ~60/40 | host value only |
 | flowmaker-scheduler/confighub/logging | image, `FM_RUNTIME_*`/`FM_CONFIGHUB_URL`/ports 3120/3121/4000/3000 | labels; nets; healthcheck shape | ~70/30 | **swarm omits `FM_AUTH_*`; compose sets it** (auth-on vs auth-off) |
 | flowmaker-frontend | image, NODE env | labels; nets | ~70/30 | upstream port: swarm named svc vs caddy `{{upstreams 80}}` |
@@ -229,7 +229,7 @@ EE delta lives in `base/ee.yml` and is identical in spirit for both runtimes
   timeseries 2.0.9↔2.1.1, opc-ua 2.0.3↔2.5.5, dc-mapper 1.0.1↔1.0.4, DC api/ui, UIFusion).
   Tags chosen = "latest known-good" verified against registry.
 - `[A3]` Close compose datacatalog-api auth gap: add the `Authentication__Frontend__*`
-  Hub-JWT block; remove inline `Password=industream4370` → secret/file.
+  Hub-JWT block; remove inline `Password=<old-db-password>` → secret/file.
 - `[A4]` Decide FlowMaker core auth: enable `FM_AUTH_*` on the **swarm** side too
   (compose already has it) so the core is auth-on everywhere. Keep JWKS URL identical.
 - `[A5]` Rename decision applied as **network aliases only** for now (no hard rename yet):
@@ -426,7 +426,7 @@ Rules enforced by `render-versions.sh` (CI lint):
   `deploy.placement/secrets-objects`; stack ignores `mem_limit/cpus/ports/profiles`.
   Mitigation: the 60–70% orchestrator-specific surface lives ONLY in `runtime.*.yml`,
   never in base — base is the 30–40% intersection.
-- **Inline-secret leakage to swarm:** never flatten `industream4370` into base; secrets
+- **Inline-secret leakage to swarm:** never flatten `<old-db-password>` into base; secrets
   stay overlay-only (Phase 1/A3 + Phase 5 CI gate).
 - **EE silent degrade:** seeders best-effort; Phase 4 adds an explicit exit-code summary
   so a missing in-image seeder is loud, not a buried warning.

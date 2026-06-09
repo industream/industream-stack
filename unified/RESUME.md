@@ -45,7 +45,7 @@ ahead, fully merged). There was never a `deployment-v2` branch. Audited master d
 - Edition select = compose **`profiles:[premium]`** + `community.yml`/`ee.yml` overlay files;
   multi-instance via `fm create/up --workers --uimaker/init`.
 - NO monitoring, NO DataBridge/influx in his compose (ours-only, additive). Inline pw
-  `industream4370` (his bug). Caddy via infra.yml.
+  `<old-db-password>` (his bug). Caddy via infra.yml.
 - **DECISION LOCKED (2026-06-07): keep our bundle full-ref model** (user likes it); converge
   David at T0 — argument: he already accepts a generation step (`fm` sed-templating).
 - **T5-port candidates (real, on master):** `Authentication__Backend__ApiKey` (BACKEND_API_KEY),
@@ -65,7 +65,7 @@ T1/T2 draft branches (proof it works and he loses nothing).
 - **"gate VM"** → execute `VM-GATE-RUNBOOK.md`: deploy the 4 combos on .233 (swarm)
   + .41 (compose), validate (converge / JWKS / DataCatalog 401→200 / EE login / JWT probe).
 - **T6** (independent, no David needed): fix the 3 bugs on `feat/deployment-v2`
-  (inline pw `industream4370`, missing `$` in JWT issuer, stray `wget-log`).
+  (inline pw `<old-db-password>`, missing `$` in JWT issuer, stray `wget-log`).
 
 ## Map of docs (all in `unified/`)
 - `RESUME.md` — this file (start here).
