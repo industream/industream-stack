@@ -108,9 +108,24 @@ fi
 if [[ "$ATTACH" == true && "$RUNTIME" == swarm ]]; then
   FILES+=(-f "runtime/swarm/_platform-attach.yml")
 fi
+# user-custom overlays (OPTIONAL) — appended LAST so user files override
+# everything: platform base/, runtime overlays AND the EE transform. Drop your
+# own *.yml under custom/ (runtime-neutral) or custom/<RUNTIME>/ (runtime-specific)
+# to add services/workers or override platform ones WITHOUT forking. See
+# custom/README.md. No-op when the dir/files are absent.
+# nullglob makes a non-matching glob expand to NOTHING (not the literal pattern),
+# so an absent custom/ dir yields empty arrays → a clean no-op. Bash expands
+# globs already sorted, so neutral overlays precede their runtime-specific peers.
+shopt -s nullglob
+_custom_neutral=(custom/*.yml)
+_custom_runtime=("custom/${RUNTIME}"/*.yml)
+shopt -u nullglob
+CUSTOM_FILES=("${_custom_neutral[@]}" "${_custom_runtime[@]}")
+for cf in "${CUSTOM_FILES[@]}"; do FILES+=(-f "$cf"); done
 
 echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV} / bundle=${BUNDLE_DIR##*/} / groups=[${GROUP_SET}]"
 echo "  files: ${FILES[*]//-f /}"
+[[ ${#CUSTOM_FILES[@]} -gt 0 ]] && echo "  custom overlays: ${CUSTOM_FILES[*]}"
 
 # ---- Render-only gate (validate the assembled config, deploy nothing) -------
 if [[ "$RENDER" == true ]]; then

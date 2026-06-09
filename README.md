@@ -1,687 +1,203 @@
-# Industream Complete Stack
+# Industream Platform — Deployment
 
-Complete Docker Swarm deployment of the Industream platform with multi-environment support.
+The deployment source for the Industream platform: an **orchestrator-neutral**
+description of every service that renders to **both Docker Swarm and Docker
+Compose** from one tree, in **Community (CE)** or **Enterprise (EE)** editions.
+
+Everything lives under [`unified/`](./unified). One assembler — `deploy.sh` —
+builds the right compose-file set from `{runtime, edition, env, groups}` and
+either renders it (validation) or deploys it.
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Multi-Environment Architecture](#multi-environment-architecture)
+- [What it is](#what-it-is)
+- [Quickest path: the CLI (recommended)](#quickest-path-the-cli-recommended)
+- [Editions: Community vs Enterprise](#editions-community-vs-enterprise)
+- [Direct / advanced path](#direct--advanced-path)
+- [Secrets](#secrets)
+- [Custom stacks & workers](#custom-stacks--workers)
+- [Multi-environment](#multi-environment)
 - [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Applications & Services](#applications--services)
-- [Network Architecture](#network-architecture)
-- [Configuration](#configuration)
-- [Maintenance](#maintenance)
-- [Troubleshooting](#troubleshooting)
+- [Legacy (deprecated)](#legacy-deprecated)
 
-> **Notice (April 2026)** — Community (BSL 1.1) images have moved to a new public Harbor at `39t88114.c1.gra9.container-registry.ovh.net` with anonymous pull. The legacy Harbor `842775dh.c1.gra9.container-registry.ovh.net` still hosts premium add-ons. See [`industream-cli/docs/HARBOR-MIGRATION.md`](../industream-cli/docs/HARBOR-MIGRATION.md) for the full inventory, exclusions and consumer rewiring status. Existing `.env` files keep working until producers are flipped.
+## What it is
 
-## Overview
-
-This deployment provides a complete Industream ecosystem with support for multiple isolated environments (production, development, staging) on the same machine.
-
-Key features:
-
-- **UIFusion**: Main user interface and portal
-- **Keycloak**: SSO and authentication provider
-- **Grafana Dashboard**: Visualization and monitoring
-- **DataCatalog**: Data asset management
-- **Timeseries**: Time-series data storage and API (InfluxDB)
-- **FlowMaker**: Workflow orchestration engine
-- **CDN Cache**: NPM registry (Verdaccio) and ESM.sh
-- **Monitoring**: Prometheus, Alertmanager, Node Exporter, cAdvisor
-- **Traefik**: Shared reverse proxy and SSL termination
-
-## Multi-Environment Architecture
-
-The platform supports deploying multiple isolated environments on the same machine with a shared Traefik instance.
-
-### Environment Isolation
+The tree is built from layers that compose cleanly for any of the 4 deploys
+(CE/EE × swarm/compose):
 
 ```
-                    Traefik (ports 80/443) - traefik-shared
-                           │
-          ┌────────────────┼────────────────┐
-          │                │                │
-   industream.platform.lan    dev.industream.platform.lan  staging.industream.platform.lan
-          │                │                │
-   Stack: industream-prod  │         Stack: industream-staging
-   Network: prod-platform  │         Network: staging-platform
-   Volumes: prod-*         │         Volumes: staging-*
-   Secrets: prod_*         │         Secrets: staging_*
-   + Backups ✓             │         - Backups ✗
-                           │
-                   Stack: industream-dev
-                   Network: dev-platform
-                   Volumes: dev-*
-                   Secrets: dev_*
-                   - Backups ✗
+unified/
+├── base/<group>.yml          # orchestrator-neutral: image + functional env only
+├── runtime/swarm/<group>.yml  # swarm plumbing: deploy:/Traefik/docker-secrets/overlay-nets
+├── runtime/compose/<group>.yml # compose plumbing: Caddy/file-secrets/restart
+├── versions.env / registries.env / auth.env   # single sources of truth
+├── releases/bundle-platform-<ver>/  # full-ref ${X_IMAGE} vars (license-aware)
+├── custom/                    # YOUR overlays — added last, you win (see below)
+└── scripts/
+    ├── deploy.sh              # THE assembler (renders or deploys)
+    └── render-bundles.sh      # builds a release bundle from versions + registries
 ```
 
-### Environment Domains
+For each selected **group** (`core`, `flowmaker`, `datacatalog`, `workers`,
+`data`, `monitoring`), `deploy.sh` stacks `base/<group>.yml` then its runtime
+overlay; appends the EE transform when `--edition ee`; then appends any
+[`custom/`](./unified/custom) overlays. Image tags resolve from a rendered
+**bundle**, which picks each image's registry by its license class (community →
+GHCR, enterprise → Harbor). The files stay plain Compose-Spec, so the whole
+assembly is reproducible by hand without the CLI.
 
-| Environment | Main Domain | Example Subdomains |
-|-------------|-------------|-------------------|
-| **Production** | `industream.platform.lan` | `dashboard.industream.platform.lan`, `flowmaker.industream.platform.lan` |
-| **Development** | `dev.industream.platform.lan` | `dashboard.dev.industream.platform.lan`, `flowmaker.dev.industream.platform.lan` |
-| **Staging** | `staging.industream.platform.lan` | `dashboard.staging.industream.platform.lan`, `flowmaker.staging.industream.platform.lan` |
+## Quickest path: the CLI (recommended)
 
-### Resource Isolation
+The `industream` CLI (separate repo `industream/industream-cli`) installs every
+prerequisite, clones this tree, and drives `deploy.sh` for you.
 
-Each environment has completely isolated:
-- **Networks**: `${ENV}-platform` (e.g., `prod-platform`, `dev-platform`)
-- **Volumes**: `${ENV}-*` prefix (e.g., `prod-postgres-data`, `dev-influxdb-data`)
-- **Secrets**: `${ENV}_*` prefix (e.g., `prod_postgres_admin_password`)
-- **Stack name**: `industream-${ENV}` (e.g., `industream-prod`)
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/industream/industream-cli/main/install.sh)
+```
 
-### Stack Files
+> Use `bash <(curl …)`, **not** `curl … | bash` — the process substitution keeps
+> a TTY so the interactive prompts work.
 
-| Stack File | Description | Prod | Dev | Staging |
-|------------|-------------|:----:|:---:|:-------:|
-| `docker-stack.traefik.yml` | Shared Traefik, DNS | ✓ | ✓ | ✓ |
-| `docker-stack.yml` | Core services (Postgres, Keycloak, etcd, UIFusion) | ✓ | ✓ | ✓ |
-| `docker-stack.flowmaker.yml` | FlowMaker orchestration | ✓ | ✓ | ✓ |
-| `docker-stack.workers.yml` | FlowMaker workers (17 workers) | ✓ | ✓ | ✓ |
-| `docker-stack.monitoring.yml` | Grafana, Prometheus, alerting | ✓ | ✓ | ✓ |
-| `docker-stack.data.yml` | InfluxDB, Timeseries API, DataCatalog | ✓ | ✓ | ✓ |
-| `docker-stack.backup.yml` | Automated backups | ✓ | ✗ | ✗ |
-| `docker-stack.cdn.yml` | CDN cache (Verdaccio, ESM.sh) | ✓ | ✓ | ✓ |
-| `docker-stack.demo.yml` | Industrial simulators (OPC-UA, MQTT, S7, Modbus) | opt | opt | opt |
+The installer:
+
+1. Asks for the **orchestrator**: **Swarm** (production cluster) or **Compose**
+   (dev / demo, single host — no Swarm).
+2. Installs prerequisites (Git, Docker, Node.js 22+) and, for Swarm, initializes
+   the swarm.
+3. Installs the `industream` CLI and prints a logout/reconnect step (Docker group
+   membership needs a fresh session).
+
+After you reconnect, complete the install:
+
+```bash
+industream install --runtime swarm     # or: --runtime compose
+```
+
+Day-to-day commands:
+
+| Command | Purpose |
+|---|---|
+| `industream doctor --fix` | Preflight every dependency `deploy.sh` needs and provision what's missing (swarm/secrets/networks/bundle). |
+| `industream deploy` | (Re)assemble and deploy the platform via `deploy.sh`. |
+| `industream status` | Show running services. |
+| `industream logs` | Stream service logs. |
+| `industream stop` | Tear the platform down. |
+
+Run `industream doctor --fix` first on any host — it tells you exactly which
+`deploy.sh` invocation is ready to run.
+
+## Editions: Community vs Enterprise
+
+Edition is **license-driven**, not a free choice:
+
+- **Community (CE)** — the default, **no license required**. Pulls public images
+  from `ghcr.io/industream`. Includes the full open platform and the
+  community-class FlowMaker workers.
+- **Enterprise (EE)** — unlocked by a valid **Keygen license**:
+
+  ```bash
+  industream license --set <token>
+  ```
+
+  EE applies `base/ee.yml` (e.g. Logto-based identity) and pulls premium images
+  (enterprise UIFusion API, OPC-UA / RTSP / MinIO-sink / luminosity workers, …)
+  from the Harbor at `39t88114.c1.gra9.container-registry.ovh.net` using the
+  license's robot credentials. With no/community license the CLI deploys CE.
+
+Registries are configured in [`unified/registries.env`](./unified/registries.env)
+(`COMMUNITY_REGISTRY` / `ENTERPRISE_REGISTRY`).
+
+## Direct / advanced path
+
+Without the CLI, drive the tree yourself. First render a release bundle (the
+full-ref `${X_IMAGE}` vars), then assemble:
+
+```bash
+cd unified
+
+# 1) render the image bundle from versions.env + registries.env
+./scripts/render-bundles.sh 1.0.1
+
+# 2) assemble + deploy (or just validate with --render)
+./scripts/deploy.sh --runtime swarm   --edition ce --env prod --stack industream-prod
+./scripts/deploy.sh --runtime compose --edition ce --env dev  --project fm-dev
+```
+
+`deploy.sh` flags:
+
+| Flag | Meaning |
+|---|---|
+| `--runtime swarm\|compose` | Target orchestrator (**required**). |
+| `--edition ce\|ee` | CE (default) or EE (adds the `ee.yml` transform). |
+| `--env <env>` | Environment id (default `prod`); sources `.env.<env>`. |
+| `--stack <name>` | Swarm stack name (**required** for swarm). |
+| `--project <name>` | Compose project name (**required** for compose). |
+| `--groups "<list>"` | Group set to assemble. Default: `core flowmaker datacatalog workers data monitoring`. |
+| `--type core\|workers` | Split-stack footprint: `core` = platform minus workers; `workers` = a workers-only stack that attaches to an existing core. |
+| `--bundle <ver>` | Pick `releases/bundle-platform-<ver>/`. Auto-selected when exactly one bundle exists. |
+| `--render` | Validate the assembled config and exit — deploy nothing. |
+
+`--render` validates all 4 combos: compose via `docker compose config`, swarm via
+per-file YAML validation (swarm `${ENV}-*` key interpolation only happens at
+`docker stack deploy` time).
+
+## Secrets
+
+Secrets differ by runtime; `industream doctor --fix` (or
+`scripts/setup/create-secrets.sh`) provisions them:
+
+- **Swarm** — external Docker secrets named `<env>_<name>` (e.g.
+  `prod_postgres_admin_password`, `prod_grafana_admin_password`,
+  `prod_influx_admin_token`; EE adds `prod_logto_db_url` / `prod_logto_db_password`).
+- **Compose** — file secrets named `<name>` under `SECRETS_DIR`.
+
+Never commit secret files or `.env` overrides.
+
+## Custom stacks & workers
+
+Add your own services / FlowMaker workers, or override platform ones, **without
+forking** — drop Compose-Spec files into [`unified/custom/`](./unified/custom):
+
+- `custom/*.yml` — runtime-neutral.
+- `custom/swarm/*.yml` / `custom/compose/*.yml` — runtime-specific.
+
+`deploy.sh` includes them **last**, so your files win on any conflict. An empty
+`custom/` is a no-op. See [`unified/custom/README.md`](./unified/custom/README.md)
+for the rules (notably: never use `${VAR}` in a YAML mapping **key**).
+
+For an **optional, named footprint** you want to toggle per deploy, add a real
+group instead: create `base/<name>.yml` (+ optional `runtime/<rt>/<name>.yml`)
+and select it with `--groups "core … <name>"`.
+
+## Multi-environment
+
+Run several isolated environments on one host: each `--env <env>` gets its own
+`.env.<env>` site config, `<env>_*` secrets and `<env>-*` resources. Keep stacks /
+projects distinct with `--stack` (swarm) or `--project` (compose):
+
+```bash
+./scripts/deploy.sh --runtime swarm --edition ce --env prod    --stack industream-prod
+./scripts/deploy.sh --runtime swarm --edition ce --env staging --stack industream-staging
+```
 
 ## Prerequisites
 
-- Docker Engine 20.10+ with **Swarm mode** enabled
-- 8GB+ RAM recommended (16GB+ for multiple environments)
-- 20GB+ disk space per environment
-- Root/sudo access for DNS configuration
-
-### Initialize Docker Swarm
-
-```bash
-# Initialize Swarm if not already done
-docker swarm init
-```
-
-## Quick Start
-
-### Interactive Setup (Recommended)
-
-A single command handles the full setup:
-
-```bash
-./industream.sh
-```
-
-On first run, the script automatically:
-1. Detects missing `.env` and launches a setup wizard
-2. Copies `.env.example` → `.env` with auto-detected server IP
-3. Asks for confirmation or lets you edit the configuration
-4. Shows an interactive menu to deploy, stop, or manage environments
-
-See **[QUICKSTART.md](./QUICKSTART.md)** for a complete step-by-step walkthrough.
-
-### Manual Deployment
-
-#### 1. Deploy Shared Traefik (once)
-
-```bash
-./scripts/deploy-traefik.sh
-```
-
-This deploys the shared infrastructure (Traefik, DNS, socket-proxy).
-
-#### 2. Create Secrets for Environment
-
-```bash
-# For production
-./scripts/setup/create-secrets.sh --env prod
-
-# For development
-./scripts/setup/create-secrets.sh --env dev
-
-# For staging
-./scripts/setup/create-secrets.sh --env staging
-
-# Or all environments at once
-./scripts/setup/create-secrets.sh --env all
-```
-
-#### 3. Deploy Environment
-
-```bash
-# Deploy production
-./scripts/deploy-swarm.sh --env prod
-
-# Deploy development
-./scripts/deploy-swarm.sh --env dev
-
-# Deploy staging
-./scripts/deploy-swarm.sh --env staging
-
-# With demo simulators
-./scripts/deploy-swarm.sh --env prod --with-demo
-```
-
-### Command Line Interface
-
-```bash
-# Deploy specific environment
-./industream.sh deploy --env prod
-./industream.sh deploy --env dev
-
-# Stop specific environment
-./industream.sh stop --env prod
-
-# Check status
-./industream.sh status
-
-# View logs
-./industream.sh logs
-```
-
-### Access Applications
-
-#### Production (`industream.platform.lan`)
-
-| Application | URL | Credentials |
-|-------------|-----|-------------|
-| UIFusion | `https://industream.platform.lan/` | Via Keycloak |
-| Keycloak | `https://auth.industream.platform.lan/` | See Docker Secrets |
-| Grafana | `https://dashboard.industream.platform.lan/` | See Docker Secrets |
-| InfluxDB | `https://influxdb.industream.platform.lan/` | See Docker Secrets |
-| DataCatalog | `https://datacatalog.industream.platform.lan/` | - |
-| Timeseries API | `https://timeseries.industream.platform.lan/` | - |
-| Flowmaker | `https://flowmaker.industream.platform.lan/` | - |
-| Traefik Dashboard | `https://traefik.industream.platform.lan/` | - |
-
-#### Development (`dev.industream.platform.lan`)
-
-| Application | URL |
-|-------------|-----|
-| UIFusion | `https://dev.industream.platform.lan/` |
-| Keycloak | `https://auth.dev.industream.platform.lan/` |
-| Grafana | `https://dashboard.dev.industream.platform.lan/` |
-| Flowmaker | `https://flowmaker.dev.industream.platform.lan/` |
-
-#### Staging (`staging.industream.platform.lan`)
-
-| Application | URL |
-|-------------|-----|
-| UIFusion | `https://staging.industream.platform.lan/` |
-| Keycloak | `https://auth.staging.industream.platform.lan/` |
-| Grafana | `https://dashboard.staging.industream.platform.lan/` |
-| Flowmaker | `https://flowmaker.staging.industream.platform.lan/` |
-
-## Applications & Services
-
-### Core Services
-
-#### Traefik
-- **Role**: Reverse proxy and load balancer
-- **Ports**: 80 (HTTP), 443 (HTTPS), 8081 (Dashboard)
-- **Configuration**: `traefik-dynamic.yml`
-
-#### PostgreSQL (Shared)
-- **Role**: Centralized database for Grafana, DataCatalog, and DataBridge
-- **Databases**:
-  - `industream` - Grafana configuration
-  - `DataCatalog` - DataCatalog metadata
-  - `DataBridge` - DataBridge state
-- **Initialization**: `init-postgres.sh` (auto-creates databases and users)
-
-#### Hub Backend (UIFusion-API)
-- **Role**: Identity Provider in JWT/JWKS mode for community deployments
-- **Path**: `/api/uifusion` (REST + `/auth/jwks` for downstream JWT validation)
-- **Network alias**: `industream-hub-backend` on port 3050
-- **EE override**: a separate overlay swaps this for Logto (see EE docs)
-
-### Data & Analytics
-
-#### Grafana Dashboard
-- **Role**: Data visualization and dashboards
-- **Path**: `/dashboard`
-- **Image**: `grafana/grafana-oss` (vanilla upstream — no custom build)
-- **Database**: `industream` (in shared PostgreSQL)
-- **Features**:
-  - JWT auth via the Hub Backend (when grafana-hub-wrapper is enabled)
-  - Image renderer for PDF exports
-  - Custom Industream plugins
-
-#### DataCatalog
-- **Role**: Data asset catalog and metadata management
-- **Paths**:
-  - API: `/api/datacatalog`
-- **Database**: `DataCatalog` (in shared PostgreSQL)
-
-#### Timeseries
-- **Role**: Time-series data storage and querying
-- **Components**:
-  - InfluxDB 2.x
-  - Timeseries API
-- **Paths**:
-  - InfluxDB UI: `/influxdb`
-  - API: `/api/timeseries`
-
-### Interface Builder
-
-- **Role**: Visual interface builder and configuration tool
-- **Paths**:
-- **Storage**: Persistent volumes for projects, storage, and resources
-
-### Workflow Engine
-
-#### Flowmaker
-- **Role**: Workflow orchestration and automation
-- **Architecture**:
-  - **etcd**: Distributed configuration store
-  - **Scheduler**: Workflow execution engine
-  - **ConfigHub**: Configuration API
-  - **Frontend**: Workflow designer UI
-  - **Workers**: Execution nodes (datalogger, timer, etc.)
-  - **SocketIO**: Real-time logging
-- **Paths**:
-  - Main UI: `/flowmaker`
-  - ConfigHub: `/flowmaker/confighub`
-
-#### UIFusion
-- **Role**: Main application portal and user interface
-- **Path**: `/` (root)
-- **Authentication**: Keycloak OAuth
-
-## Network Architecture
-
-### Port Mapping
-
-| Service | Internal Port | External Port | Purpose |
-|---------|--------------|---------------|---------|
-| Traefik | 80 | 80 | HTTP (redirects to HTTPS) |
-| Traefik | 443 | 443 | HTTPS |
-
-All other services are accessible only through Traefik reverse proxy.
-
-> **Note**: DNS resolution is handled via static `/etc/hosts` entries on client machines. Use `./scripts/setup/setup-subdomains-hosts.sh` to generate the hosts file entries.
-
-### Docker Networks
-
-The platform uses overlay networks for service communication:
-
-| Network | Scope | Purpose |
-|---------|-------|---------|
-| `traefik-public` | Shared (external) | Traefik routing to all environments |
-| `socket-proxy` | Traefik stack only | Docker socket access |
-| `prod-platform` | Production stack | Inter-service communication |
-| `dev-platform` | Development stack | Inter-service communication |
-| `staging-platform` | Staging stack | Inter-service communication |
-
-```bash
-# View all networks
-docker network ls | grep -E "traefik|platform"
-```
-
-## Configuration
-
-### Environment Files
-
-The platform uses layered configuration:
-
-| File | Purpose |
-|------|---------|
-| `.env` | Base configuration (shared across all environments) |
-| `.env.prod` | Production overrides |
-| `.env.dev` | Development overrides |
-| `.env.staging` | Staging overrides |
-
-### Key Environment Variables
-
-**Base `.env`:**
-```bash
-# Docker Registry
-# Legacy Harbor — hosts premium add-ons; community BSL images are moving to
-# 39t88114.c1.gra9.container-registry.ovh.net (anonymous pull). See
-# industream-cli/docs/HARBOR-MIGRATION.md.
-DOCKER_REGISTRY=842775dh.c1.gra9.container-registry.ovh.net
-
-# Service versions
-UIFUSION_VERSION=2.1.0
-UIFUSION_API_VERSION=2.1.0
-POSTGRES_VERSION=18-alpine
-FLOWMAKER_CORE_VERSION=2.1.0
-
-# PostgreSQL
-POSTGRES_ADMIN_USER=postgres
-
-# Hub Backend (JWT auth)
-HUB_AUTH_ISSUER=hub-backend
-HUB_AUTH_AUDIENCE=industream-hub
-
-# Grafana
-GRAFANA_ADMIN_USER=admin
-
-# InfluxDB
-INFLUX_ADMIN_USERNAME=admin
-```
-
-**Environment-specific (e.g., `.env.prod`):**
-```bash
-# Environment identifier
-ENV=prod
-
-# Domain
-INDUSTREAM_DOMAIN=industream.platform.lan
-
-# Stack name
-STACK_NAME=industream-prod
-
-# Backup (only in prod)
-BACKUP_ENABLED=true
-```
-
-### Secrets Management
-
-Secrets are managed per environment with Docker Swarm secrets:
-
-```bash
-# List secrets
-docker secret ls
-
-# Secrets naming convention
-${ENV}_postgres_admin_password
-${ENV}_hub_backend_admin_user
-${ENV}_hub_backend_admin_password
-${ENV}_grafana_admin_password
-${ENV}_grafana_db_password
-${ENV}_influx_admin_password
-${ENV}_influx_admin_token
-${ENV}_datacatalog_db_password
-```
-
-> **Note**: Passwords are generated automatically by `./scripts/setup/create-secrets.sh`.
-> Never commit passwords to version control.
-
-### PostgreSQL Database Initialization
-
-The `init-postgres.sh` script automatically creates multiple databases and users on first startup. The script is executed only once when the PostgreSQL container is first created.
-
-Format in `docker-compose.yml`:
-```yaml
-POSTGRES_MULTIPLE_DATABASES: "db1:user1:password1,db2:user2:password2,..."
-```
-
-### Traefik SSL Configuration
-
-Edit `traefik-dynamic.yml` to configure SSL certificates:
-
-```yaml
-tls:
-  certificates:
-    - certFile: /etc/certs/cert.pem
-      keyFile: /etc/certs/key.pem
-```
-
-## Maintenance
-
-### Stack Management
-
-```bash
-# List all stacks
-docker stack ls
-
-# List services in an environment
-docker stack services industream-prod
-docker stack services industream-dev
-
-# Remove an environment
-docker stack rm industream-dev
-
-# Remove Traefik (WARNING: stops all environments)
-docker stack rm traefik-shared
-```
-
-### Backup
-
-Production environments have automated backups via `docker-stack.backup.yml`.
-
-#### Manual PostgreSQL Backup
-```bash
-# Find the postgres container
-docker ps | grep postgres
-
-# Backup all databases (replace with actual container name)
-docker exec industream-prod_postgres.1.xxx pg_dumpall -U postgres > backup_$(date +%Y%m%d).sql
-
-# Backup specific database
-docker exec industream-prod_postgres.1.xxx pg_dump -U postgres industream > grafana_backup_$(date +%Y%m%d).sql
-```
-
-#### Manual InfluxDB Backup
-```bash
-# Backup InfluxDB
-docker exec industream-prod_influxdb.1.xxx influx backup /tmp/influx-backup
-docker cp industream-prod_influxdb.1.xxx:/tmp/influx-backup ./influx-backup_$(date +%Y%m%d)
-```
-
-### Updates
-
-```bash
-# Update service image
-docker service update --image NEW_IMAGE industream-prod_uifusion
-
-# Or redeploy the entire stack
-./scripts/deploy-swarm.sh --env prod
-
-# Remove old images
-docker image prune
-```
-
-### Logs
-
-```bash
-# View service logs
-docker service logs industream-prod_postgres
-docker service logs industream-prod_uifusion-api -f
-
-# View last 100 lines
-docker service logs --tail=100 industream-prod_uifusion
-
-# Or use industream.sh
-./industream.sh logs
-```
-
-### Scaling
-
-Scale Flowmaker workers in Swarm mode:
-
-```bash
-# Scale a specific worker
-docker service scale industream-prod_flowmaker-worker-timer=3
-
-# Check scaling
-docker service ls | grep worker
-```
-
-## Troubleshooting
-
-### Common Issues
-
-#### Traefik Not Deployed
-
-**Problem**: Environment deployment fails with "Traefik not deployed"
-
-**Solution**:
-```bash
-# Deploy Traefik first
-./scripts/deploy-traefik.sh
-
-# Verify
-docker stack ls | grep traefik-shared
-```
-
-#### Secrets Not Found
-
-**Problem**: Deployment fails with missing secrets
-
-**Solution**:
-```bash
-# Create secrets for the environment
-./scripts/setup/create-secrets.sh --env prod
-
-# Verify secrets exist
-docker secret ls | grep prod_
-```
-
-#### PostgreSQL Connection Errors
-
-**Problem**: Services can't connect to PostgreSQL
-
-**Solution**:
-```bash
-# Check PostgreSQL logs
-docker service logs industream-prod_postgres
-
-# Check if service is running
-docker service ps industream-prod_postgres
-
-# Verify network connectivity
-docker exec -it $(docker ps -qf name=industream-prod_postgres) psql -U postgres -l
-```
-
-#### Traefik 404 Errors
-
-**Problem**: Services return 404 Not Found
-
-**Solution**:
-```bash
-# Check Traefik logs
-docker service logs traefik-shared_traefik
-
-# Verify service is attached to traefik-public network
-docker service inspect industream-prod_uifusion | grep Networks
-
-# Check Traefik dashboard
-# https://traefik.industream.platform.lan/
-```
-
-#### DNS Resolution Issues
-
-**Problem**: Domains not resolving
-
-**Solution**:
-```bash
-# Verify /etc/hosts entries are configured
-cat /etc/hosts | grep industream
-
-# If missing, generate hosts entries
-./scripts/setup/setup-subdomains-hosts.sh
-
-# Or generate a client setup kit for deployment on other machines
-./scripts/generate/generate-client-setup.sh
-```
-
-#### SSL Certificate Issues
-
-**Problem**: SSL certificate errors
-
-**Solution**:
-```bash
-# Verify certificates exist
-ls -l ./certs/
-
-# Check Traefik TLS configuration
-docker service logs traefik-shared_traefik 2>&1 | grep -i tls
-
-# Regenerate certificates if needed
-./scripts/setup/generate-certificates.sh
-```
-
-#### Service Won't Start
-
-**Problem**: Service fails to start
-
-**Solution**:
-```bash
-# Check service status and errors
-docker service ps industream-prod_uifusion-api --no-trunc
-
-# Check service logs
-docker service logs industream-prod_uifusion-api
-
-# Force update the service
-docker service update --force industream-prod_uifusion-api
-```
-
-### Health Checks
-
-```bash
-# Check all stacks
-docker stack ls
-
-# Check all services in an environment
-docker stack services industream-prod
-
-# Test connectivity
-curl -k https://industream.platform.lan/
-curl -k https://auth.industream.platform.lan/
-
-# Check service health
-docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Healthcheck}}' industream-prod_postgres
-```
-
-### Reset Environment
-
-```bash
-# Remove a specific environment (keeps data in volumes)
-docker stack rm industream-dev
-
-# Remove secrets for an environment
-docker secret rm $(docker secret ls -q -f name=dev_)
-
-# Remove volumes (WARNING: DELETES ALL DATA)
-docker volume rm $(docker volume ls -q -f name=dev-)
-
-# Full reset: remove everything
-docker stack rm industream-prod
-docker stack rm industream-dev
-docker stack rm industream-staging
-docker stack rm traefik-shared
-```
-
-## Production Considerations
-
-### Security
-
-1. **Secrets Management**: Secrets are automatically generated per environment
-2. **SSL Certificates**: Use valid certificates from Let's Encrypt or your CA
-3. **Firewall**: Restrict access to ports 80, 443, 53 (DNS) only
-4. **Network Isolation**: Each environment has its own isolated network
-5. **Environment Separation**: Dev/staging have no access to production data
-
-### Performance
-
-1. **Resource Limits**: Memory and CPU limits are configured in stack files
-2. **Volume Drivers**: Use appropriate volume drivers for production
-3. **Database Tuning**: Optimize PostgreSQL and InfluxDB configurations
-4. **Monitoring**: Prometheus and Grafana are included for monitoring
-
-### High Availability
-
-1. **Docker Swarm**: Services can be scaled across multiple nodes
-2. **Database Replication**: Setup PostgreSQL streaming replication
-3. **Backup Strategy**: Automated backups enabled for production only
-4. **Health Checks**: All services have configured health checks
-
-### Multi-Environment Best Practices
-
-1. **Test in Dev/Staging First**: Always test changes in dev before prod
-2. **Separate Secrets**: Each environment has unique passwords
-3. **Backup Prod Only**: Saves resources, dev/staging are reproducible
-4. **Same Stack Files**: All environments use identical configurations
-
-## Support & Resources
-
-- **Industream Documentation**: [Link to docs]
-- **Docker Swarm Reference**: [docs.docker.com/engine/swarm](https://docs.docker.com/engine/swarm/)
-- **Traefik Documentation**: [doc.traefik.io/traefik](https://doc.traefik.io/traefik/)
+- **Docker Engine** with either **Swarm mode** (production) or the **Compose v2**
+  plugin (dev / single host).
+- **Node.js 22+** if you use the CLI.
+- `python3` for swarm `--render` validation.
+
+The CLI installer provisions Docker, Node.js and (for swarm) initializes the
+swarm automatically, so on a fresh host you typically only run the one-liner.
+
+## Legacy (deprecated)
+
+The root-level `docker-stack.*.yml` files, `industream.sh`, `scripts/deploy-swarm.sh`,
+`scripts/deploy-traefik.sh` and the per-env `create-secrets.sh` flow are the
+**legacy single-runtime model** and are being decommissioned. New deployments
+should use the [`unified/`](./unified) tree (CLI or `deploy.sh`) described above.
 
 ## License
 
-Not yet defined
+See [`LICENSE`](./LICENSE) (community, BSL 1.1) and
+[`LICENSE-PROPRIETARY`](./LICENSE-PROPRIETARY) (premium add-ons).
