@@ -1,8 +1,11 @@
 # =============================================================================
 # base/data.yml — orchestrator-neutral (image + functional env only).
 # =============================================================================
-# Group: data — influxdb, databridge (influx + postgresql + timescaledb
-# variants), timescaledb.
+# Group: data — postgres, influxdb, databridge (influx + postgresql variants).
+#
+# NOTE: the TimescaleDB backend (timescaledb + databridge-timescaledb) lives in
+# its own Enterprise-only, opt-in group: base/timescale.yml. It is NOT part of
+# the always-on `data` group. CE deploys use InfluxDB.
 #
 # Carries NO deploy:/labels/secrets-backend/net-names/volumes — the
 # runtime.<swarm|compose>.yml overlay owns those. Runnable as-is under plain
@@ -99,26 +102,6 @@ services:
       start_period: 30s
 
   # ---------------------------------------------------------------------------
-  # TimescaleDB — Postgres + time-series extension. Password via file secret
-  # (POSTGRES_PASSWORD_FILE) — the path is supplied by the runtime overlay.
-  # ---------------------------------------------------------------------------
-  timescaledb:
-    image: timescale/timescaledb:${TIMESCALEDB_VERSION}
-    environment:
-      - POSTGRES_USER=${TIMESCALEDB_ADMIN_USER}
-      - POSTGRES_PASSWORD_FILE=/run/secrets/${TIMESCALEDB_DB_SECRET_NAME}
-      - POSTGRES_DB=${TIMESCALEDB_DB_NAME}
-      # Pin PGDATA inside the mounted volume to guard against Postgres 18+ moving
-      # the default path and silently bypassing the mount (data loss on restart).
-      - PGDATA=/var/lib/postgresql/data/pgdata
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALEDB_ADMIN_USER} -d ${TIMESCALEDB_DB_NAME}"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  # ---------------------------------------------------------------------------
   # DataBridge (PostgreSQL variant) — same image, SQL store. DB host differs per
   # topology (shared `postgres` on swarm / dedicated on compose) via runtime env.
   # ---------------------------------------------------------------------------
@@ -133,27 +116,6 @@ services:
       - PostgreSql__ConnectionString=Server=${DATABRIDGE_PG_DB_HOST};Port=5432;User Id=${DATABRIDGE_PG_DB_USER};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${DATABRIDGE_PG_DB_NAME};
     volumes:
       - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
-    healthcheck:
-      test: ["CMD-SHELL", "wget --spider -qS http://localhost:8080/swagger 2>&1 | grep -qE 'HTTP/1.. (200|301|302)' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  # ---------------------------------------------------------------------------
-  # DataBridge (TimescaleDB variant) — same image, pointed at timescaledb.
-  # ---------------------------------------------------------------------------
-  databridge-timescaledb:
-    image: ${DATABRIDGE_API_IMAGE}
-    entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
-    command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
-    environment:
-      - DB_SECRET_PATTERN=${TIMESCALEDB_DB_SECRET_PATTERN}
-      - PostgreSql__ConnectionString=Server=timescaledb;Port=5432;User Id=${TIMESCALEDB_ADMIN_USER};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${TIMESCALEDB_DB_NAME};
-    volumes:
-      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
-    depends_on:
-      - timescaledb
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -qS http://localhost:8080/swagger 2>&1 | grep -qE 'HTTP/1.. (200|301|302)' || exit 1"]
       interval: 30s

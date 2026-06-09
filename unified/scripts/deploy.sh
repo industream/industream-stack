@@ -65,6 +65,14 @@ esac
 export FM_ATTACHED_CORE="${FM_ATTACHED_CORE:-$ENV}"
 cd "$HERE"
 
+# ---- EE gate: the `timescale` group is Enterprise-only and opt-in -----------
+# TimescaleDB (timescaledb + databridge-timescaledb) is NOT in the default
+# GROUP_SET; CE uses InfluxDB. Reject it unless --edition ee.
+if [[ " $GROUP_SET " == *" timescale "* && "$EDITION" != ee ]]; then
+  echo "✗ the 'timescale' group is Enterprise-only — use --edition ee" >&2
+  exit 1
+fi
+
 # ---- BUNDLE: resolve the release bundle holding the full-ref ${X_IMAGE} vars -
 # base/*.yml reference ${HUB_API_IMAGE}, ${WORKER_*_IMAGE}, … which live ONLY in
 # a release bundle (scripts/render-bundles.sh renders them license-aware from
