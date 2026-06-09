@@ -44,7 +44,7 @@ DATACATALOG_UI_IMAGE|datacatalog/ui|community|DATACATALOG_UI_VERSION|datacatalog
 # --- data ---
 DATABRIDGE_API_IMAGE|timeseries/api|community|DATABRIDGE_API_VERSION|data
 # --- monitoring ---
-GRAFANA_WRAPPER_IMAGE|industream/grafana-hub-wrapper|enterprise|GRAFANA_WRAPPER_VERSION|monitoring
+GRAFANA_WRAPPER_IMAGE|grafana-hub-wrapper|community|GRAFANA_WRAPPER_VERSION|monitoring
 # --- workers (community) ---
 WORKER_DATA_LOGGER_IMAGE|flowmaker.boxes/data-logger|community|WORKER_DATA_LOGGER_VERSION|workers
 WORKER_TIMER_IMAGE|flowmaker.boxes/timer|community|WORKER_TIMER_VERSION|workers
