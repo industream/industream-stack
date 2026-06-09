@@ -249,6 +249,35 @@ else
   for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
+  # Pre-pull serially BEFORE the stack deploy. `docker stack deploy` pulls one
+  # image per task in parallel, which can wedge containerd on small nodes (tasks
+  # stuck in 'Preparing' even when the image is already locally available, while a
+  # manual `docker pull` returns instantly). Pulling them up-front, one at a time,
+  # avoids that. Image refs are resolved from the assembled files with the env
+  # sourced above (python3 os.path.expandvars) → covers platform + third-party.
+  # Best-effort: failures are non-fatal (the stack deploy still retries).
+  _pp_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _pp_files+=("$f"); done
+  echo "▶ pre-pulling images (serial, avoids swarm pull wedge)…"
+  python3 - "${_pp_files[@]}" <<'PY' | while IFS= read -r _img; do
+import sys, os, re
+seen = set()
+for fn in sys.argv[1:]:
+    try:
+        lines = open(fn).read().splitlines()
+    except OSError:
+        continue
+    for ln in lines:
+        m = re.match(r"\s*image:\s*(.+?)\s*$", ln)
+        if not m:
+            continue
+        img = os.path.expandvars(m.group(1).strip().strip("'\""))
+        if "$" in img or not img or img in seen:
+            continue
+        seen.add(img)
+        print(img)
+PY
+    if docker pull "$_img" >/dev/null 2>&1; then echo "  ✓ ${_img}"; else echo "  ⚠ ${_img} (deploy will retry)"; fi
+  done
   C_FILES=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] && C_FILES+=(-c) || C_FILES+=("$f"); done
   docker stack deploy --detach=false --with-registry-auth --prune "${C_FILES[@]}" "$STACK"
   [[ "$EDITION" == ee ]] && seed_ee   # env already sourced above
