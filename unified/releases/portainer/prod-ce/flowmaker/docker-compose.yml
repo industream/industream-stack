@@ -1,0 +1,214 @@
+networks:
+  platform:
+    external: true
+    name: ${ENV}-platform
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+services:
+  flowmaker-confighub:
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-flowmaker-confighub-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-flowmaker-confighub-secure.rule=Host(`confighub.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-flowmaker-confighub-secure.tls=true
+      - traefik.http.routers.${ENV}-flowmaker-confighub-secure.service=${ENV}-flowmaker-confighub
+      - traefik.http.routers.${ENV}-flowmaker-confighub.entrypoints=web
+      - traefik.http.routers.${ENV}-flowmaker-confighub.rule=Host(`confighub.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-flowmaker-confighub.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-flowmaker-confighub.loadbalancer.server.port=4001
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.08'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+    environment:
+    - FM_CONFIGHUB_PORT=4000
+    - FM_CONFIGHUB_PUBLIC_PORT=4001
+    - FM_CONFIGHUB_DATA_PATH=/data
+    - FM_AUTH_JWKS_URL=${HUB_AUTH_JWKS_URL}
+    - FM_AUTH_ISSUER=${HUB_AUTH_ISSUER}
+    - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
+    - FM_CORS_ORIGIN=https://flowmaker.${INDUSTREAM_DOMAIN}
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      test:
+      - CMD-SHELL
+      - bash -c '(echo > /dev/tcp/127.0.0.1/4000) 2>/dev/null' || exit 1
+      timeout: 10s
+    image: ${FLOWMAKER_CONFIGHUB_IMAGE}
+    networks:
+      platform: null
+      traefik-public: null
+    volumes:
+    - source: flowmaker-confighub-data
+      target: /data
+      type: volume
+      volume: {}
+  flowmaker-frontend:
+    depends_on:
+      flowmaker-confighub:
+        condition: service_started
+        required: true
+      flowmaker-scheduler:
+        condition: service_started
+        required: true
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-flowmaker-frontend-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-flowmaker-frontend-secure.rule=Host(`flowmaker.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-flowmaker-frontend-secure.tls=true
+      - traefik.http.routers.${ENV}-flowmaker-frontend-secure.service=${ENV}-flowmaker-frontend
+      - traefik.http.routers.${ENV}-flowmaker-frontend-secure.priority=1
+      - traefik.http.routers.${ENV}-flowmaker-frontend.entrypoints=web
+      - traefik.http.routers.${ENV}-flowmaker-frontend.rule=Host(`flowmaker.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-flowmaker-frontend.middlewares=redirect-to-https@file
+      - traefik.http.routers.${ENV}-flowmaker-frontend.priority=1
+      - traefik.http.middlewares.${ENV}-flowmaker-frontend-stripprefix.stripprefix.prefixes=/flowmaker
+      - traefik.http.middlewares.${ENV}-flowmaker-add-prefix.addprefix.prefix=/flowmaker
+      - traefik.http.services.${ENV}-flowmaker-frontend.loadbalancer.server.port=80
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+        reservations:
+          cpus: '0.03'
+          memory: 32M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+    environment:
+    - FMUI_INDUSTREAM_HUB_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
+    - FMUI_CONFIG_HUB_URL=https://confighub.${INDUSTREAM_DOMAIN}
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 20s
+      test:
+      - CMD-SHELL
+      - wget -q --spider http://127.0.0.1:80/ || exit 1
+      timeout: 10s
+    image: ${FLOWMAKER_FRONTEND_IMAGE}
+    networks:
+      platform: null
+      traefik-public: null
+  flowmaker-logging:
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-flowmaker-logging-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-flowmaker-logging-secure.rule=Host(`logger.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-flowmaker-logging-secure.tls=true
+      - traefik.http.routers.${ENV}-flowmaker-logging-secure.service=${ENV}-flowmaker-logging
+      - traefik.http.routers.${ENV}-flowmaker-logging.entrypoints=web
+      - traefik.http.routers.${ENV}-flowmaker-logging.rule=Host(`logger.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-flowmaker-logging.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-flowmaker-logging.loadbalancer.server.port=3001
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.08'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+    environment:
+    - FM_LOGGER_PORT=3000
+    - FM_LOGGER_PUBLIC_PORT=3001
+    - FM_AUTH_JWKS_URL=${HUB_AUTH_JWKS_URL}
+    - FM_AUTH_ISSUER=${HUB_AUTH_ISSUER}
+    - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
+    - FM_CORS_ORIGIN=https://flowmaker.${INDUSTREAM_DOMAIN}
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 20s
+      test:
+      - CMD-SHELL
+      - bash -c '(echo > /dev/tcp/127.0.0.1/3000) 2>/dev/null' || exit 1
+      timeout: 10s
+    image: ${FLOWMAKER_LOGGER_IMAGE}
+    networks:
+      platform: null
+      traefik-public: null
+  flowmaker-scheduler:
+    depends_on:
+      flowmaker-confighub:
+        condition: service_started
+        required: true
+      flowmaker-logging:
+        condition: service_started
+        required: true
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.rule=Host(`scheduler.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.tls=true
+      - traefik.http.routers.${ENV}-flowmaker-scheduler-secure.service=${ENV}-flowmaker-scheduler
+      - traefik.http.routers.${ENV}-flowmaker-scheduler.entrypoints=web
+      - traefik.http.routers.${ENV}-flowmaker-scheduler.rule=Host(`scheduler.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-flowmaker-scheduler.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-flowmaker-scheduler.loadbalancer.server.port=3121
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+        reservations:
+          cpus: '0.08'
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+    environment:
+    - FM_RUNTIME_BACKEND_PORT=3120
+    - FM_RUNTIME_PUBLIC_PORT=3121
+    - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+    - FM_CONFIGHUB_URL=http://flowmaker-confighub:4000
+    - FM_LAUNCHER_DATA_PATH=/data
+    - FM_AUTH_JWKS_URL=${HUB_AUTH_JWKS_URL}
+    - FM_AUTH_ISSUER=${HUB_AUTH_ISSUER}
+    - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
+    - FM_CORS_ORIGIN=https://flowmaker.${INDUSTREAM_DOMAIN}
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      test:
+      - CMD-SHELL
+      - bash -c '(echo > /dev/tcp/127.0.0.1/3120) 2>/dev/null' || exit 1
+      timeout: 10s
+    image: ${FLOWMAKER_LAUNCHER_IMAGE}
+    networks:
+      platform: null
+      traefik-public: null
+    stop_grace_period: 30s
+    volumes:
+    - source: flowmaker-launcher-data
+      target: /data
+      type: volume
+      volume: {}
+volumes:
+  flowmaker-confighub-data:
+    name: ${ENV}-flowmaker-confighub-data
+  flowmaker-launcher-data:
+    name: ${ENV}-flowmaker-launcher-data

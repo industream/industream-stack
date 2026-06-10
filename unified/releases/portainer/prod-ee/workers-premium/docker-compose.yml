@@ -1,0 +1,154 @@
+services:
+  worker-luminosity-box:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.03'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+    environment:
+      FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
+      FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8080}
+      FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
+      FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
+      FM_WORKER_ID: worker-luminosity-box001
+      FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-luminosity-box:5560
+    healthcheck:
+      test:
+      - NONE
+    image: ${WORKER_LUMINOSITY_BOX_IMAGE}
+    networks:
+      platform: null
+  worker-minio-sink:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 384M
+        reservations:
+          cpus: '0.03'
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+    environment:
+      FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
+      FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8080}
+      FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
+      FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
+      FM_WORKER_ID: worker-minio-sink001
+      FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-minio-sink:5560
+      MINIO_ENDPOINT: http://minio:9000
+    healthcheck:
+      test:
+      - NONE
+    image: ${WORKER_MINIO_SINK_IMAGE}
+    networks:
+      platform: null
+  worker-opc-ua-client:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.08'
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+    environment:
+      FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
+      FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8080}
+      FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
+      FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
+      FM_WORKER_ID: worker-opc-ua-client001
+      FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-opc-ua-client:5560
+    healthcheck:
+      test:
+      - NONE
+    image: ${WORKER_OPC_UA_CLIENT_IMAGE}
+    networks:
+      platform: null
+  worker-rtsp-client:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.08'
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+    environment:
+      FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
+      FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8080}
+      FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
+      FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
+      FM_WORKER_ID: worker-rtsp-client001
+      FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-rtsp-client:5560
+    healthcheck:
+      test:
+      - NONE
+    image: ${WORKER_RTSP_CLIENT_IMAGE}
+    networks:
+      platform: null
+x-swarm-worker:
+  deploy:
+    resources:
+      limits:
+        cpus: '0.25'
+        memory: 128M
+      reservations:
+        cpus: '0.03'
+        memory: 64M
+    restart_policy:
+      condition: any
+      delay: 10s
+      window: 120s
+  healthcheck:
+    test:
+    - NONE
+  networks:
+  - platform
+x-swarm-worker-premium:
+  deploy:
+    resources:
+      limits:
+        cpus: '0.5'
+        memory: 256M
+      reservations:
+        cpus: '0.08'
+        memory: 128M
+    restart_policy:
+      condition: any
+      delay: 10s
+      window: 120s
+  healthcheck:
+    test:
+    - NONE
+  networks:
+  - platform
+x-worker:
+  environment:
+    FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8080}
+    FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
+    FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
+    FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
+networks: {}

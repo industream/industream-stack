@@ -1,0 +1,62 @@
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+secrets:
+  portainer_admin_password:
+    external: true
+    name: ${ENV}_portainer_admin_password
+services:
+  portainer:
+    command:
+    - --admin-password-file
+    - /run/secrets/portainer_admin_password
+    - -H
+    - unix:///var/run/docker.sock
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-portainer-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-portainer-secure.rule=Host(`portainer.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-portainer-secure.tls=true
+      - traefik.http.routers.${ENV}-portainer-secure.service=${ENV}-portainer
+      - traefik.http.routers.${ENV}-portainer.entrypoints=web
+      - traefik.http.routers.${ENV}-portainer.rule=Host(`portainer.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-portainer.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-portainer.loadbalancer.server.port=9000
+      placement:
+        constraints:
+        - node.role == manager
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
+    healthcheck:
+      test:
+      - NONE
+    image: portainer/portainer-ce:${PORTAINER_VERSION}
+    networks:
+      traefik-public: null
+    secrets:
+    - source: portainer_admin_password
+      target: portainer_admin_password
+    volumes:
+    - bind:
+        create_host_path: true
+      source: /var/run/docker.sock
+      target: /var/run/docker.sock
+      type: bind
+    - source: portainer-data
+      target: /data
+      type: volume
+      volume: {}
+volumes:
+  portainer-data:
+    name: ${ENV}-portainer-data
