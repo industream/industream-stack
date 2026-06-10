@@ -360,9 +360,27 @@ else
   # resolved from the assembled files with the env sourced above (python3
   # os.path.expandvars) → covers platform + third-party. Best-effort/NON-FATAL:
   # any pull that fails is left for the stack deploy to retry.
+  #
+  # Each pull is BOUNDED by `timeout` (PULL_TIMEOUT, default 120s) with a couple of
+  # retries: containerd occasionally wedges on a single layer (no progress for
+  # minutes) — without the timeout the whole pre-pull (and the install) hangs
+  # forever on that one image. On timeout we SIGTERM/-KILL the pull, retry, then
+  # give up and leave the image to the stack deploy. Tune via PULL_TIMEOUT /
+  # PULL_RETRIES env.
   _pp_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _pp_files+=("$f"); done
-  echo "▶ pre-pulling images (≤4 in parallel, avoids swarm's all-at-once pull wedge)…"
-  python3 - "${_pp_files[@]}" <<'PY' | xargs -r -P 4 -n 1 sh -c 'docker pull "$1" >/dev/null 2>&1 && echo "  ✓ $1" || echo "  ⚠ $1 (deploy will retry)"' _
+  export PULL_TIMEOUT="${PULL_TIMEOUT:-120}" PULL_RETRIES="${PULL_RETRIES:-2}"
+  echo "▶ pre-pulling images (≤4 in parallel, ${PULL_TIMEOUT}s/pull, avoids swarm's all-at-once wedge)…"
+  python3 - "${_pp_files[@]}" <<'PY' | xargs -r -P 4 -n 1 sh -c '
+    img="$1"; n=0
+    while [ "$n" -lt "${PULL_RETRIES:-2}" ]; do
+      n=$((n + 1))
+      if timeout -k 10 "${PULL_TIMEOUT:-120}" docker pull "$img" >/dev/null 2>&1; then
+        echo "  ✓ $img"; exit 0
+      fi
+      [ "$n" -lt "${PULL_RETRIES:-2}" ] && echo "  … retry $img ($n/${PULL_RETRIES:-2}, prev hit ${PULL_TIMEOUT:-120}s)"
+    done
+    echo "  ⚠ $img (slow/wedged after ${PULL_RETRIES:-2}× — left for the stack deploy)"
+  ' _
 import sys, os, re
 seen = set()
 for fn in sys.argv[1:]:
