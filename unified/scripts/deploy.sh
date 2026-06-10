@@ -173,8 +173,10 @@ list_unstable_services() {
 # ---- Hub menu apps seeder (BOTH editions) -----------------------------------
 # The Hub launchpad menu (flowmaker / datacatalog / grafana / databridge tiles)
 # must be seeded for CE *and* EE — a fresh install otherwise shows an EMPTY menu.
-# We run the canonical seeder from the REPO (scripts/setup/seed-menu-apps-stack.sh,
-# always present) against the running hub-backend's INTERNAL free-vend port. The
+# We run the canonical seeder from the REPO (<repo-root>/scripts/setup/
+# seed-menu-apps-stack.sh — one level ABOVE unified/, i.e. "$HERE/.."; the previous
+# cwd-relative "scripts/setup/…" resolved to unified/scripts/setup/ which does not
+# exist, so seeding silently failed and the Hub menu was always empty) against the
 # seeder discovers the container itself via --runtime/--stack/--project.
 # Best-effort and strictly NON-FATAL — a deploy never fails because seeding did.
 seed_menu_apps() {
@@ -214,7 +216,7 @@ seed_menu_apps() {
   domain="${INDUSTREAM_DOMAIN:-localhost}"
   local scope_args=(--domain "$domain" --runtime "$RUNTIME")
   [[ "$RUNTIME" == swarm ]] && scope_args+=(--stack "$STACK") || scope_args+=(--project "$PROJECT")
-  if HUB_BACKEND_SERVICE=industream-hub-backend bash scripts/setup/seed-menu-apps-stack.sh "${scope_args[@]}" >/dev/null 2>&1; then
+  if HUB_BACKEND_SERVICE=industream-hub-backend bash "$HERE/../scripts/setup/seed-menu-apps-stack.sh" "${scope_args[@]}" >/dev/null 2>&1; then
     echo "  ✓ Hub menu apps seeded"
   else
     echo "  ⚠ menu-apps seeding failed (non-fatal)"
