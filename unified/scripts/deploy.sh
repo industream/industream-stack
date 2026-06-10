@@ -385,19 +385,33 @@ for fn in sys.argv[1:]:
         print(img)
 PY
   C_FILES=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] && C_FILES+=(-c) || C_FILES+=("$f"); done
-  # Bounded convergence wait. `--detach=false` blocks until EVERY task is stable;
-  # one crash-looping service (e.g. a wrapper whose upstream is briefly unresolvable)
-  # would hang it FOREVER. Cap the wait (DEPLOY_TIMEOUT, default 600s) and, on
-  # timeout, NAME the services that never stabilised instead of hanging silently —
-  # the stack stays deployed and its tasks keep retrying in the background.
-  deploy_rc=0
-  timeout "${DEPLOY_TIMEOUT:-600}" docker stack deploy --detach=false --with-registry-auth --prune "${C_FILES[@]}" "$STACK" || deploy_rc=$?
-  if [[ $deploy_rc -ne 0 ]]; then
-    [[ $deploy_rc == 124 ]] \
-      && echo "⚠ stack '${STACK}' not stable within ${DEPLOY_TIMEOUT:-600}s — still converging:" >&2 \
-      || echo "⚠ stack deploy exited ${deploy_rc} — services not yet stable:" >&2
-    list_unstable_services
-  fi
+  # Submit the stack (detached) then poll convergence OURSELVES. `--detach=false`
+  # re-verifies every service SERIALLY (stable-window per service) → minutes for a
+  # 45-service EE stack even when everything is already N/N, and a single transient
+  # restart resets the window. Polling `docker stack services` returns as soon as
+  # all replicas are N/N for 2 consecutive checks — bounded by DEPLOY_TIMEOUT; on
+  # timeout we name the stragglers instead of hanging (the stack stays deployed).
+  docker stack deploy --detach=true --with-registry-auth --prune "${C_FILES[@]}" "$STACK"
+  echo "▶ waiting for services to converge (≤${DEPLOY_TIMEOUT:-600}s)…"
+  _deadline=$(( $(date +%s) + ${DEPLOY_TIMEOUT:-600} ))
+  _stable=0
+  while :; do
+    _not_ready=$({ docker stack services "$STACK" --format '{{.Replicas}}' 2>/dev/null || true; } \
+      | awk 'BEGIN{n=0}{split($1,a,"/"); if(a[1]!=a[2])n++}END{print n+0}')
+    _total=$({ docker stack services "$STACK" -q 2>/dev/null || true; } | wc -l)
+    if [[ "$_not_ready" -eq 0 && "$_total" -gt 0 ]]; then
+      _stable=$((_stable + 1))
+      [[ $_stable -ge 2 ]] && { echo "  ✓ all ${_total} services converged"; break; }
+    else
+      _stable=0
+    fi
+    if [[ $(date +%s) -ge $_deadline ]]; then
+      echo "⚠ stack '${STACK}' not stable within ${DEPLOY_TIMEOUT:-600}s — still converging:" >&2
+      list_unstable_services
+      break
+    fi
+    sleep 3
+  done
   seed_menu_apps                       # both editions: seed the Hub launchpad
   # NB: an `&&`-chained `seed_ee` as the script's LAST statement made deploy.sh
   # exit 1 on CE (the `[[ == ee ]]` test is false → non-zero → propagated as the
