@@ -12,6 +12,10 @@
 # --bundle <ver> picks releases/bundle-platform-<ver>/ (the full-ref ${X_IMAGE}
 # vars). Omit it when exactly one bundle exists (auto-selected).
 #
+# --workers "svcA,svcB,…" deploys ONLY those flow-box workers (subset of the
+# `workers`/`workers-premium` groups); omit it to deploy every worker in the
+# selected groups. Client custom/ worker overlays are never filtered.
+#
 # The CLI thin driver (industream-cli) calls this same logic. Plain Compose-Spec
 # → the assembly is also reproducible by hand (BSL / CE no-CLI fallback).
 #
@@ -21,6 +25,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
 RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false BUNDLE=""
+WORKERS_ENABLED=""   # CSV allowlist of flow-box worker services; empty = all
 TYPE="" ATTACH=false
 # GROUP_SET = the base/<group>.yml set to assemble. Default = full platform; an
 # instance footprint narrows it (e.g. a core-only or a workers-only instance, T3).
@@ -36,6 +41,7 @@ while [[ $# -gt 0 ]]; do
     --community) COMMUNITY=true; shift ;;
     --bundle)    BUNDLE="$2"; shift 2 ;;
     --groups)    GROUP_SET="$2"; shift 2 ;;
+    --workers)   WORKERS_ENABLED="$2"; shift 2 ;;
     --type)      TYPE="$2"; shift 2 ;;
     --render)    RENDER=true; shift ;;
     -h|--help)   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -143,6 +149,49 @@ for cf in "${CUSTOM_FILES[@]}"; do FILES+=(-f "$cf"); done
 echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV} / bundle=${BUNDLE_DIR##*/} / groups=[${GROUP_SET}]"
 echo "  files: ${FILES[*]//-f /}"
 [[ ${#CUSTOM_FILES[@]} -gt 0 ]] && echo "  custom overlays: ${CUSTOM_FILES[*]}"
+
+# ---- Per-worker selection (OPTIONAL) ----------------------------------------
+# --workers "svcA,svcB,…" deploys ONLY those flow-box workers; empty = every
+# worker in the selected groups (backward-compatible default). The CLI computes
+# the list (CE: user multi-select; EE: license entitlements ∪ community choice).
+# We rewrite ONLY the platform worker maps — base/workers*.yml + their runtime
+# overlays — into temp files and swap them into FILES. Anchors live at the top
+# level (x-worker/&worker-env), so dropping service entries is safe. Files NOT
+# named workers*.yml are untouched, so client custom/ worker overlays are NEVER
+# filtered — they always deploy.
+if [[ -n "$WORKERS_ENABLED" ]]; then
+  _wtmp="$(mktemp -d)"
+  _newFILES=(); _i=0
+  while [[ $_i -lt ${#FILES[@]} ]]; do
+    if [[ "${FILES[$_i]}" == -f ]]; then
+      _wf="${FILES[$((_i+1))]}"; _wb="$(basename "$_wf")"
+      if [[ "$_wb" == workers.yml || "$_wb" == workers-premium.yml ]]; then
+        _wout="$_wtmp/${_wf//\//_}"
+        if WORKERS_CSV="$WORKERS_ENABLED" python3 - "$_wf" "$_wout" <<'PY'
+import os, sys, yaml
+src, out = sys.argv[1], sys.argv[2]
+keep = {w.strip() for w in os.environ.get("WORKERS_CSV", "").split(",") if w.strip()}
+doc = yaml.safe_load(open(src)) or {}
+svcs = doc.get("services") or {}
+doc["services"] = {n: s for n, s in svcs.items() if n in keep}
+if not doc["services"]:
+    sys.exit(3)  # nothing kept here → tell the caller to drop the whole file
+yaml.safe_dump(doc, open(out, "w"), sort_keys=False)
+PY
+        then _newFILES+=(-f "$_wout")
+        else
+          _rc=$?
+          [[ $_rc == 3 ]] || { echo "✗ worker filter failed on $_wf" >&2; exit 1; }
+          # _rc==3 → drop this file (no selected workers in it)
+        fi
+        _i=$((_i + 2)); continue
+      fi
+    fi
+    _newFILES+=("${FILES[$_i]}"); _i=$((_i + 1))
+  done
+  FILES=("${_newFILES[@]}")
+  echo "  worker selection: ${WORKERS_ENABLED}"
+fi
 
 # ---- Render-only gate (validate the assembled config, deploy nothing) -------
 if [[ "$RENDER" == true ]]; then
