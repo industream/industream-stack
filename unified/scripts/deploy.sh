@@ -160,6 +160,16 @@ if [[ "$RENDER" == true ]]; then
   exit 0
 fi
 
+# ---- Convergence helper -----------------------------------------------------
+# List swarm services whose running replicas != desired. Called when the bounded
+# `stack deploy` wait times out, so a non-converging deploy names its culprit(s)
+# instead of hanging silently.
+list_unstable_services() {
+  docker stack services "$STACK" --format '{{.Name}} {{.Replicas}}' 2>/dev/null \
+    | awk '{ if (split($2,a,"/")==2 && a[1]!=a[2]) print "    ✗ " $1 " (" $2 ")" }' \
+    || true
+}
+
 # ---- Hub menu apps seeder (BOTH editions) -----------------------------------
 # The Hub launchpad menu (flowmaker / datacatalog / grafana / databridge tiles)
 # must be seeded for CE *and* EE — a fresh install otherwise shows an EMPTY menu.
@@ -171,8 +181,14 @@ seed_menu_apps() {
   local hub_cid i domain scope
   echo ""
   echo "▶ Hub menu apps seeder (launchpad tiles)…"
-  # Resolve the hub-backend container id per runtime, polling until it appears
-  # AND answers on its public port (compose `up -d` / swarm deploy return early).
+  # Two-phase readiness, ORDERED to dodge a chicken-and-egg:
+  #   1. wait for the hub-backend CONTAINER to exist (deploy returns early), then
+  #   2. fix /app/data perms, THEN wait for /apps to answer 200.
+  # The perm fix MUST precede the /apps probe: the hub image's /app/data volume
+  # initialises root:root while the container runs as node(1000), so /apps 500s
+  # (EACCES mkdir '/app/data/hub') until chowned — and `wget` exits non-zero on a
+  # 500, so probing /apps BEFORE the chown looped forever ('not ready') and the
+  # menu never seeded. (Real fix belongs in the hub image Dockerfile.)
   for i in $(seq 1 60); do
     if [[ "$RUNTIME" == swarm ]]; then
       hub_cid="$(docker ps -q --filter "name=${STACK}_industream-hub-backend" 2>/dev/null | head -1)"
@@ -180,24 +196,19 @@ seed_menu_apps() {
       hub_cid="$(docker ps -q --filter "name=${PROJECT}-industream-hub-backend" 2>/dev/null | head -1)"
       [[ -z "$hub_cid" ]] && hub_cid="$(docker ps -q --filter "name=${PROJECT}_industream-hub-backend" 2>/dev/null | head -1)"
     fi
-    # Readiness = the INTERNAL free-vend port (3051) the seeder writes to, on a
-    # real route (/apps → 200). The public API root (3050/) has NO route and
-    # 404s, which made wget exit non-zero → the seeder skipped every time even
-    # though the Hub was up (empty Hub menu on every install).
-    if [[ -n "$hub_cid" ]] && docker exec "$hub_cid" wget -qO- http://localhost:3051/apps >/dev/null 2>&1; then
-      break
-    fi
-    hub_cid=""
+    [[ -n "$hub_cid" ]] && break
     sleep 2
   done
-  [[ -z "$hub_cid" ]] && { echo "  ⚠ hub-backend container not ready — skipping menu-apps seeding (non-fatal)" >&2; return 0; }
+  [[ -z "$hub_cid" ]] && { echo "  ⚠ hub-backend container not found — skipping menu-apps seeding (non-fatal)" >&2; return 0; }
 
-  # Permission fix (NON-FATAL): the hub image's /app/data named volume initialises
-  # root:root, but the container runs as node(1000). Without this the /apps endpoint
-  # 500s with EACCES (mkdir '/app/data/hub'). The REAL fix belongs in the hub image
-  # (chown /app/data to node in its Dockerfile) — this is a deploy-side stopgap.
   docker exec -u 0 "$hub_cid" chown -R node:node /app/data 2>/dev/null || true
-  sleep 2
+
+  local apps_ready=false
+  for i in $(seq 1 30); do
+    if docker exec "$hub_cid" wget -qO- http://localhost:3051/apps >/dev/null 2>&1; then apps_ready=true; break; fi
+    sleep 2
+  done
+  [[ "$apps_ready" != true ]] && { echo "  ⚠ hub-backend /apps not ready — skipping menu-apps seeding (non-fatal)" >&2; return 0; }
 
   # Run the seeder from the REPO (always present, preferred over the image copy).
   domain="${INDUSTREAM_DOMAIN:-localhost}"
@@ -319,7 +330,25 @@ for fn in sys.argv[1:]:
         print(img)
 PY
   C_FILES=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] && C_FILES+=(-c) || C_FILES+=("$f"); done
-  docker stack deploy --detach=false --with-registry-auth --prune "${C_FILES[@]}" "$STACK"
+  # Bounded convergence wait. `--detach=false` blocks until EVERY task is stable;
+  # one crash-looping service (e.g. a wrapper whose upstream is briefly unresolvable)
+  # would hang it FOREVER. Cap the wait (DEPLOY_TIMEOUT, default 600s) and, on
+  # timeout, NAME the services that never stabilised instead of hanging silently —
+  # the stack stays deployed and its tasks keep retrying in the background.
+  deploy_rc=0
+  timeout "${DEPLOY_TIMEOUT:-600}" docker stack deploy --detach=false --with-registry-auth --prune "${C_FILES[@]}" "$STACK" || deploy_rc=$?
+  if [[ $deploy_rc -ne 0 ]]; then
+    [[ $deploy_rc == 124 ]] \
+      && echo "⚠ stack '${STACK}' not stable within ${DEPLOY_TIMEOUT:-600}s — still converging:" >&2 \
+      || echo "⚠ stack deploy exited ${deploy_rc} — services not yet stable:" >&2
+    list_unstable_services
+  fi
   seed_menu_apps                       # both editions: seed the Hub launchpad
-  [[ "$EDITION" == ee ]] && seed_ee    # EE-only: Logto app/roles/user (env sourced above)
+  # NB: an `&&`-chained `seed_ee` as the script's LAST statement made deploy.sh
+  # exit 1 on CE (the `[[ == ee ]]` test is false → non-zero → propagated as the
+  # script's exit code → the CLI reported a phantom 'install failed'). Use a plain
+  # `if` so the final statement is always success on CE.
+  if [[ "$EDITION" == ee ]]; then
+    seed_ee                            # EE-only: Logto app/roles/user (env sourced above)
+  fi
 fi
