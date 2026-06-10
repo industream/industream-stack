@@ -56,13 +56,6 @@ services:
       type: volume
       volume: {}
   flowmaker-frontend:
-    depends_on:
-      flowmaker-confighub:
-        condition: service_started
-        required: true
-      flowmaker-scheduler:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true
@@ -149,13 +142,6 @@ services:
       platform: null
       traefik-public: null
   flowmaker-scheduler:
-    depends_on:
-      flowmaker-confighub:
-        condition: service_started
-        required: true
-      flowmaker-logging:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true

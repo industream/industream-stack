@@ -114,41 +114,62 @@ for g in $GROUP_LIST; do
   fi
 
   mkdir -p "$OUT/$g"
-  # Merge overlays WITHOUT interpolation (keep ${VARS} templated), then rewrite
-  # the shared `platform` overlay network to external. We write the merged config
-  # to a temp file (NOT a pipe): `python3 - <<'PY'` reads its PROGRAM from stdin,
-  # which would swallow piped input — so the merge goes through argv, not stdin.
-  _merged="$(mktemp)"
-  if [[ "$BAKED" == true ]]; then
-    docker compose "${ENV_FILES[@]}" "${files[@]}" config > "$_merged" 2>/dev/null
-  else
-    docker compose "${files[@]}" config --no-interpolate > "$_merged" 2>/dev/null
-  fi
-  WORKERS_CSV="$WORKERS_ENABLED" GROUP="$g" python3 - "$_merged" "$OUT/$g/docker-compose.yml" <<'PY'
+  # 1) MERGE overlays WITHOUT interpolation. --no-interpolate is lenient: it tolerates
+  #    cross-group `depends_on` (e.g. datacatalog-api → postgres, in the `data` stack)
+  #    and services referencing the not-yet-defined `platform` net. Interpolating here
+  #    would instead REJECT both. We write to a temp file (NOT a pipe): `python3 - <<'PY'`
+  #    reads its PROGRAM from stdin, which would swallow piped input.
+  _merged="$(mktemp)"; _cleaned="$(mktemp)"
+  docker compose "${files[@]}" config --no-interpolate > "$_merged" 2>/dev/null
+  # 2) CLEAN: strip cross-group depends_on + externalise shared networks (templated).
+  WORKERS_CSV="$WORKERS_ENABLED" GROUP="$g" \
+    python3 - "$_merged" "$_cleaned" <<'PY'
 import os, sys, yaml
 src, out = sys.argv[1], sys.argv[2]
 doc = yaml.safe_load(open(src)) or {}
 doc.pop("name", None)            # drop the synthetic compose project name
+svcs = doc.get("services") or {}
 
-# platform network: external so each group stack attaches to the ONE pre-created
-# ${ENV}-platform instead of every stack trying to create it (2nd would clash).
+# `docker stack deploy` (swarm) IGNORES depends_on; and a cross-group depends_on
+# (e.g. grafana-wrapper → industream-hub-backend, which lives in the `core` stack)
+# makes `compose config` reject the file. Strip it everywhere — harmless on swarm.
+for s in svcs.values():
+    if isinstance(s, dict):
+        s.pop("depends_on", None)
+
+# Which named networks do services actually attach to?
+used = set()
+for s in svcs.values():
+    n = (s or {}).get("networks")
+    if isinstance(n, dict):  used |= set(n)
+    elif isinstance(n, list): used |= set(n)
+
+# Externalise the SHARED networks so every group stack attaches to the ONE
+# pre-created instance instead of each trying to create it. A group can REFERENCE
+# `platform` without defining it (e.g. workers) — inject it regardless of `used`.
 nets = doc.get("networks") or {}
-if "platform" in nets:
-    # keep whatever name the merge produced (templated ${ENV}-platform, or a baked
-    # literal like prod-platform) — just flip it to external + drop driver/attachable.
-    existing_name = nets["platform"].get("name", "${ENV}-platform")
-    nets["platform"] = {"external": True, "name": existing_name}
+if "platform" in used or "platform" in nets:
+    # templated name; --baked's interpolation pass turns ${ENV}-platform → prod-platform.
+    nets["platform"] = {"external": True, "name": "${ENV}-platform"}
+if "traefik-public" in used or "traefik-public" in nets:
+    nets["traefik-public"] = {"external": True, "name": "traefik-shared_traefik-public"}
 doc["networks"] = nets
 
 # optional per-worker selection (workers / workers-premium groups only)
 keep = {w.strip() for w in os.environ.get("WORKERS_CSV", "").split(",") if w.strip()}
 if keep and os.environ.get("GROUP", "") in ("workers", "workers-premium"):
-    svcs = doc.get("services") or {}
     doc["services"] = {n: s for n, s in svcs.items() if n in keep}
 
 yaml.safe_dump(doc, open(out, "w"), sort_keys=False, default_flow_style=False)
 PY
-  rm -f "$_merged"
+  # 3) BAKE (optional): now that depends_on is gone and nets are external, a second
+  #    INTERPOLATED `config` pass is valid → literal image refs/domain, self-contained.
+  if [[ "$BAKED" == true ]]; then
+    docker compose "${ENV_FILES[@]}" -f "$_cleaned" config > "$OUT/$g/docker-compose.yml" 2>/dev/null
+  else
+    cp "$_cleaned" "$OUT/$g/docker-compose.yml"
+  fi
+  rm -f "$_merged" "$_cleaned"
   # a sibling .env in every group folder (Portainer git-stack loads the .env next
   # to the compose file it deploys).
   cp "$ENVOUT" "$OUT/$g/.env"

@@ -17,10 +17,6 @@ services:
     command:
     - dotnet
     - /app/Industream.DataCatalog.Api.dll
-    depends_on:
-      postgres:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true

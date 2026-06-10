@@ -14,10 +14,6 @@ services:
     command:
     - dotnet
     - /app/Industream.DataBridge.Api.dll
-    depends_on:
-      timescaledb:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true

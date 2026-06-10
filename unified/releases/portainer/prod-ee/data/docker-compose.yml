@@ -29,10 +29,6 @@ services:
     command:
     - dotnet
     - /app/Industream.DataBridge.Api.dll
-    depends_on:
-      influxdb:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true
@@ -92,10 +88,6 @@ services:
     command:
     - dotnet
     - /app/Industream.DataBridge.Api.dll
-    depends_on:
-      postgres:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true

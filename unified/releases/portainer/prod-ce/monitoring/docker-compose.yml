@@ -33,10 +33,6 @@ services:
     - --storage.path=/alertmanager
     - --web.external-url=https://alertmanager.${INDUSTREAM_DOMAIN}
     - --cluster.listen-address=
-    depends_on:
-      prometheus:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true
@@ -151,13 +147,6 @@ services:
       target: /var/lib/docker
       type: bind
   grafana:
-    depends_on:
-      industream-hub-backend:
-        condition: service_started
-        required: true
-      postgres:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true
@@ -281,13 +270,6 @@ services:
       target: /etc/grafana/extra-cas/platform.crt
       type: bind
   grafana-wrapper:
-    depends_on:
-      grafana:
-        condition: service_started
-        required: true
-      industream-hub-backend:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true
@@ -375,10 +357,6 @@ services:
       target: /host
       type: bind
   postgres-exporter:
-    depends_on:
-      postgres:
-        condition: service_started
-        required: true
     deploy:
       resources:
         limits:
@@ -412,13 +390,6 @@ services:
     - --web.console.libraries=/usr/share/prometheus/console_libraries
     - --web.console.templates=/usr/share/prometheus/consoles
     - --web.external-url=https://prometheus.${INDUSTREAM_DOMAIN}
-    depends_on:
-      cadvisor:
-        condition: service_started
-        required: true
-      node-exporter:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true

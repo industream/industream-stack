@@ -17,10 +17,6 @@ secrets:
     name: ${MINIO_ROOT_USER_SECRET_NAME}
 services:
   cdn-cache:
-    depends_on:
-      cdn-server:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true
@@ -162,10 +158,6 @@ services:
       type: volume
       volume: {}
   industream-hub-frontend:
-    depends_on:
-      industream-hub-backend:
-        condition: service_started
-        required: true
     deploy:
       labels:
       - traefik.enable=true

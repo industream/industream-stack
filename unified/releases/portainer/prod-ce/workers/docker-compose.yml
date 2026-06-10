@@ -430,4 +430,7 @@ x-worker:
     FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
     FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
     FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
-networks: {}
+networks:
+  platform:
+    external: true
+    name: ${ENV}-platform
