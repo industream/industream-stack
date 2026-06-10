@@ -137,6 +137,14 @@ for s in svcs.values():
     if isinstance(s, dict):
         s.pop("depends_on", None)
 
+# Drop orphan cross-group PATCH fragments: a service that another group only
+# patches (e.g. monitoring adds an allow-iframe Traefik label to
+# industream-hub-frontend, which is OWNED by `core`) renders here as a stub with
+# no image/build → not a deployable service. (The patch itself should be relocated
+# to the owning group — tracked as a follow-up; for now the label is dropped.)
+svcs = {n: s for n, s in svcs.items() if isinstance(s, dict) and ("image" in s or "build" in s)}
+doc["services"] = svcs
+
 # Which named networks do services actually attach to?
 used = set()
 for s in svcs.values():
