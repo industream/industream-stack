@@ -38,7 +38,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
 cd "$HERE"
 
-ENV="prod" EDITION="ce" BUNDLE="" WORKERS_ENABLED="" WITH_PORTAINER=false
+ENV="prod" EDITION="ce" BUNDLE="" WORKERS_ENABLED="" WITH_PORTAINER=false BAKED=false
 RUNTIME="swarm"   # mode A/B target is swarm; compose split is a later step
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,7 +47,10 @@ while [[ $# -gt 0 ]]; do
     --bundle)         BUNDLE="$2"; shift 2 ;;
     --workers)        WORKERS_ENABLED="$2"; shift 2 ;;
     --with-portainer) WITH_PORTAINER=true; shift ;;
-    -h|--help)        sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    # --baked: interpolate every ${VAR} to a literal value (self-contained files,
+    # no sibling .env needed by Portainer). Default keeps ${VARS} templated.
+    --baked)          BAKED=true; shift ;;
+    -h|--help)        sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -67,6 +70,15 @@ else
   BUNDLE_DIR="${_b[0]%/}"
 fi
 [[ -d "$BUNDLE_DIR" ]] || { echo "✗ no bundle at ${BUNDLE_DIR}" >&2; exit 1; }
+
+# ---- --baked: the env-file chain to interpolate from (same order as deploy.sh) -
+ENV_FILES=()
+if [[ "$BAKED" == true ]]; then
+  export ENV   # ${ENV}-platform etc. interpolate from the environment
+  ENV_FILES=(--env-file registries.env --env-file versions.env --env-file auth.env --env-file "runtime.${RUNTIME}.env")
+  for bf in "$BUNDLE_DIR"/.env.*; do ENV_FILES+=(--env-file "$bf"); done
+  [[ -f ".env.${ENV}" ]] && ENV_FILES+=(--env-file ".env.${ENV}")
+fi
 
 OUT="releases/portainer/${ENV}-${EDITION}"
 rm -rf "$OUT"; mkdir -p "$OUT"
@@ -107,7 +119,11 @@ for g in $GROUP_LIST; do
   # to a temp file (NOT a pipe): `python3 - <<'PY'` reads its PROGRAM from stdin,
   # which would swallow piped input — so the merge goes through argv, not stdin.
   _merged="$(mktemp)"
-  docker compose "${files[@]}" config --no-interpolate > "$_merged" 2>/dev/null
+  if [[ "$BAKED" == true ]]; then
+    docker compose "${ENV_FILES[@]}" "${files[@]}" config > "$_merged" 2>/dev/null
+  else
+    docker compose "${files[@]}" config --no-interpolate > "$_merged" 2>/dev/null
+  fi
   WORKERS_CSV="$WORKERS_ENABLED" GROUP="$g" python3 - "$_merged" "$OUT/$g/docker-compose.yml" <<'PY'
 import os, sys, yaml
 src, out = sys.argv[1], sys.argv[2]
@@ -118,7 +134,10 @@ doc.pop("name", None)            # drop the synthetic compose project name
 # ${ENV}-platform instead of every stack trying to create it (2nd would clash).
 nets = doc.get("networks") or {}
 if "platform" in nets:
-    nets["platform"] = {"external": True, "name": "${ENV}-platform"}
+    # keep whatever name the merge produced (templated ${ENV}-platform, or a baked
+    # literal like prod-platform) — just flip it to external + drop driver/attachable.
+    existing_name = nets["platform"].get("name", "${ENV}-platform")
+    nets["platform"] = {"external": True, "name": existing_name}
 doc["networks"] = nets
 
 # optional per-worker selection (workers / workers-premium groups only)
