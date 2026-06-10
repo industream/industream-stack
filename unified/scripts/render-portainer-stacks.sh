@@ -145,15 +145,6 @@ for s in svcs.values():
 svcs = {n: s for n, s in svcs.items() if isinstance(s, dict) and ("image" in s or "build" in s)}
 doc["services"] = svcs
 
-# `docker compose config` serialises deploy.resources.*.cpus as a NUMBER (0.5),
-# but Portainer's swarm compose parser requires a STRING ("0.5") — re-quote it.
-for s in svcs.values():
-    res = ((s.get("deploy") or {}).get("resources") or {})
-    for kind in ("limits", "reservations"):
-        r = res.get(kind) or {}
-        if "cpus" in r:
-            r["cpus"] = str(r["cpus"])
-
 # Which named networks do services actually attach to?
 used = set()
 for s in svcs.values():
@@ -187,6 +178,21 @@ PY
     cp "$_cleaned" "$OUT/$g/docker-compose.yml"
   fi
   rm -f "$_merged" "$_cleaned"
+  # 4) FINAL fixup on the output: `docker compose config` serialises
+  #    deploy.resources.*.cpus as a NUMBER (0.5), but Portainer's swarm parser
+  #    requires a STRING ("0.5"). Re-quote it here (after the bake pass, which would
+  #    otherwise re-normalise it back to a number).
+  python3 - "$OUT/$g/docker-compose.yml" <<'PY'
+import sys, yaml
+f = sys.argv[1]; doc = yaml.safe_load(open(f)) or {}
+for s in (doc.get("services") or {}).values():
+    res = ((s.get("deploy") or {}).get("resources") or {})
+    for kind in ("limits", "reservations"):
+        r = res.get(kind) or {}
+        if "cpus" in r:
+            r["cpus"] = str(r["cpus"])
+yaml.safe_dump(doc, open(f, "w"), sort_keys=False)
+PY
   # a sibling .env in every group folder (Portainer git-stack loads the .env next
   # to the compose file it deploys).
   cp "$ENVOUT" "$OUT/$g/.env"
