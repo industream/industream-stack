@@ -374,7 +374,11 @@ for fn in sys.argv[1:]:
         m = re.match(r"\s*image:\s*(.+?)\s*$", ln)
         if not m:
             continue
-        img = os.path.expandvars(m.group(1).strip().strip("'\""))
+        raw = m.group(1).strip()
+        # Drop an inline YAML comment (e.g. `image: foo:1.0   # PINNED (never latest)`)
+        # — without this the comment words leak into the pull list as bogus refs.
+        raw = re.sub(r"\s+#.*$", "", raw).strip()
+        img = os.path.expandvars(raw.strip("'\""))
         if "$" in img or not img or img in seen:
             continue
         seen.add(img)
