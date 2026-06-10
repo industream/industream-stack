@@ -185,6 +185,9 @@ PY
   python3 - "$OUT/$g/docker-compose.yml" <<'PY'
 import sys, yaml
 f = sys.argv[1]; doc = yaml.safe_load(open(f)) or {}
+# the bake pass re-injects a top-level `name:` (compose project) that Portainer's
+# swarm parser rejects ("Additional property name is not allowed") — drop it.
+doc.pop("name", None)
 for s in (doc.get("services") or {}).values():
     res = ((s.get("deploy") or {}).get("resources") or {})
     for kind in ("limits", "reservations"):
