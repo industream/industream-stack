@@ -307,12 +307,6 @@ services:
     networks:
       platform: null
       traefik-public: null
-  industream-hub-frontend:
-    deploy:
-      labels:
-      - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.middlewares=allow-iframe@file
-    networks:
-      default: null
   node-exporter:
     command:
     - --path.procfs=/host/proc
