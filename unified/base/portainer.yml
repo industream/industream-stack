@@ -1,0 +1,21 @@
+# =============================================================================
+# base/portainer.yml — orchestrator-neutral (image + command only).
+# =============================================================================
+# OPTIONAL ops console (mode A): view + per-service management (scale, restart,
+# logs, image update, env) of the deployed swarm/compose stacks. Add it with
+# `industream install --with-portainer` (appends the `portainer` group). Editing
+# whole stack-files from the UI (git-stack, mode B) is a separate, later step.
+#
+# CE *and* EE (not EE-only). Admin password is read from the
+# portainer_admin_password secret, mounted at /run/secrets by BOTH runtimes — so
+# the command is runtime-neutral and lives here. Socket access + Traefik labels +
+# volume live in the runtime overlays.
+# =============================================================================
+services:
+  portainer:
+    image: portainer/portainer-ce:${PORTAINER_VERSION}
+    command:
+      - --admin-password-file
+      - /run/secrets/portainer_admin_password
+      - -H
+      - unix:///var/run/docker.sock
