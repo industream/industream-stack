@@ -188,12 +188,27 @@ f = sys.argv[1]; doc = yaml.safe_load(open(f)) or {}
 # the bake pass re-injects a top-level `name:` (compose project) that Portainer's
 # swarm parser rejects ("Additional property name is not allowed") — drop it.
 doc.pop("name", None)
+
+def humanize_mem(v):
+    # `docker compose config` expands `256M` → raw bytes (268435456). Re-collapse to
+    # the largest clean binary unit so the editor reads 256M, not a wall of digits.
+    try:
+        n = int(str(v))
+    except (TypeError, ValueError):
+        return v   # already a string like "256M" — leave as-is
+    for unit, size in (("G", 1 << 30), ("M", 1 << 20), ("K", 1 << 10)):
+        if n and n % size == 0:
+            return f"{n // size}{unit}"
+    return str(n)
+
 for s in (doc.get("services") or {}).values():
     res = ((s.get("deploy") or {}).get("resources") or {})
     for kind in ("limits", "reservations"):
         r = res.get(kind) or {}
         if "cpus" in r:
-            r["cpus"] = str(r["cpus"])
+            r["cpus"] = str(r["cpus"])        # swarm parser wants a string
+        if "memory" in r:
+            r["memory"] = humanize_mem(r["memory"])
 yaml.safe_dump(doc, open(f, "w"), sort_keys=False)
 PY
   # a sibling .env in every group folder (Portainer git-stack loads the .env next
