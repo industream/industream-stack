@@ -283,9 +283,14 @@ cmd_render() {
   # only a baked desired tree is textually comparable in `diff`.
   local render_args=(--env "$env" --edition "$edition" --baked)
   [[ ${#extra[@]} -gt 0 ]] && render_args+=("${extra[@]}")
-  bash "$HERE/scripts/render-portainer-stacks.sh" "${render_args[@]}"
-
-  local out="$HERE/releases/portainer/${env}-${edition}"
+  # Render into OUR private temp dir (mktemp = 0700, shredded by the EXIT trap),
+  # NEVER the default releases/portainer/ tree: that path is TRACKED by the
+  # platform repo, and the --baked pass interpolates from the process env (which
+  # on the deploy path carries real credentials) — a later `git add -A` in the
+  # platform clone would otherwise commit UNSCRUBBED secrets. Only the scrubbed
+  # copies below ever leave the temp dir.
+  local out="$_TMP/render"
+  OUT_DIR="$out" bash "$HERE/scripts/render-portainer-stacks.sh" "${render_args[@]}"
   [[ -d "$out" ]] || { echo "✗ renderer produced nothing at ${out}" >&2; exit 1; }
 
   # Rebuild desired/ from scratch so groups dropped from the render disappear.
