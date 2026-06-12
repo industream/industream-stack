@@ -227,6 +227,21 @@ resolve_portainer_access() {
   [[ -n "${INDUSTREAM_DOMAIN:-}" ]] \
     || { echo "✗ INDUSTREAM_DOMAIN not set and not found in ${HERE}/.env.${ENV:-prod}" >&2; exit 1; }
 
+  # Credential auto-discovery: when neither env var is set, fall back to the
+  # install's local secrets store (<repo-root>/secrets/<env>/<name>, 0700 —
+  # written by create-secrets.sh). A dedicated `portainer_api_key` beats the
+  # admin password. This makes the deploy.sh pre-deploy snapshot hook fully
+  # turnkey: zero per-call configuration on a standard install.
+  local _secrets_dir="$HERE/../secrets/${ENV:-prod}"
+  if [[ -z "${PORTAINER_API_KEY:-}" && -z "${PORTAINER_PASSWORD:-}" ]]; then
+    if [[ -r "$_secrets_dir/portainer_api_key" ]]; then
+      PORTAINER_API_KEY="$(< "$_secrets_dir/portainer_api_key")"
+    elif [[ -r "$_secrets_dir/portainer_admin_password" ]]; then
+      PORTAINER_PASSWORD="$(< "$_secrets_dir/portainer_admin_password")"
+      export PORTAINER_PASSWORD   # the auth helper below reads it from the env
+    fi
+  fi
+
   # API key beats username/password; NEITHER → exit 3, a SOFT failure the
   # deploy.sh pre-deploy hook (and any other caller) can absorb non-fatally.
   # Credentials NEVER ride in curl's argv (any local user reads /proc/*/cmdline):
