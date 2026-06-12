@@ -166,7 +166,8 @@ cmd_init() {
     echo "✓ deploy-state repo already initialised at ${STATE_DIR} — nothing to do"
     return 0
   fi
-  mkdir -p "$STATE_DIR"
+  # 0700: even scrubbed deploy state is nobody else's business on a shared host
+  install -d -m 700 "$STATE_DIR"
   # default branch = main even on older git without `init -b` (symbolic-ref fallback)
   git init -q -b main "$STATE_DIR" 2>/dev/null \
     || { git init -q "$STATE_DIR"; git -C "$STATE_DIR" symbolic-ref HEAD refs/heads/main; }
@@ -228,20 +229,24 @@ resolve_portainer_access() {
 
   # API key beats username/password; NEITHER → exit 3, a SOFT failure the
   # deploy.sh pre-deploy hook (and any other caller) can absorb non-fatally.
+  # Credentials NEVER ride in curl's argv (any local user reads /proc/*/cmdline):
+  # the auth header and login body go through files inside the 0700 mktemp dir
+  # (shredded by the EXIT trap) via curl's @file syntax (-H @f / -d @f, ≥7.55).
   if [[ -n "${PORTAINER_API_KEY:-}" ]]; then
-    AUTH_ARGS=(-H "X-API-Key: ${PORTAINER_API_KEY}")
+    printf 'X-API-Key: %s\n' "$PORTAINER_API_KEY" > "$_TMP/auth-headers"
   elif [[ -n "${PORTAINER_PASSWORD:-}" ]]; then
-    local body jwt
-    # JSON-encode via python (a printf template breaks on quotes in passwords)
-    body="$(python3 -c 'import json,os;print(json.dumps({
+    local jwt
+    # JSON-encode via python, reading the ENVIRONMENT (a printf template breaks
+    # on quotes in passwords — and an argv literal would leak it) → file.
+    python3 -c 'import json,os;print(json.dumps({
         "username": os.environ.get("PORTAINER_USER", "admin"),
-        "password": os.environ["PORTAINER_PASSWORD"]}))')"
+        "password": os.environ["PORTAINER_PASSWORD"]}))' > "$_TMP/auth-body.json"
     curl -ksS --fail -H "Host: portainer.${INDUSTREAM_DOMAIN}" \
-      -H "Content-Type: application/json" -d "$body" \
+      -H "Content-Type: application/json" -d @"$_TMP/auth-body.json" \
       -o "$_TMP/auth.json" "https://localhost/api/auth"
     jwt="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("jwt",""))' "$_TMP/auth.json")"
     [[ -n "$jwt" ]] || { echo "✗ Portainer auth succeeded but returned no jwt" >&2; exit 1; }
-    AUTH_ARGS=(-H "Authorization: Bearer ${jwt}")
+    printf 'Authorization: Bearer %s\n' "$jwt" > "$_TMP/auth-headers"
   else
     echo "⚠ neither PORTAINER_API_KEY nor PORTAINER_PASSWORD set — cannot snapshot live state" >&2
     exit 3
@@ -249,7 +254,7 @@ resolve_portainer_access() {
 }
 
 papi() {  # papi <api-path> <out-file>  — GET https://localhost/api<path>
-  curl -ksS --fail -H "Host: portainer.${INDUSTREAM_DOMAIN}" "${AUTH_ARGS[@]}" \
+  curl -ksS --fail -H "Host: portainer.${INDUSTREAM_DOMAIN}" -H @"$_TMP/auth-headers" \
     -o "$2" "https://localhost/api$1"
 }
 
@@ -284,7 +289,9 @@ PY
   local count=0 sid sname
   while IFS=$'\t' read -r sid sname; do
     [[ -n "$sid" && -n "$sname" ]] || continue
-    case "$sname" in */*|*..*) echo "  ⚠ skipping unsafe stack name '${sname}'" >&2; continue ;; esac
+    # positive allowlist (NOT a blocklist) — the name becomes a filesystem path
+    [[ "$sname" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] \
+      || { echo "  ⚠ skipping unsafe stack name '${sname}'" >&2; continue; }
     papi "/stacks/${sid}/file" "$_TMP/file.json"
     python3 -c 'import json,sys;open(sys.argv[2],"w").write(json.load(open(sys.argv[1])).get("StackFileContent") or "")' \
       "$_TMP/file.json" "$_TMP/raw.yml"
