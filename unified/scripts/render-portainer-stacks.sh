@@ -80,7 +80,10 @@ if [[ "$BAKED" == true ]]; then
   [[ -f ".env.${ENV}" ]] && ENV_FILES+=(--env-file ".env.${ENV}")
 fi
 
-OUT="releases/portainer/${ENV}-${EDITION}"
+# OUT_DIR env override: callers that bake SECRETS into the output (deploy-state.sh
+# renders with the deploy env in the process) redirect it to a private temp dir —
+# the default tracked releases/ tree must never receive interpolated credentials.
+OUT="${OUT_DIR:-releases/portainer/${ENV}-${EDITION}}"
 rm -rf "$OUT"; mkdir -p "$OUT"
 
 # ---- the shared stack.env (concatenated single sources; later wins) ---------

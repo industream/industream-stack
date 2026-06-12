@@ -331,6 +331,14 @@ seed_ee() {
 # ---- Dispatch ---------------------------------------------------------------
 if [[ "$RUNTIME" == compose ]]; then
   [[ -n "$PROJECT" ]] || { echo "✗ --project required for compose" >&2; exit 1; }
+  # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
+  # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
+  # made in the Portainer UI are never silently lost. Soft-fails (exit 3) when
+  # Portainer is absent or credentials are not provided. ENV is passed explicitly
+  # — it is not exported yet on this branch (the env sourcing happens after `up`).
+  if [[ -d "$HERE/../.deploy-state/.git" ]]; then
+    ENV="$ENV" bash "$HERE/scripts/deploy-state.sh" snapshot || echo "⚠ deploy-state snapshot skipped/failed (non-fatal)"
+  fi
   docker compose -p "$PROJECT" "${ENV_FILES[@]}" "${FILES[@]}" up -d
   # Source the env so the seeders see INDUSTREAM_DOMAIN / OIDC_CLIENT_ID / admin creds
   # (compose dispatch uses --env-file, which doesn't export into this process).
@@ -352,6 +360,13 @@ else
   for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
+  # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
+  # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
+  # made in the Portainer UI are never silently lost. Soft-fails (exit 3) when
+  # Portainer is absent or credentials are not provided.
+  if [[ -d "$HERE/../.deploy-state/.git" ]]; then
+    bash "$HERE/scripts/deploy-state.sh" snapshot || echo "⚠ deploy-state snapshot skipped/failed (non-fatal)"
+  fi
   # Pre-pull images BEFORE the stack deploy, a FEW at a time. `docker stack deploy`
   # pulls one image per task ALL AT ONCE (~33 concurrent), which wedges containerd
   # on small nodes (tasks stuck in 'Preparing' even when the image is locally
