@@ -49,37 +49,82 @@ scrub() {  # scrub <compose|env> <src> <dst>
   python3 - "$1" "$2" "$3" <<'PY'
 import re, sys, yaml
 mode, src, dst = sys.argv[1], sys.argv[2], sys.argv[3]
-SENSITIVE = re.compile(r"(password|passwd|secret|token|api[-_]?key)", re.I)
+# Key-based rule: covers the platform's real key shapes — *_PASSWORD/_SECRET/
+# _TOKEN/_API_KEY, IH_JWT_SIGNING_KEY (PEM-in-env), PostgreSql__ConnectionString
+# (.NET double-underscore), Logto's DB_URL/DATABASE_URL, license/master keys…
+SENSITIVE = re.compile(
+    r"(password|passwd|secret|token|api[-_]?key|credentials?|private[-_]?key"
+    r"|signing[-_]?key|encryption[-_]?key|master[-_]?key|license[-_]?key"
+    r"|connection[-_]?string|(data(base)?|db)[-_]?url|authorization"
+    r"|basic[-_]?auth)", re.I)
 SAFE_SUFFIXES = ("_FILE", "_SECRET_NAME", "_SECRET_PATTERN")
+# Value-based rule: the only defence for credentials hiding under INNOCENT keys
+# (SOME_URL=…://user:pass@host, Healthcheck="…password=x"). Redacts the embedded
+# credential ONLY, keeping the rest of the value diffable.
+URL_USERINFO = re.compile(r"://[^/@\s]+:[^@\s]+@")
+INLINE_PASSWORD = re.compile(r"(?i)(password\s*=\s*)[^;,\s]+")  # \1 keeps casing
+
+def scrub_text(value):
+    # Value-pattern pass for any string, regardless of which key holds it.
+    if not isinstance(value, str):
+        return value
+    value = URL_USERINFO.sub("://<redacted>@", value)
+    return INLINE_PASSWORD.sub(r"\1<redacted>", value)
 
 def scrub_value(key, value):
-    # Redact only REAL secret material. Keys that merely POINT at a secret
-    # (a /run/secrets/ path, an external secret name/pattern) are kept — they
-    # carry no secret and are exactly what a drift diff must surface.
-    if value is None or not SENSITIVE.search(key):
+    # Key-based pass. Redact only REAL secret material: keys that merely POINT
+    # at a secret (a /run/secrets/ path, an external secret name/pattern) are
+    # kept — they carry no secret and are exactly what a drift diff must
+    # surface. Non-sensitive keys still get the value-pattern pass.
+    if value is None:
         return value
-    if key.strip().upper().endswith(SAFE_SUFFIXES):
-        return value
-    if str(value).startswith("/run/secrets/"):
-        return value
-    return "<redacted>"
+    if SENSITIVE.search(key) \
+            and not key.strip().upper().endswith(SAFE_SUFFIXES) \
+            and not str(value).startswith("/run/secrets/"):
+        return "<redacted>"
+    return scrub_text(value)
+
+def scrub_kv_item(entry):
+    # One "KEY=value" list element (env list form, label list form).
+    if not isinstance(entry, str):
+        return entry
+    if "=" not in entry:
+        return scrub_text(entry)               # bare "KEY" passthrough: no value
+    key, value = entry.split("=", 1)
+    return "{}={}".format(key, scrub_value(key, value))
+
+def scrub_str_or_list(value):
+    # command / entrypoint / healthcheck.test: a string or a list of argv words.
+    # NO key semantics here → value-pattern pass only; `--admin-password-file
+    # /run/secrets/x` style args carry no value and pass through unchanged.
+    if isinstance(value, list):
+        return [scrub_text(e) for e in value]
+    return scrub_text(value)
+
+def scrub_kv_field(container, field):
+    # environment / labels in either compose shape: map {K: v} or list ["K=v"].
+    kv = container.get(field)
+    if isinstance(kv, dict):
+        for k in list(kv):
+            kv[k] = scrub_value(k, kv[k])
+    elif isinstance(kv, list):
+        container[field] = [scrub_kv_item(e) for e in kv]
 
 if mode == "compose":
     doc = yaml.safe_load(open(src)) or {}
     for svc in (doc.get("services") or {}).values():
         if not isinstance(svc, dict):
             continue
-        env = svc.get("environment")
-        if isinstance(env, dict):              # map form: KEY: value
-            for k in list(env):
-                env[k] = scrub_value(k, env[k])
-        elif isinstance(env, list):            # list form: "KEY=value" / "KEY"
-            def scrub_item(entry):
-                if not (isinstance(entry, str) and "=" in entry):
-                    return entry               # bare "KEY" passthrough: no value
-                key, value = entry.split("=", 1)
-                return "{}={}".format(key, scrub_value(key, value))
-            svc["environment"] = [scrub_item(e) for e in env]
+        scrub_kv_field(svc, "environment")         # key/value fields → key rule
+        scrub_kv_field(svc, "labels")
+        if isinstance(svc.get("deploy"), dict):    # swarm puts Traefik labels
+            scrub_kv_field(svc["deploy"], "labels")  # (basicauth…) under deploy.
+        for field in ("command", "entrypoint"):    # keyless fields → value rule
+            if field in svc:
+                svc[field] = scrub_str_or_list(svc[field])
+        hc = svc.get("healthcheck")
+        if isinstance(hc, dict) and "test" in hc:
+            hc["test"] = scrub_str_or_list(hc["test"])
     # IDENTICAL dump settings to render-portainer-stacks.sh: live content was
     # PUT to Portainer from that generator's output, so re-dumping with the
     # same settings keeps live and desired textually comparable.
