@@ -1,0 +1,33 @@
+# =============================================================================
+# runtime/compose/portainer.yml — Compose overlay for the optional Portainer.
+# =============================================================================
+# Compose topology: own Caddy subdomain (portainer.${FM_DOMAIN}), file secret,
+# docker socket mount, data volume, flowmaker-net.
+# =============================================================================
+services:
+  portainer:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer-data:/data
+    secrets:
+      - portainer_admin_password
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      caddy: portainer.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 9000}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+secrets:
+  portainer_admin_password:
+    file: ${SECRETS_DIR:-./secrets}/portainer_admin_password
+
+volumes:
+  portainer-data:
+
+networks:
+  flowmaker-net:
+    external: true
+    name: ${FM_NETWORK}

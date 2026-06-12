@@ -146,6 +146,7 @@ BASE_SECRETS=(
     "hub_backend_admin_user"
     "hub_backend_admin_password"
     "hub_jwt_signing_key"
+    "portainer_admin_password"
 )
 
 # =============================================================================

@@ -1,0 +1,93 @@
+networks:
+  platform:
+    external: true
+    name: ${ENV}-platform
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+secrets:
+  datacatalog_api_key:
+    external: true
+    name: ${ENV}_datacatalog_api_key
+  datacatalog_db_password:
+    external: true
+    name: ${ENV}_datacatalog_db_password
+services:
+  datacatalog-api:
+    command:
+    - dotnet
+    - /app/Industream.DataCatalog.Api.dll
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-datacatalog-api-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-datacatalog-api-secure.rule=Host(`datacatalog.${INDUSTREAM_DOMAIN}`)
+        || Host(`datacatalog-api.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-datacatalog-api-secure.tls=true
+      - traefik.http.routers.${ENV}-datacatalog-api-secure.service=${ENV}-datacatalog-api
+      - traefik.http.routers.${ENV}-datacatalog-api-secure.middlewares=allow-iframe@file
+      - traefik.http.services.${ENV}-datacatalog-api.loadbalancer.server.port=8002
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.08'
+          memory: 128M
+    entrypoint:
+    - /bin/sh
+    - /scripts/dotnet-entrypoint.sh
+    environment:
+    - ASPNETCORE_HTTP_PORTS=8002;8003
+    - Authentication__Frontend__Issuer=${HUB_AUTH_ISSUER}
+    - Authentication__Frontend__Audience=${HUB_AUTH_AUDIENCE}
+    - Authentication__Frontend__JwksUrl=${HUB_AUTH_JWKS_URL}
+    - Authentication__Backend__ApiKey=${BACKEND_API_KEY:-}
+    - Cors__AllowedOrigins=${INDUSTREAM_HUB_ORIGIN}
+    - DB_SECRET_NAME=${DATACATALOG_DB_SECRET_NAME}
+    - PostgreSql__ConnectionString=Server=${DATACATALOG_DB_HOST};Port=5432;User Id=${DATACATALOG_DB_USER:-datacatalog};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${DATACATALOG_DB_NAME:-DataCatalog};
+    - Database__MigrateOnStartup=false
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      test:
+      - CMD-SHELL
+      - wget --no-verbose --tries=1 --spider http://127.0.0.1:8002/health || exit
+        1
+      timeout: 10s
+    image: ${DATACATALOG_API_IMAGE}
+    networks:
+      platform: null
+      traefik-public: null
+    secrets:
+    - source: datacatalog_db_password
+      target: ${ENV}_datacatalog_db_password
+    - source: datacatalog_api_key
+      target: ${ENV}_datacatalog_api_key
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: /tmp/iw-port/unified/base/config/dotnet-entrypoint.sh
+      target: /scripts/dotnet-entrypoint.sh
+      type: bind
+  datacatalog-ui:
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-datacatalog-ui-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-datacatalog-ui-secure.rule=Host(`datacatalog-ui.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-datacatalog-ui-secure.tls=true
+      - traefik.http.routers.${ENV}-datacatalog-ui-secure.service=${ENV}-datacatalog-ui
+      - traefik.http.routers.${ENV}-datacatalog-ui-secure.middlewares=allow-iframe@file
+      - traefik.http.services.${ENV}-datacatalog-ui.loadbalancer.server.port=8080
+    environment:
+    - INDUSTREAM_HUB_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
+    - DATACATALOG_API_URL=https://datacatalog-api.${INDUSTREAM_DOMAIN}
+    - SCHEMA_OPTIMIZER_API_URL=https://datacatalog-api.${INDUSTREAM_DOMAIN}
+    - FLOWMAKER_CONFIGHUB_URL=https://confighub.${INDUSTREAM_DOMAIN}
+    image: ${DATACATALOG_UI_IMAGE}
+    networks:
+      platform: null
+      traefik-public: null

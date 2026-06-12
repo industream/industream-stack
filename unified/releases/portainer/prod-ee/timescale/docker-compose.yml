@@ -1,0 +1,110 @@
+networks:
+  platform:
+    external: true
+    name: ${ENV}-platform
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+secrets:
+  timescaledb_password:
+    external: true
+    name: ${ENV}_timescaledb_password
+services:
+  databridge-timescaledb:
+    command:
+    - dotnet
+    - /app/Industream.DataBridge.Api.dll
+    deploy:
+      labels:
+      - traefik.enable=true
+      - traefik.http.routers.${ENV}-databridge-tsdb-secure.entrypoints=websecure
+      - traefik.http.routers.${ENV}-databridge-tsdb-secure.rule=Host(`databridge-tsdb.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-databridge-tsdb-secure.tls=true
+      - traefik.http.routers.${ENV}-databridge-tsdb-secure.service=${ENV}-databridge-tsdb
+      - traefik.http.routers.${ENV}-databridge-tsdb-secure.middlewares=allow-iframe@file
+      - traefik.http.routers.${ENV}-databridge-tsdb.entrypoints=web
+      - traefik.http.routers.${ENV}-databridge-tsdb.rule=Host(`databridge-tsdb.${INDUSTREAM_DOMAIN}`)
+      - traefik.http.routers.${ENV}-databridge-tsdb.middlewares=redirect-to-https@file
+      - traefik.http.services.${ENV}-databridge-tsdb.loadbalancer.server.port=8080
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.08'
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+    entrypoint:
+    - /bin/sh
+    - /scripts/dotnet-entrypoint.sh
+    environment:
+    - DB_SECRET_PATTERN=${TIMESCALEDB_DB_SECRET_PATTERN}
+    - PostgreSql__ConnectionString=Server=timescaledb;Port=5432;User Id=${TIMESCALEDB_ADMIN_USER};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${TIMESCALEDB_DB_NAME};
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      test:
+      - CMD-SHELL
+      - wget --spider -qS http://localhost:8080/swagger 2>&1 | grep -qE 'HTTP/1..
+        (200|301|302)' || exit 1
+      timeout: 10s
+    image: ${DATABRIDGE_API_IMAGE}
+    networks:
+      platform: null
+      traefik-public: null
+    secrets:
+    - source: timescaledb_password
+      target: ${ENV}_timescaledb_password
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: /tmp/iw-port/unified/base/config/dotnet-entrypoint.sh
+      target: /scripts/dotnet-entrypoint.sh
+      type: bind
+  timescaledb:
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1024M
+        reservations:
+          cpus: '0.15'
+          memory: 256M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
+        window: 120s
+    environment:
+    - POSTGRES_USER=${TIMESCALEDB_ADMIN_USER}
+    - POSTGRES_PASSWORD_FILE=/run/secrets/${TIMESCALEDB_DB_SECRET_NAME}
+    - POSTGRES_DB=${TIMESCALEDB_DB_NAME}
+    - PGDATA=/var/lib/postgresql/data/pgdata
+    healthcheck:
+      interval: 30s
+      retries: 3
+      start_period: 30s
+      test:
+      - CMD-SHELL
+      - pg_isready -U ${TIMESCALEDB_ADMIN_USER} -d ${TIMESCALEDB_DB_NAME}
+      timeout: 10s
+    image: timescale/timescaledb:${TIMESCALEDB_VERSION}
+    networks:
+      platform: null
+    secrets:
+    - source: timescaledb_password
+      target: ${ENV}_timescaledb_password
+    volumes:
+    - source: timescaledb-data
+      target: /var/lib/postgresql/data
+      type: volume
+      volume: {}
+volumes:
+  timescaledb-data:
+    name: ${ENV}-timescaledb-data

@@ -1,0 +1,280 @@
+#!/usr/bin/env bash
+# =============================================================================
+# render-portainer-stacks.sh — split the unified tree into ONE editable stack
+# per group, as Git-stack artifacts for Portainer (mode B).
+# =============================================================================
+# The platform normally deploys as ONE swarm stack (deploy.sh → industream-prod,
+# 45 services). A CLI-deployed stack is "external/limited" in Portainer: viewable
+# per-service (mode A) but NOT editable (Portainer has no source file).
+#
+# This generator emits one self-contained, EDITABLE compose file per group so
+# Portainer can OWN each as a Git stack pointing at its subfolder:
+#
+#   releases/portainer/<env>-<edition>/
+#     core/docker-compose.yml          (+ Logto + hub EE transform when edition=ee)
+#     flowmaker/docker-compose.yml
+#     datacatalog/docker-compose.yml
+#     data/docker-compose.yml
+#     monitoring/docker-compose.yml
+#     workers/docker-compose.yml        (CE socle + selected community workers)
+#     workers-premium/docker-compose.yml (ee only)
+#     timescale/docker-compose.yml      (ee only)
+#     portainer/docker-compose.yml
+#     .env                              (shared, auto-loaded by Portainer/compose)
+#     bootstrap.sh                      (pre-create the external shared network)
+#     README.md
+#
+# Files are MERGED (base + runtime/swarm overlay) but NOT interpolated — the
+# ${VARS} stay templated and resolve from the sibling .env (so the same artifact
+# is editable in Portainer's editor and re-renderable from source). The shared
+# `platform` overlay network is rewritten to `external: true` (every group stack
+# attaches to the one pre-created ${ENV}-platform instead of each creating it).
+#
+#   ./render-portainer-stacks.sh --env prod --edition ee [--bundle 1.0.1] \
+#       [--workers "worker-timer,worker-…"] [--with-portainer]
+# =============================================================================
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
+cd "$HERE"
+
+ENV="prod" EDITION="ce" BUNDLE="" WORKERS_ENABLED="" WITH_PORTAINER=false BAKED=false
+RUNTIME="swarm"   # mode A/B target is swarm; compose split is a later step
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --env)            ENV="$2"; shift 2 ;;
+    --edition)        EDITION="$2"; shift 2 ;;
+    --bundle)         BUNDLE="$2"; shift 2 ;;
+    --workers)        WORKERS_ENABLED="$2"; shift 2 ;;
+    --with-portainer) WITH_PORTAINER=true; shift ;;
+    # --baked: interpolate every ${VAR} to a literal value (self-contained files,
+    # no sibling .env needed by Portainer). Default keeps ${VARS} templated.
+    --baked)          BAKED=true; shift ;;
+    -h|--help)        sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+[[ "$EDITION" == ce || "$EDITION" == ee ]] || { echo "✗ --edition ce|ee" >&2; exit 1; }
+
+# ---- group set per edition (matches deploy.sh's GROUP_SET semantics) --------
+GROUP_LIST="core flowmaker datacatalog data monitoring workers"
+[[ "$EDITION" == ee ]] && GROUP_LIST="$GROUP_LIST workers-premium timescale"
+[[ "$WITH_PORTAINER" == true ]] && GROUP_LIST="$GROUP_LIST portainer"
+
+# ---- resolve the release bundle (same rule as deploy.sh) --------------------
+if [[ -n "$BUNDLE" ]]; then
+  BUNDLE_DIR="releases/bundle-platform-${BUNDLE}"
+else
+  mapfile -t _b < <(ls -d releases/bundle-platform-*/ 2>/dev/null)
+  [[ ${#_b[@]} -eq 1 ]] || { echo "✗ pass --bundle <ver> (found ${#_b[@]} bundles)" >&2; exit 1; }
+  BUNDLE_DIR="${_b[0]%/}"
+fi
+[[ -d "$BUNDLE_DIR" ]] || { echo "✗ no bundle at ${BUNDLE_DIR}" >&2; exit 1; }
+
+# ---- --baked: the env-file chain to interpolate from (same order as deploy.sh) -
+ENV_FILES=()
+if [[ "$BAKED" == true ]]; then
+  export ENV   # ${ENV}-platform etc. interpolate from the environment
+  ENV_FILES=(--env-file registries.env --env-file versions.env --env-file auth.env --env-file "runtime.${RUNTIME}.env")
+  for bf in "$BUNDLE_DIR"/.env.*; do ENV_FILES+=(--env-file "$bf"); done
+  [[ -f ".env.${ENV}" ]] && ENV_FILES+=(--env-file ".env.${ENV}")
+fi
+
+OUT="releases/portainer/${ENV}-${EDITION}"
+rm -rf "$OUT"; mkdir -p "$OUT"
+
+# ---- the shared stack.env (concatenated single sources; later wins) ---------
+# Portainer's own convention: a `stack.env` next to the compose file supplies the
+# ${VAR} substitutions (Git-repo deploys read it verbatim; Web-editor/API turn the
+# "Environment variables" section into it). So the compose stays TEMPLATED and DRY
+# — edit a value once here, not inline in N services. Non-secret only: image refs,
+# versions, domain, registries. Secrets stay EXTERNAL (create-secrets.sh) and never
+# land in a Git artifact.
+# emit_env: drop comment/blank lines, THEN strip any trailing inline comment
+# (` # …`) and trailing whitespace from each value. The source env files carry
+# inline docs (`UIFUSION_UI_VERSION=2.1.4   # hub shell`); bash `source` strips
+# those, but a raw line fed to Portainer's Env would keep `2.1.4   # hub shell`
+# as the value. The strip only fires on whitespace-then-#, so quoted values with
+# no ` #` (e.g. the grafana plugin URL;id) are untouched.
+emit_env() { grep -vE '^\s*(#|$)' "$1" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//'; }
+ENVOUT="$OUT/stack.env"
+{
+  echo "# Generated by render-portainer-stacks.sh — env=${ENV} edition=${EDITION}"
+  echo "# Auto-loaded by Portainer/compose from each stack folder. NO SECRETS here."
+  echo "ENV=${ENV}"
+  for f in registries.env versions.env auth.env "runtime.${RUNTIME}.env"; do
+    [[ -f "$f" ]] && { echo "# --- $f ---"; emit_env "$f" || true; }
+  done
+  for bf in "$BUNDLE_DIR"/.env.*; do echo "# --- ${bf##*/} ---"; emit_env "$bf" || true; done
+  [[ -f ".env.${ENV}" ]] && { echo "# --- .env.${ENV} ---"; emit_env ".env.${ENV}" || true; }
+} > "$ENVOUT"
+
+echo "▶ rendering ${EDITION^^} / env=${ENV} → ${OUT}  groups=[${GROUP_LIST}]"
+
+# ---- per-group merge -> external-network rewrite ----------------------------
+for g in $GROUP_LIST; do
+  files=(-f "base/${g}.yml")
+  [[ -f "runtime/${RUNTIME}/${g}.yml" ]] && files+=(-f "runtime/${RUNTIME}/${g}.yml")
+  # datacatalog increment-1 top-level overlay rides with the datacatalog group.
+  [[ "$g" == datacatalog && -f "runtime.${RUNTIME}.yml" ]] && files+=(-f "runtime.${RUNTIME}.yml")
+  # EE transform (hub-backend/frontend swap + Logto + logto-postgres) lands in the
+  # CORE stack — that is where industream-hub-backend/frontend live.
+  if [[ "$g" == core && "$EDITION" == ee ]]; then
+    files+=(-f "base/ee.yml")
+    [[ -f "runtime/${RUNTIME}/ee.yml" ]] && files+=(-f "runtime/${RUNTIME}/ee.yml")
+  fi
+
+  mkdir -p "$OUT/$g"
+  # 1) MERGE overlays WITHOUT interpolation. --no-interpolate is lenient: it tolerates
+  #    cross-group `depends_on` (e.g. datacatalog-api → postgres, in the `data` stack)
+  #    and services referencing the not-yet-defined `platform` net. Interpolating here
+  #    would instead REJECT both. We write to a temp file (NOT a pipe): `python3 - <<'PY'`
+  #    reads its PROGRAM from stdin, which would swallow piped input.
+  _merged="$(mktemp)"; _cleaned="$(mktemp)"
+  docker compose "${files[@]}" config --no-interpolate > "$_merged" 2>/dev/null
+  # 2) CLEAN: strip cross-group depends_on + externalise shared networks (templated).
+  WORKERS_CSV="$WORKERS_ENABLED" GROUP="$g" \
+    python3 - "$_merged" "$_cleaned" <<'PY'
+import os, sys, yaml
+src, out = sys.argv[1], sys.argv[2]
+doc = yaml.safe_load(open(src)) or {}
+doc.pop("name", None)            # drop the synthetic compose project name
+svcs = doc.get("services") or {}
+
+# `docker stack deploy` (swarm) IGNORES depends_on; and a cross-group depends_on
+# (e.g. grafana-wrapper → industream-hub-backend, which lives in the `core` stack)
+# makes `compose config` reject the file. Strip it everywhere — harmless on swarm.
+for s in svcs.values():
+    if isinstance(s, dict):
+        s.pop("depends_on", None)
+
+# Drop orphan cross-group PATCH fragments: a service that another group only
+# patches (e.g. monitoring adds an allow-iframe Traefik label to
+# industream-hub-frontend, which is OWNED by `core`) renders here as a stub with
+# no image/build → not a deployable service. (The patch itself should be relocated
+# to the owning group — tracked as a follow-up; for now the label is dropped.)
+svcs = {n: s for n, s in svcs.items() if isinstance(s, dict) and ("image" in s or "build" in s)}
+doc["services"] = svcs
+
+# Which named networks do services actually attach to?
+used = set()
+for s in svcs.values():
+    n = (s or {}).get("networks")
+    if isinstance(n, dict):  used |= set(n)
+    elif isinstance(n, list): used |= set(n)
+
+# Externalise the SHARED networks so every group stack attaches to the ONE
+# pre-created instance instead of each trying to create it. A group can REFERENCE
+# `platform` without defining it (e.g. workers) — inject it regardless of `used`.
+nets = doc.get("networks") or {}
+if "platform" in used or "platform" in nets:
+    # templated name; --baked's interpolation pass turns ${ENV}-platform → prod-platform.
+    nets["platform"] = {"external": True, "name": "${ENV}-platform"}
+if "traefik-public" in used or "traefik-public" in nets:
+    nets["traefik-public"] = {"external": True, "name": "traefik-shared_traefik-public"}
+doc["networks"] = nets
+
+# optional per-worker selection (workers / workers-premium groups only)
+keep = {w.strip() for w in os.environ.get("WORKERS_CSV", "").split(",") if w.strip()}
+if keep and os.environ.get("GROUP", "") in ("workers", "workers-premium"):
+    doc["services"] = {n: s for n, s in svcs.items() if n in keep}
+
+yaml.safe_dump(doc, open(out, "w"), sort_keys=False, default_flow_style=False)
+PY
+  # 3) BAKE (optional): now that depends_on is gone and nets are external, a second
+  #    INTERPOLATED `config` pass is valid → literal image refs/domain, self-contained.
+  if [[ "$BAKED" == true ]]; then
+    docker compose "${ENV_FILES[@]}" -f "$_cleaned" config > "$OUT/$g/docker-compose.yml" 2>/dev/null
+  else
+    cp "$_cleaned" "$OUT/$g/docker-compose.yml"
+  fi
+  rm -f "$_merged" "$_cleaned"
+  # 4) FINAL fixup on the output: `docker compose config` serialises
+  #    deploy.resources.*.cpus as a NUMBER (0.5), but Portainer's swarm parser
+  #    requires a STRING ("0.5"). Re-quote it here (after the bake pass, which would
+  #    otherwise re-normalise it back to a number).
+  python3 - "$OUT/$g/docker-compose.yml" <<'PY'
+import sys, yaml
+f = sys.argv[1]; doc = yaml.safe_load(open(f)) or {}
+# the bake pass re-injects a top-level `name:` (compose project) that Portainer's
+# swarm parser rejects ("Additional property name is not allowed") — drop it.
+doc.pop("name", None)
+
+def humanize_mem(v):
+    # `docker compose config` expands `256M` → raw bytes (268435456). Re-collapse to
+    # the largest clean binary unit so the editor reads 256M, not a wall of digits.
+    try:
+        n = int(str(v))
+    except (TypeError, ValueError):
+        return v   # already a string like "256M" — leave as-is
+    for unit, size in (("G", 1 << 30), ("M", 1 << 20), ("K", 1 << 10)):
+        if n and n % size == 0:
+            return f"{n // size}{unit}"
+    return str(n)
+
+for s in (doc.get("services") or {}).values():
+    res = ((s.get("deploy") or {}).get("resources") or {})
+    for kind in ("limits", "reservations"):
+        r = res.get(kind) or {}
+        if "cpus" in r:
+            r["cpus"] = str(r["cpus"])        # swarm parser wants a string
+        if "memory" in r:
+            r["memory"] = humanize_mem(r["memory"])
+yaml.safe_dump(doc, open(f, "w"), sort_keys=False)
+PY
+  # a sibling stack.env in every group folder (Portainer git-repo deploys read the
+  # stack.env next to the compose path); also drop a .env so a plain local
+  # `docker compose` auto-loads the same values when validating by hand.
+  cp "$ENVOUT" "$OUT/$g/stack.env"
+  cp "$ENVOUT" "$OUT/$g/.env"
+  svc_count=$(python3 -c "import yaml;print(len((yaml.safe_load(open('$OUT/$g/docker-compose.yml')) or {}).get('services') or {}))")
+  echo "  ✓ ${g}  (${svc_count} services)"
+done
+
+# ---- bootstrap: pre-create the external shared overlay network --------------
+cat > "$OUT/bootstrap.sh" <<EOF
+#!/usr/bin/env bash
+# Pre-create the shared overlay network every group stack attaches to, and the
+# external secrets, BEFORE deploying the per-group stacks in Portainer.
+set -euo pipefail
+ENV="\${1:-${ENV}}"
+docker network inspect "\${ENV}-platform" >/dev/null 2>&1 \\
+  || docker network create -d overlay --attachable "\${ENV}-platform"
+echo "✓ network \${ENV}-platform ready"
+echo "→ now run create-secrets.sh (external prod_* secrets), then add each"
+echo "  subfolder here as a Portainer Git stack (Repository → Compose path = <group>/docker-compose.yml)."
+EOF
+chmod +x "$OUT/bootstrap.sh"
+
+# ---- README: the GitOps flow ------------------------------------------------
+cat > "$OUT/README.md" <<EOF
+# Portainer per-group stacks — ${ENV} / ${EDITION^^}
+
+One editable stack per group (mode B). Generated by
+\`scripts/render-portainer-stacks.sh --env ${ENV} --edition ${EDITION}\`.
+
+## Deploy order
+1. \`./bootstrap.sh\`            — create the external \`${ENV}-platform\` overlay
+2. \`scripts/setup/create-secrets.sh\` — create the external \`${ENV}_*\` secrets
+3. In Portainer → **Stacks → Add stack → Git repository**, add one stack per
+   subfolder (Compose path = \`<group>/docker-compose.yml\`). Each is then
+   editable in the UI and redeployable from Git.
+
+## ⚠ Deploy method matters — templated vs --baked
+Portainer resolves \`\${VARS}\` from stack.env ONLY in some fields when deploying a
+**string/web-editor** stack — it MISSES secret \`target:\` and \`*_FILE\` envs, so a
+templated file deployed that way mounts secrets at \`/run/secrets/\${ENV}_…\`
+(literal) and stateful services crash (\`No such file or directory\`).
+- **Git-repository** deploy → compose does FULL substitution → use the TEMPLATED
+  files here + this stack.env. ✅ the intended GitOps path.
+- **string / web-editor / API** deploy → re-render with \`--baked\` (every \`\${VAR}\`
+  already a literal, no Portainer substitution needed). ✅ reliable, but inline.
+
+## Groups
+$(for g in $GROUP_LIST; do echo "- \`$g/\`"; done)
+
+> Edits made in the Portainer editor are NOT pushed back to Git — keep Git the
+> source of truth and re-render to avoid drift.
+EOF
+
+echo "▶ done → ${OUT}  (bootstrap.sh + README.md + stack.env)"
