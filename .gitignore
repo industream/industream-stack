@@ -15,6 +15,10 @@ docker-stack-resolved*.yml
 docker-stack-secrets.yml
 docker-stack.workers-legacy.yml
 traefik-dynamic/traefik-dynamic.yml
+
+# Generated per-env at deploy time by create-secrets.sh — never commit the real
+# file (it would leak a default htpasswd hash). Keep only the .example.
+traefik-dynamic/backup-monitor-htpasswd
 certs/
 client-setup/
 config/worker-versions.json
