@@ -16,15 +16,10 @@
 #                    └─ grafana-direct.${DOMAIN}       (back-door, no wrapper)
 # =============================================================================
 services:
-  # ---- Hub SPA: allow cross-subdomain iframe so the wrapper at
-  # ---- dashboard.${DOMAIN} can embed the Hub auth-bridge iframe. Without it
-  # ---- X-Frame-Options=SAMEORIGIN blocks the bridge → no JWT → Grafana 302
-  # ---- /login. NB: `uifusion` is the SPA shell; `industream-hub-frontend-ui` is the router.
-  industream-hub-frontend:
-    deploy:
-      labels:
-        - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.middlewares=allow-iframe@file
-
+  # NB: the Hub SPA iframe-allow label (allow-iframe@file on
+  # industream-hub-frontend-ui-secure) now lives in runtime/swarm/core.yml next
+  # to the service it belongs to, so per-group mode-B stacks keep it. It used to
+  # sit here and was dropped by the imageless-stub split.
   grafana:
     # Route the public Hub hostname back to the swarm host so Grafana can fetch
     # JWKS over HTTPS via Traefik (:443 published port). host-gateway = the
