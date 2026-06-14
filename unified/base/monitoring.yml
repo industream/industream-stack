@@ -50,6 +50,12 @@ services:
       - GF_AUTH_LOGIN_COOKIE_NAME=grafana_session
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
       - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/${GRAFANA_ADMIN_PASSWORD_SECRET_NAME}
+      # Full path to the DataCatalog API key secret, resolved per runtime via the
+      # *_SECRET_NAME convention (swarm: ${ENV}_datacatalog_api_key, compose:
+      # datacatalog_api_key). The DataBridge datasource provisioning file reads it
+      # through Grafana's $VAR substitution (apiKey__file: $DATACATALOG_API_KEY_FILE)
+      # so a single shared datasources.yaml works on both topologies.
+      - DATACATALOG_API_KEY_FILE=/run/secrets/${DATACATALOG_API_KEY_SECRET_NAME}
       - GF_FEATURE_TOGGLES_ENABLE=accessControlOnCall,idForwarding,externalServiceAccounts
       - GF_ALERTING_ENABLED=false
       - GF_UNIFIED_ALERTING_ENABLED=false

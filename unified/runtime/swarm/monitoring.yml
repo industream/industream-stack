@@ -59,10 +59,10 @@ services:
         target: ${ENV}_influx_admin_token
       - source: datacatalog_db_password
         target: ${ENV}_datacatalog_db_password
+      - source: datacatalog_api_key
+        target: ${ENV}_datacatalog_api_key
       - source: postgres_admin_password
         target: ${ENV}_postgres_admin_password
-      - source: datacatalog_api_key
-        target: datacatalog_api_key
     deploy:
       labels:
         - traefik.enable=true
@@ -205,11 +205,11 @@ secrets:
   datacatalog_db_password:
     name: ${ENV}_datacatalog_db_password
     external: true
-  influx_admin_token:
-    name: ${ENV}_influx_admin_token
-    external: true
   datacatalog_api_key:
     name: ${ENV}_datacatalog_api_key
+    external: true
+  influx_admin_token:
+    name: ${ENV}_influx_admin_token
     external: true
 
 volumes:
