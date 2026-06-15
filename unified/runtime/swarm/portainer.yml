@@ -33,6 +33,7 @@ services:
         - traefik.http.routers.${ENV}-portainer-secure.rule=Host(`portainer.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-portainer-secure.tls=true
         - traefik.http.routers.${ENV}-portainer-secure.service=${ENV}-portainer
+        - traefik.http.routers.${ENV}-portainer-secure.middlewares=allow-iframe@file
         - traefik.http.routers.${ENV}-portainer.entrypoints=web
         - traefik.http.routers.${ENV}-portainer.rule=Host(`portainer.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-portainer.middlewares=redirect-to-https@file
