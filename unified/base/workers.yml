@@ -31,6 +31,13 @@ x-worker: &worker
     FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
     FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
     FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
+    # DataCatalog backend port (:8003) — service-to-service X-Api-Key auth. Workers
+    # have no Hub session, so they authenticate with the static backend API key
+    # (NOT the :8002 frontend JWT). URL carries a functional default; the key is
+    # injected at deploy time from the datacatalog_api_key secret value (empty =
+    # no X-Api-Key header sent, so an un-authenticated DataCatalog still works).
+    FM_DATACATALOG_URL: ${FM_DATACATALOG_URL:-http://datacatalog-api:8003}
+    FM_DATACATALOG_API_KEY: ${FM_DATACATALOG_API_KEY:-}
   # NOTE: no `depends_on: flowmaker-scheduler/-logging` here — those services
   # live in the core group, not this file. Cross-group start ordering is a
   # full-stack-compose concern; a per-group render must stay self-contained.

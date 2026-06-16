@@ -1,6 +1,4 @@
 networks:
-  default:
-    name: base_default
   platform:
     external: true
     name: ${ENV}-platform
@@ -65,7 +63,7 @@ services:
     - bind:
         create_host_path: true
       read_only: true
-      source: /tmp/iw-port/unified/base/config/alertmanager
+      source: /home/cdm/Projets/industream/platform/industream-stack/unified/base/config/alertmanager
       target: /etc/alertmanager
       type: bind
     - source: alertmanager-data
@@ -190,6 +188,7 @@ services:
     - GF_AUTH_LOGIN_COOKIE_NAME=grafana_session
     - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
     - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/${GRAFANA_ADMIN_PASSWORD_SECRET_NAME}
+    - DATACATALOG_API_KEY_FILE=/run/secrets/${DATACATALOG_API_KEY_SECRET_NAME}
     - GF_FEATURE_TOGGLES_ENABLE=accessControlOnCall,idForwarding,externalServiceAccounts
     - GF_ALERTING_ENABLED=false
     - GF_UNIFIED_ALERTING_ENABLED=false
@@ -248,15 +247,15 @@ services:
       target: ${ENV}_influx_admin_token
     - source: datacatalog_db_password
       target: ${ENV}_datacatalog_db_password
+    - source: datacatalog_api_key
+      target: ${ENV}_datacatalog_api_key
     - source: postgres_admin_password
       target: ${ENV}_postgres_admin_password
-    - source: datacatalog_api_key
-      target: datacatalog_api_key
     volumes:
     - bind:
         create_host_path: true
       read_only: true
-      source: /tmp/iw-port/unified/base/config/grafana/provisioning
+      source: /home/cdm/Projets/industream/platform/industream-stack/unified/base/config/grafana/provisioning
       target: /etc/grafana/provisioning
       type: bind
     - source: grafana-data
@@ -266,7 +265,7 @@ services:
     - bind:
         create_host_path: true
       read_only: true
-      source: /tmp/iw-port/unified/base/certs/${INDUSTREAM_DOMAIN}.crt
+      source: /home/cdm/Projets/industream/platform/industream-stack/unified/base/certs/${INDUSTREAM_DOMAIN}.crt
       target: /etc/grafana/extra-cas/platform.crt
       type: bind
   grafana-wrapper:
@@ -427,13 +426,13 @@ services:
     - bind:
         create_host_path: true
       read_only: true
-      source: /tmp/iw-port/unified/base/config/prometheus/prometheus.yml
+      source: /home/cdm/Projets/industream/platform/industream-stack/unified/base/config/prometheus/prometheus.yml
       target: /etc/prometheus/prometheus.yml
       type: bind
     - bind:
         create_host_path: true
       read_only: true
-      source: /tmp/iw-port/unified/base/config/prometheus/rules
+      source: /home/cdm/Projets/industream/platform/industream-stack/unified/base/config/prometheus/rules
       target: /etc/prometheus/rules
       type: bind
     - source: prometheus-data

@@ -14,6 +14,7 @@ services:
       - traefik.http.routers.${ENV}-flowmaker-confighub-secure.rule=Host(`confighub.${INDUSTREAM_DOMAIN}`)
       - traefik.http.routers.${ENV}-flowmaker-confighub-secure.tls=true
       - traefik.http.routers.${ENV}-flowmaker-confighub-secure.service=${ENV}-flowmaker-confighub
+      - traefik.http.routers.${ENV}-flowmaker-confighub-secure.middlewares=allow-iframe@file
       - traefik.http.routers.${ENV}-flowmaker-confighub.entrypoints=web
       - traefik.http.routers.${ENV}-flowmaker-confighub.rule=Host(`confighub.${INDUSTREAM_DOMAIN}`)
       - traefik.http.routers.${ENV}-flowmaker-confighub.middlewares=redirect-to-https@file

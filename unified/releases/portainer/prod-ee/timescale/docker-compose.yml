@@ -64,7 +64,7 @@ services:
     - bind:
         create_host_path: true
       read_only: true
-      source: /tmp/iw-port/unified/base/config/dotnet-entrypoint.sh
+      source: /home/cdm/Projets/industream/platform/industream-stack/unified/base/config/dotnet-entrypoint.sh
       target: /scripts/dotnet-entrypoint.sh
       type: bind
   timescaledb:

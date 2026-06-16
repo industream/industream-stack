@@ -166,7 +166,7 @@ services:
         && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)
       - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.tls=true
       - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.service=${ENV}-industream-hub-frontend-ui
-      - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.middlewares=security-headers@file
+      - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.middlewares=allow-iframe@file
       - traefik.http.routers.${ENV}-industream-hub-frontend-ui.entrypoints=web
       - traefik.http.routers.${ENV}-industream-hub-frontend-ui.rule=Host(`${INDUSTREAM_DOMAIN}`)
         && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)

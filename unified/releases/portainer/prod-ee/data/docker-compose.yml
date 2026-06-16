@@ -81,7 +81,7 @@ services:
     - bind:
         create_host_path: true
       read_only: true
-      source: /tmp/iw-port/unified/base/config/dotnet-entrypoint.sh
+      source: /home/cdm/Projets/industream/platform/industream-stack/unified/base/config/dotnet-entrypoint.sh
       target: /scripts/dotnet-entrypoint.sh
       type: bind
   databridge-postgresql:
@@ -139,7 +139,7 @@ services:
     - bind:
         create_host_path: true
       read_only: true
-      source: /tmp/iw-port/unified/base/config/dotnet-entrypoint.sh
+      source: /home/cdm/Projets/industream/platform/industream-stack/unified/base/config/dotnet-entrypoint.sh
       target: /scripts/dotnet-entrypoint.sh
       type: bind
   influxdb:
@@ -197,7 +197,7 @@ services:
     - bind:
         create_host_path: true
       read_only: true
-      source: /tmp/iw-port/unified/base/config/influxdb-entrypoint.sh
+      source: /home/cdm/Projets/industream/platform/industream-stack/unified/base/config/influxdb-entrypoint.sh
       target: /scripts/influxdb-entrypoint.sh
       type: bind
     - source: influxdb-data
@@ -252,7 +252,7 @@ services:
     - bind:
         create_host_path: true
       read_only: true
-      source: /tmp/iw-port/unified/base/config/postgres-init/init-postgres.sh
+      source: /home/cdm/Projets/industream/platform/industream-stack/unified/base/config/postgres-init/init-postgres.sh
       target: /docker-entrypoint-initdb.d/init-postgres.sh
       type: bind
     - source: postgres-data
