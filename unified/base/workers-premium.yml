@@ -37,7 +37,7 @@ x-worker: &worker
     FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
     FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
     FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
-    FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8080}
+    FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8002}
   # NOTE: no `depends_on: flowmaker-scheduler/-logging` here — those services
   # live in the core group, not this file. Cross-group start ordering is a
   # full-stack-compose concern; a per-group render must stay self-contained.
