@@ -59,7 +59,14 @@ services:
         - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.rule=Host(`${INDUSTREAM_DOMAIN}`) && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)
         - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.tls=true
         - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.service=${ENV}-industream-hub-frontend-ui
-        - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.middlewares=security-headers@file
+        # allow-iframe (NOT security-headers@file): the wrapper at dashboard.${DOMAIN}
+        # must embed the Hub auth-bridge iframe. security-headers@file sets
+        # X-Frame-Options=SAMEORIGIN which blocks the bridge → no JWT → Grafana 302
+        # /login. Lives here (core, where hub-frontend is defined) so per-group
+        # mode-B stacks keep it — previously this override sat in the monitoring
+        # group and was dropped by the imageless-stub split. Mirrors the minio
+        # iframe pattern below.
+        - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.middlewares=allow-iframe@file
         - traefik.http.routers.${ENV}-industream-hub-frontend-ui.entrypoints=web
         - traefik.http.routers.${ENV}-industream-hub-frontend-ui.rule=Host(`${INDUSTREAM_DOMAIN}`) && !PathPrefix(`/auth`) && !PathPrefix(`/api/uifusion`)
         - traefik.http.routers.${ENV}-industream-hub-frontend-ui.middlewares=redirect-to-https@file

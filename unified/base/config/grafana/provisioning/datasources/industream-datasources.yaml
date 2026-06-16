@@ -57,11 +57,13 @@ datasources:
       hardLimitRows: 1000000
       cacheTtlSeconds: 300
       defaultDisplayNamePreset: entryName
-    # No secureJsonData (apiKey) — DataBridge backend currently runs
-    # un-authenticated on the internal overlay network. Add when an API key
-    # is provisioned (see /home/cdm/industream-platform/secrets/<env>/
-    # databridge_api_key — to be created):
-    # secureJsonData:
-    #   apiKey__file: /run/secrets/${ENV}_databridge_api_key
+    # The DataBridge plugin authenticates to datacatalog-api with this key
+    # (the databridge backend itself still runs un-authenticated on the internal
+    # overlay — no databridge_api_key yet). The path comes from
+    # $DATACATALOG_API_KEY_FILE, set on the grafana service per runtime
+    # (swarm: /run/secrets/${ENV}_datacatalog_api_key, compose:
+    # /run/secrets/datacatalog_api_key), so this shared file is topology-agnostic.
+    # `apiKey__file` makes Grafana read the value from that path at load — no env
+    # leakage via `docker inspect`.
     secureJsonData:
-      apiKey: $__file{/run/secrets/datacatalog_api_key}
+      apiKey__file: $DATACATALOG_API_KEY_FILE

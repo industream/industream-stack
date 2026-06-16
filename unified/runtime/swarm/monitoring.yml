@@ -16,15 +16,10 @@
 #                    └─ grafana-direct.${DOMAIN}       (back-door, no wrapper)
 # =============================================================================
 services:
-  # ---- Hub SPA: allow cross-subdomain iframe so the wrapper at
-  # ---- dashboard.${DOMAIN} can embed the Hub auth-bridge iframe. Without it
-  # ---- X-Frame-Options=SAMEORIGIN blocks the bridge → no JWT → Grafana 302
-  # ---- /login. NB: `uifusion` is the SPA shell; `industream-hub-frontend-ui` is the router.
-  industream-hub-frontend:
-    deploy:
-      labels:
-        - traefik.http.routers.${ENV}-industream-hub-frontend-ui-secure.middlewares=allow-iframe@file
-
+  # NB: the Hub SPA iframe-allow label (allow-iframe@file on
+  # industream-hub-frontend-ui-secure) now lives in runtime/swarm/core.yml next
+  # to the service it belongs to, so per-group mode-B stacks keep it. It used to
+  # sit here and was dropped by the imageless-stub split.
   grafana:
     # Route the public Hub hostname back to the swarm host so Grafana can fetch
     # JWKS over HTTPS via Traefik (:443 published port). host-gateway = the
@@ -59,10 +54,10 @@ services:
         target: ${ENV}_influx_admin_token
       - source: datacatalog_db_password
         target: ${ENV}_datacatalog_db_password
+      - source: datacatalog_api_key
+        target: ${ENV}_datacatalog_api_key
       - source: postgres_admin_password
         target: ${ENV}_postgres_admin_password
-      - source: datacatalog_api_key
-        target: datacatalog_api_key
     deploy:
       labels:
         - traefik.enable=true
@@ -205,11 +200,11 @@ secrets:
   datacatalog_db_password:
     name: ${ENV}_datacatalog_db_password
     external: true
-  influx_admin_token:
-    name: ${ENV}_influx_admin_token
-    external: true
   datacatalog_api_key:
     name: ${ENV}_datacatalog_api_key
+    external: true
+  influx_admin_token:
+    name: ${ENV}_influx_admin_token
     external: true
 
 volumes:
