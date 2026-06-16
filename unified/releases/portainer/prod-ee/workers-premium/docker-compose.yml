@@ -14,7 +14,6 @@ services:
         window: 120s
     environment:
       FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
-      FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8002}
       FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
       FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
       FM_WORKER_ID: worker-luminosity-box001
@@ -41,7 +40,6 @@ services:
         window: 120s
     environment:
       FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
-      FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8002}
       FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
       FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
       FM_WORKER_ID: worker-minio-sink001
@@ -69,7 +67,6 @@ services:
         window: 120s
     environment:
       FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
-      FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8002}
       FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
       FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
       FM_WORKER_ID: worker-opc-ua-client001
@@ -96,7 +93,6 @@ services:
         window: 120s
     environment:
       FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
-      FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8002}
       FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
       FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
       FM_WORKER_ID: worker-rtsp-client001
@@ -147,7 +143,6 @@ x-swarm-worker-premium:
 x-worker:
   environment:
     FM_CDN_REGISTRY_URL: ${CDN_REGISTRY_URL:-http://cdn-server:4873}
-    FM_DATACATALOG_URL: ${DATACATALOG_URL:-http://datacatalog-api:8002}
     FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
     FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
     FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
