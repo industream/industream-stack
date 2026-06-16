@@ -1,5 +1,12 @@
 # Docker Swarm Deployment Guide - Industream Platform
 
+> **Note:** this guide covers the legacy single-runtime `industream.sh` flow. New
+> deployments use the unified per-group tree under
+> [`unified/`](./unified/README.md). For the optional **Portainer** ops console
+> (view/manage + editable per-group Git stacks) and the **deploy-state**
+> versioning/audit/drift tooling, see
+> [`unified/README.md`](./unified/README.md#portainer-optional-ops-console).
+
 ## Quick Start
 
 The easiest way to deploy Industream is using the unified deployment tool:

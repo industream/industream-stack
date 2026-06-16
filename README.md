@@ -46,6 +46,11 @@ overlay; appends the EE transform when `--edition ee`; then appends any
 GHCR, enterprise → Harbor). The files stay plain Compose-Spec, so the whole
 assembly is reproducible by hand without the CLI.
 
+For day-2 operations — the optional **Portainer** ops console (view/manage, plus
+editable per-group Git stacks) and the **deploy-state** versioning/audit/drift
+tooling — and for the **compose-vs-swarm parity** matrix, see
+[`unified/README.md`](./unified/README.md).
+
 ## Quickest path: the CLI (recommended)
 
 The `industream` CLI (separate repo `industream/industream-cli`) installs every
