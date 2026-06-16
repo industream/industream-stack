@@ -263,7 +263,7 @@ seed_menu_apps() {
 
   # Run the seeder from the REPO (always present, preferred over the image copy).
   domain="${INDUSTREAM_DOMAIN:-localhost}"
-  local scope_args=(--domain "$domain" --runtime "$RUNTIME")
+  local scope_args=(--domain "$domain" --runtime "$RUNTIME" --groups "$GROUP_SET")
   [[ "$RUNTIME" == swarm ]] && scope_args+=(--stack "$STACK") || scope_args+=(--project "$PROJECT")
   if HUB_BACKEND_SERVICE=industream-hub-backend bash "$HERE/../scripts/setup/seed-menu-apps-stack.sh" "${scope_args[@]}" >/dev/null 2>&1; then
     echo "  ✓ Hub menu apps seeded"
