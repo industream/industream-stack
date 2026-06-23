@@ -22,6 +22,11 @@ services:
       # single-level ${INDUSTREAM_DOMAIN} only (swarm won't expand a nested default;
       # it's the override knob). Same class as the CORS fix.
       - IH_OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
+      # Backend/container URL for OIDC discovery + the refresh-grant token call.
+      # Separate from the public issuer above: discovery via the public URL
+      # advertises browser endpoints unreachable from the container → refresh
+      # grant fails → upstream session goes stale → user logged out (~5 min).
+      - IH_OIDC_BACKEND_ISSUER_URL=${OIDC_BACKEND_ISSUER_URL:-http://logto:3001/oidc}
       - IH_OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
       - IH_OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
       - IH_OIDC_AUDIENCE=${OIDC_AUDIENCE:-}
@@ -47,14 +52,19 @@ services:
   logto:
     image: ghcr.io/logto-io/logto:${LOGTO_VERSION}        # PINNED (never `latest`)
     # DB init order: `db seed` first builds the schema (+ full alteration history)
-    # and seeds defaults on a FRESH DB; fall back to `alteration deploy latest`
-    # when already seeded. (`alteration deploy` first crash-loops a fresh DB —
+    # and seeds defaults on a FRESH DB. On an already-seeded DB `db seed --swe`
+    # prints "Seeding skipped" and exits 0 (NOT non-zero), so a `seed || alteration`
+    # fallback NEVER migrates an existing DB → after a Logto bump the new start-time
+    # invariants (e.g. RLS on every table incl. `_logto_configs`) are unmet → crash.
+    # So: seed first (tolerate the skip), then ALWAYS `alteration deploy latest`
+    # (idempotent) before start. Seed-first keeps the base schema present so early
+    # alterations don't fail (`alteration deploy` first crash-loops a fresh DB —
     # `type "application_type" does not exist`. See industream-stack#22.)
     # NOTE: command substitution MUST be escaped as $$( … ) — docker compose/swarm
     # interpolation eats a single `$(`, leaving `export DB_URL=(cat …)` → the
     # container's sh then dies on `unexpected "("` (found at the VM gate). `$$`
     # emits a literal `$`. ${LOGTO_DB_URL_SECRET_NAME} stays single-$ (we DO want it interpolated).
-    entrypoint: ["sh", "-c", "export DB_URL=$$(cat /run/secrets/${LOGTO_DB_URL_SECRET_NAME}) && (npm run cli db seed -- --swe || npm run cli db alteration deploy latest) && npm start"]
+    entrypoint: ["sh", "-c", "export DB_URL=$$(cat /run/secrets/${LOGTO_DB_URL_SECRET_NAME}) && (npm run cli db seed -- --swe || true) && npm run cli db alteration deploy latest && npm start"]
     environment:
       - TRUST_PROXY_HEADER=1
       - ENDPOINT=https://auth.${INDUSTREAM_DOMAIN}
