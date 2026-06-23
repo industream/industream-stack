@@ -81,6 +81,11 @@ services:
     # overlay network (no TLS, no mixed-content); the issuer is the public URL
     # used for `iss` validation + the browser token exchange.
     - IH_OIDC_ISSUER=${OIDC_ISSUER:-https://auth.${INDUSTREAM_DOMAIN:-localhost}/oidc}
+    # Backend/container URL for OIDC discovery + the refresh-grant token call.
+    # Separate from IH_OIDC_ISSUER (public, browser-facing) because the public
+    # issuer's discovery advertises browser URLs unreachable from the container →
+    # the refresh grant fails → upstream session goes stale → user logged out.
+    - IH_OIDC_BACKEND_ISSUER_URL=${OIDC_BACKEND_ISSUER_URL:-http://logto:3001/oidc}
     - IH_OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-industream-hub-app}
     - IH_OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
     - IH_OIDC_AUDIENCE=${OIDC_AUDIENCE:-}

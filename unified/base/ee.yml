@@ -22,6 +22,11 @@ services:
       # single-level ${INDUSTREAM_DOMAIN} only (swarm won't expand a nested default;
       # it's the override knob). Same class as the CORS fix.
       - IH_OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
+      # Backend/container URL for OIDC discovery + the refresh-grant token call.
+      # Separate from the public issuer above: discovery via the public URL
+      # advertises browser endpoints unreachable from the container → refresh
+      # grant fails → upstream session goes stale → user logged out (~5 min).
+      - IH_OIDC_BACKEND_ISSUER_URL=${OIDC_BACKEND_ISSUER_URL:-http://logto:3001/oidc}
       - IH_OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
       - IH_OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
       - IH_OIDC_AUDIENCE=${OIDC_AUDIENCE:-}
