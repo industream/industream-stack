@@ -105,7 +105,7 @@ services:
 
   # ---- Logto IdP -------------------------------------------------------------
   logto:
-    image: ghcr.io/logto-io/logto:${LOGTO_VERSION:-latest}
+    image: ghcr.io/logto-io/logto:${LOGTO_VERSION:-1.33.0}   # PINNED — never `latest` (avoids surprise start-time invariants on bump)
     # Logto reads DB_URL from env (no native _FILE convention support); we
     # source the secret file into DB_URL at startup so docker secrets keep
     # the password off the compose file. The CLI seed (idempotent) then runs
@@ -113,14 +113,17 @@ services:
     # ${ENV} (expanded by envsubst in deploy-swarm.sh) — referencing the
     # DB_URL_FILE env var here would be mangled by envsubst at deploy-time
     # (it strips unknown $VAR), so the literal path is used instead.
-    # DB init order matters: on a FRESH database `db seed` builds the schema (it
+    # DB init order matters. On a FRESH database `db seed` builds the schema (it
     # runs the full alteration history) AND seeds defaults; on an already-seeded
-    # DB it exits non-zero, so we fall back to `alteration deploy latest` to apply
-    # pending upgrades. The old order (`alteration deploy` first) crash-looped on a
-    # fresh DB — the early alterations reference a base schema (e.g. the
-    # `application_type` enum) that only `db seed` creates → `type "application_type"
-    # does not exist`.
-    entrypoint: ["sh", "-c", "export DB_URL=$(cat /run/secrets/${ENV}_logto_db_url) && (npm run cli db seed -- --swe || npm run cli db alteration deploy latest) && npm start"]
+    # DB `db seed --swe` prints "Seeding skipped" and exits 0 (NOT non-zero), so a
+    # `seed || alteration` fallback would NEVER migrate an existing DB → after a
+    # Logto image bump the new start-time invariants (e.g. RLS enforced on every
+    # table incl. `_logto_configs`) are unmet → crash-loop. So we seed first
+    # (tolerating the skip), then ALWAYS run `alteration deploy latest`
+    # (idempotent — a no-op when already current) before start. Seed-first keeps
+    # the base schema present so early alterations referencing it (e.g. the
+    # `application_type` enum) don't fail as they did with alteration-first.
+    entrypoint: ["sh", "-c", "export DB_URL=$(cat /run/secrets/${ENV}_logto_db_url) && (npm run cli db seed -- --swe || true) && npm run cli db alteration deploy latest && npm start"]
     environment:
     - TRUST_PROXY_HEADER=1
     - DB_URL_FILE=/run/secrets/${ENV}_logto_db_url
