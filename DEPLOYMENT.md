@@ -180,6 +180,27 @@ curl -I http://localhost:8081/dashboard/
 
 All should return `HTTP 200` or `HTTP 301/302`.
 
+## Production hardening
+
+### DataCatalog backend auth (`DATACATALOG_AUTH_ENABLED`)
+
+Since datacatalog-api **1.9.8**, auth is **opt-in**:
+
+| `DATACATALOG_AUTH_ENABLED` | Frontend `:8002` | Backend `:8003` |
+|---|---|---|
+| `false` (**default**) | JWT enforced | **OPEN** (anonymous) |
+| `true` | JWT enforced | `X-Api-Key` enforced |
+
+The default keeps the **internal** backend port open so service callers (FlowMaker
+workers, Grafana DataBridge plugin) work out of the box without distributing the
+key — convenient for demos/internal clusters.
+
+> **⚠️ In production, set `DATACATALOG_AUTH_ENABLED=true`** in your site env so the
+> backend port also requires the `X-Api-Key`. Then make sure every caller carries
+> the key: workers via `FM_DATACATALOG_API_KEY`, Grafana via the DataBridge
+> datasource key (both sourced from the `datacatalog_api_key` secret). The frontend
+> port (`:8002`) is JWT-protected regardless of this flag.
+
 ## Customization
 
 ### Change domain name

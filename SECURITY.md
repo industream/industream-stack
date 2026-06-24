@@ -10,6 +10,7 @@ This deployment uses environment variables stored in a `.env` file to manage sen
 2. The `.env` file has restrictive permissions (600) - only owner can read/write
 3. All passwords are randomly generated using `openssl`
 4. Change all passwords before production deployment
+5. **Set `DATACATALOG_AUTH_ENABLED=true` in production** — the datacatalog-api backend port (`:8003`) is OPEN by default (opt-in auth since api 1.9.8). See *Production hardening* in `DEPLOYMENT.md`.
 
 ---
 
