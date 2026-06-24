@@ -195,12 +195,22 @@ projects distinct with `--stack` (swarm) or `--project` (compose):
 The CLI installer provisions Docker, Node.js and (for swarm) initializes the
 swarm automatically, so on a fresh host you typically only run the one-liner.
 
-## Legacy (deprecated)
+## Legacy (removed)
 
-The root-level `docker-stack.*.yml` files, `industream.sh`, `scripts/deploy-swarm.sh`,
-`scripts/deploy-traefik.sh` and the per-env `create-secrets.sh` flow are the
-**legacy single-runtime model** and are being decommissioned. New deployments
-should use the [`unified/`](./unified) tree (CLI or `deploy.sh`) described above.
+The legacy single-runtime swarm **application** deploy has been **removed**:
+`scripts/deploy-swarm.sh`, the root-level application `docker-stack.*.yml`
+(core, workers, workers-premium, monitoring, data, cdn, flowmaker, ee,
+grafana-wrapper(-selfsigned), ironstream, demo) and the root `custom/` dir are
+gone. Use the [`unified/`](./unified) tree — `industream deploy` (CLI) or
+`unified/scripts/deploy.sh` — and put overlays in
+[`unified/custom/`](./unified/custom).
+
+Still present (not app deploy): `docker-stack.traefik.yml` (reverse proxy),
+`docker-stack.backup.yml` + `scripts/backups/` (backups), `scripts/deploy-traefik.sh`.
+
+> ⚠️ Do **not** run the old swarm scripts against a unified install — the legacy
+> topology used `${ENV}-<name>` volumes vs the unified bare `<name>`, so it would
+> recreate services with new empty volumes and lose data.
 
 ## License
 

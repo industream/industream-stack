@@ -1,11 +1,17 @@
-# Docker Swarm Deployment Guide - Industream Platform
+# Docker Swarm Deployment Guide - Industream Platform (OBSOLETE)
 
-> **Note:** this guide covers the legacy single-runtime `industream.sh` flow. New
-> deployments use the unified per-group tree under
-> [`unified/`](./unified/README.md). For the optional **Portainer** ops console
-> (view/manage + editable per-group Git stacks) and the **deploy-state**
-> versioning/audit/drift tooling, see
-> [`unified/README.md`](./unified/README.md#portainer-optional-ops-console).
+> ## ⚠️ OBSOLETE — this guide describes the REMOVED legacy deploy
+> `scripts/deploy-swarm.sh` and the root application `docker-stack.*.yml` it used
+> **no longer exist**. Do not follow the commands below.
+>
+> **Deploy with the unified tree instead:**
+> - CLI (recommended): `industream deploy` — see [`DEPLOYMENT.md`](./DEPLOYMENT.md)
+> - Direct: `unified/scripts/deploy.sh` — see [`unified/README.md`](./unified/README.md)
+> - Custom overlays go in [`unified/custom/`](./unified/custom) (not the old root `custom/`).
+>
+> Kept from the swarm era: `docker-stack.traefik.yml` (reverse proxy) +
+> `scripts/deploy-traefik.sh`, `docker-stack.backup.yml` + `scripts/backups/`.
+> The rest of this file is retained for historical reference only.
 
 ## Quick Start
 

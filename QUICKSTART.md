@@ -26,7 +26,7 @@ From `git clone` to a running platform in 5 minutes.
 ```bash
 git clone <repository-url>
 cd industream-deployment/demo/industream-platform
-./industream.sh
+industream menu
 ```
 
 ## Step 2: Configuration wizard (first run only)
@@ -115,9 +115,9 @@ docker stack services industream-prod
 # Test access (self-signed cert → use -k)
 curl -k https://industream.example.com/
 
-# Or use industream.sh
-./industream.sh status
-./industream.sh urls
+# Or use the CLI
+industream status
+industream menu        # URLs are shown in the menu
 ```
 
 ## What's deployed
@@ -140,23 +140,23 @@ After a successful deployment, you have:
 
 ```bash
 # Interactive management
-./industream.sh
+industream menu
 
 # Deploy/update
-./industream.sh deploy --env prod
-./industream.sh deploy --env dev --with-demo
+industream deploy --env prod
+industream deploy --env dev --with-demo
 
 # Stop an environment
-./industream.sh stop --env dev
+industream stop --env dev
 
 # View logs
-./industream.sh logs <service-name>
+industream logs <service-name>
 
 # Show all URLs
-./industream.sh urls
+industream menu        # URLs are shown in the menu
 
 # Full help
-./industream.sh help
+industream --help
 ```
 
 ## Troubleshooting
