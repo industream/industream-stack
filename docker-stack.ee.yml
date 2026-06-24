@@ -110,7 +110,7 @@ services:
 
   # ---- Logto IdP -------------------------------------------------------------
   logto:
-    image: ghcr.io/logto-io/logto:${LOGTO_VERSION:-1.33.0}   # PINNED — never `latest` (avoids surprise start-time invariants on bump)
+    image: ghcr.io/logto-io/logto:${LOGTO_VERSION:-1.40.1}   # PINNED — never `latest` (avoids surprise start-time invariants on bump)
     # Logto reads DB_URL from env (no native _FILE convention support); we
     # source the secret file into DB_URL at startup so docker secrets keep
     # the password off the compose file. The CLI seed (idempotent) then runs
