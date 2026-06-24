@@ -203,19 +203,24 @@ key — convenient for demos/internal clusters.
 
 ## Deploy paths & custom overlays
 
-There are **two** deploy paths — do **not** mix them on the same install:
+Deployment goes through the **unified** path only:
 
 | Path | Script | Custom overlays dir | Status |
 |---|---|---|---|
-| **Unified (recommended)** | `industream deploy` → `unified/scripts/deploy.sh` | **`unified/custom/`** | current |
-| Legacy | `./scripts/deploy-swarm.sh` | `custom/` (root) | **DEPRECATED** |
+| **Unified** | `industream deploy` → `unified/scripts/deploy.sh` | **`unified/custom/`** | current |
+| ~~Legacy swarm~~ | ~~`./scripts/deploy-swarm.sh` + root `docker-stack.*.yml`~~ | ~~`custom/` (root)~~ | **REMOVED** |
 
-- The unified path names volumes `<name>`; the legacy path names them
-  `${ENV}-<name>`. **Running the legacy script on a unified install creates new,
-  empty volumes and loses data.** Stick to `industream deploy`.
+- The legacy swarm deploy (`deploy-swarm.sh`, the application `docker-stack.*.yml`
+  at the repo root, and the root `custom/` dir) has been **removed** — it used a
+  different topology (`${ENV}-<name>` volumes vs unified bare `<name>`) and
+  running it on a unified install recreated services with new empty volumes,
+  losing data. (`docker-stack.traefik.yml` / `docker-stack.backup.yml` are kept —
+  they back the reverse proxy and backup tooling, not app deploy.)
 - Put your own overlays (extra services, FlowMaker workers, env/label overrides)
-  in **`unified/custom/*.yml`** — `deploy.sh` merges them **last** so they always
-  win. See `unified/custom/README.md`.
+  in **`unified/custom/*.yml`** (or `unified/custom/<runtime>/*.yml`) —
+  `deploy.sh` merges them **last** so they always win. See
+  `unified/custom/README.md`. These survive `industream update` (it does
+  `fetch + reset --hard`, which does NOT delete untracked files).
 - Premium worker boxes (opc-ua, luminosity, rtsp, minio-sink) deploy via the
   `workers-premium` group, persisted in `.env` as `GROUPS` at install time so
   `industream deploy` keeps them (EE installs fall back to the full EE group set).
