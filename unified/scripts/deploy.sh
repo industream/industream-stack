@@ -313,7 +313,14 @@ seed_ee() {
   local scope=(--runtime "$RUNTIME")
   [[ "$RUNTIME" == swarm ]] && scope+=(--stack "$STACK") || scope+=(--project "$PROJECT")
   domain="${INDUSTREAM_DOMAIN:-localhost}"
-  admin_user="${HUB_BACKEND_ADMIN_USER:-admin}"; admin_pass="${HUB_BACKEND_ADMIN_PASSWORD:-admin}"
+  # Seed the Logto bootstrap admin from the generated secret files (the strong
+  # password create-secrets.sh produced) — fall back to env, then to "admin" only
+  # if neither exists. Without this the seed silently used "admin"/"admin": the
+  # secret was never wired into HUB_BACKEND_ADMIN_PASSWORD. ($(cat) strips the
+  # trailing newline.)
+  local secrets_dir="$HERE/../secrets/$ENV"
+  admin_user="${HUB_BACKEND_ADMIN_USER:-$(cat "$secrets_dir/hub_backend_admin_user" 2>/dev/null || echo admin)}"
+  admin_pass="${HUB_BACKEND_ADMIN_PASSWORD:-$(cat "$secrets_dir/hub_backend_admin_password" 2>/dev/null || echo admin)}"
 
   # 1) Logto: OIDC app + roles + bootstrap user (Argon2i → needs python3 + argon2-cffi).
   if python3 -c 'import argon2' 2>/dev/null; then
