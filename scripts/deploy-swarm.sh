@@ -1,6 +1,15 @@
 #!/bin/bash
 # =============================================================================
-# INDUSTREAM PLATFORM - MULTI-ENVIRONMENT SWARM DEPLOYMENT
+# ⚠️  DEPRECATED — legacy swarm deploy. Use `industream deploy` (→
+#     unified/scripts/deploy.sh) instead.
+#
+# This legacy path uses a DIFFERENT topology than the unified tree: volumes are
+# named `${ENV}-<name>` (vs the unified bare `<name>`). Running it on a
+# unified-deployed install creates NEW services with NEW (empty) volumes and
+# loses data/config. Do NOT mix the two paths on the same install.
+# Kept only for pre-unified installs; will be removed in a future major version.
+# =============================================================================
+# INDUSTREAM PLATFORM - MULTI-ENVIRONMENT SWARM DEPLOYMENT (LEGACY)
 # =============================================================================
 # Deploy the Industream platform for a specific environment (prod/dev/staging)
 #
@@ -16,6 +25,9 @@
 # =============================================================================
 
 set -e
+
+echo "⚠️  DEPRECATED: deploy-swarm.sh is the LEGACY swarm path. Prefer 'industream deploy' (unified/scripts/deploy.sh)." >&2
+echo "   Mixing it with a unified install recreates services with new volumes and loses data. See the file header." >&2
 
 # Colors
 GREEN='\033[0;32m'
