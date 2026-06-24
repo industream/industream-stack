@@ -201,6 +201,25 @@ key — convenient for demos/internal clusters.
 > datasource key (both sourced from the `datacatalog_api_key` secret). The frontend
 > port (`:8002`) is JWT-protected regardless of this flag.
 
+## Deploy paths & custom overlays
+
+There are **two** deploy paths — do **not** mix them on the same install:
+
+| Path | Script | Custom overlays dir | Status |
+|---|---|---|---|
+| **Unified (recommended)** | `industream deploy` → `unified/scripts/deploy.sh` | **`unified/custom/`** | current |
+| Legacy | `./scripts/deploy-swarm.sh` | `custom/` (root) | **DEPRECATED** |
+
+- The unified path names volumes `<name>`; the legacy path names them
+  `${ENV}-<name>`. **Running the legacy script on a unified install creates new,
+  empty volumes and loses data.** Stick to `industream deploy`.
+- Put your own overlays (extra services, FlowMaker workers, env/label overrides)
+  in **`unified/custom/*.yml`** — `deploy.sh` merges them **last** so they always
+  win. See `unified/custom/README.md`.
+- Premium worker boxes (opc-ua, luminosity, rtsp, minio-sink) deploy via the
+  `workers-premium` group, persisted in `.env` as `GROUPS` at install time so
+  `industream deploy` keeps them (EE installs fall back to the full EE group set).
+
 ## Customization
 
 ### Change domain name
