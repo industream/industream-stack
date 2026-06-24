@@ -20,6 +20,12 @@ services:
     command: ["dotnet", "/app/Industream.DataCatalog.Api.dll"]
     environment:
       - ASPNETCORE_HTTP_PORTS=8002;8003
+      # --- Auth mode (since api 1.9.8 / Industream.Hub.Authentication 0.1.1) ----
+      # Opt-in: frontend port (:8002) is ALWAYS JWT-protected; the backend port
+      # (:8003) is OPEN by default and only enforces the API key when this is true.
+      # Default false avoids surprise 401s for internal callers (workers, Grafana,
+      # DataBridge). PRODUCTION SHOULD SET DATACATALOG_AUTH_ENABLED=true.
+      - Authentication__Enabled=${DATACATALOG_AUTH_ENABLED:-false}
       # --- Hub JWT validation (was MISSING on compose) — the auth INVARIANT ---
       - Authentication__Frontend__Issuer=${HUB_AUTH_ISSUER}
       - Authentication__Frontend__Audience=${HUB_AUTH_AUDIENCE}
