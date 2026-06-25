@@ -94,8 +94,11 @@ services:
       - GF_AUTH_JWT_HEADER_NAME=Authorization
       - GF_AUTH_JWT_URL_LOGIN=true
       - GF_AUTH_JWT_JWK_SET_URL=https://${INDUSTREAM_DOMAIN}/api/uifusion/auth/jwks
-      # Grafana 13 does NOT honor tls_skip_verify for the JWKS fetch — the cert
-      # must be genuinely trusted (see header note + runtime overlays).
+      # Grafana 13 REQUIRES https for the JWKS url (rejects http://) and does NOT
+      # honor tls_skip_verify for this fetch — the proxy cert must be genuinely
+      # trusted (mounted into extra-cas, SSL_CERT_DIR). CRITICAL: the cert Grafana
+      # trusts (extra-cas mount) MUST equal the cert Traefik serves, or login
+      # breaks with x509: unknown authority. Regenerating certs must reload BOTH.
       - GF_AUTH_JWT_TLS_SKIP_VERIFY_INSECURE=false
       - GF_AUTH_JWT_EXPECT_CLAIMS={"iss":"hub-backend","aud":"industream-hub"}
       - GF_AUTH_JWT_USERNAME_CLAIM=sub
