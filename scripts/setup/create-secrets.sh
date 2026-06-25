@@ -38,9 +38,6 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SECRETS_DIR="$PROJECT_DIR/secrets"
 
 ENV=""
-# Always idempotent — never regenerate an existing secret (see header). Kept as a
-# constant (not a flag) so the existing "skip if exists" guards read cleanly.
-REGENERATE=false
 
 # =============================================================================
 # Parse arguments
@@ -162,14 +159,14 @@ get_or_generate_secret() {
     local env_file="$ENV_SECRETS_DIR/$secret_name"
     local legacy_file="$SECRETS_DIR/$secret_name"
 
-    if [ -f "$env_file" ] && [ "$REGENERATE" = false ]; then
+    # Idempotent: an existing secret is never modified.
+    if [ -f "$env_file" ]; then
         cat "$env_file"
         return
     fi
 
-    # Migrate from legacy flat layout (but only for non-regenerate runs —
-    # a regenerate must produce a fresh value, not re-use the old one).
-    if [ -f "$legacy_file" ] && [ "$REGENERATE" = false ]; then
+    # Migrate from legacy flat layout if present.
+    if [ -f "$legacy_file" ]; then
         echo -e "  ${YELLOW}⚠ Migrating legacy $legacy_file → $env_file (deprecated flat layout)${NC}" >&2
         cp "$legacy_file" "$env_file"
         chmod 600 "$env_file"
@@ -227,7 +224,6 @@ create_secrets_for_env() {
     local env_name="$1"
     local created=0
     local skipped=0
-    local updated=0
 
     echo -e "${BLUE}Creating secrets for ${env_name^^} environment...${NC}"
     echo ""
@@ -238,39 +234,12 @@ create_secrets_for_env() {
 
         secret_value=$(get_or_generate_secret "$base_secret")
 
-        # Check if Docker secret exists
+        # Check if Docker secret exists — idempotent: never touch an existing one.
+        # (Rotation is a dedicated, service-aware procedure; a swarm secret is
+        # immutable while mounted, and rewriting it would desync from the file.)
         if docker secret ls --format '{{.Name}}' | grep -q "^${docker_secret}$"; then
-            if [ "$REGENERATE" = true ]; then
-                # Swarm refuses to remove a secret mounted by a running service,
-                # and even if rm succeeded the mounted value would not update.
-                local in_use_by
-                in_use_by=$(docker service ls --format '{{.Name}}' \
-                    | xargs -r -I{} docker service inspect {} --format '{{range .Spec.TaskTemplate.ContainerSpec.Secrets}}{{.SecretName}} {{end}}{{.Spec.Name}}' \
-                    | grep -E "^(.* )?${docker_secret} " | awk '{print $NF}' || true)
-
-                if [ -n "$in_use_by" ]; then
-                    local services_csv
-                    services_csv=$(echo "$in_use_by" | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')
-                    echo -e "${RED}✗ Cannot rotate '$docker_secret' — currently used by service(s): $services_csv${NC}"
-                    echo ""
-                    echo -e "${YELLOW}  Docker Swarm secrets are immutable while mounted by a service."
-                    echo -e "  For stateful services (postgres), use the dedicated"
-                    echo -e "  rotation scripts that update the password IN the database first:${NC}"
-                    echo ""
-                    echo "    ./scripts/utils/rotate-postgres-password.sh"
-                    echo ""
-                    echo -e "${YELLOW}  For other secrets, stop the service first, then rerun --regenerate.${NC}"
-                    exit 1
-                fi
-
-                docker secret rm "$docker_secret"
-                printf '%s' "$secret_value" | docker secret create "$docker_secret" - >/dev/null
-                echo -e "${YELLOW}↻ Rotated secret: $docker_secret${NC}"
-                updated=$((updated + 1))
-            else
-                echo -e "${YELLOW}⏭ Secret '$docker_secret' already exists, skipping...${NC}"
-                skipped=$((skipped + 1))
-            fi
+            echo -e "${YELLOW}⏭ Secret '$docker_secret' already exists, skipping...${NC}"
+            skipped=$((skipped + 1))
         else
             printf '%s' "$secret_value" | docker secret create "$docker_secret" - >/dev/null
             echo -e "${GREEN}✓ Created secret: $docker_secret${NC}"
@@ -281,7 +250,6 @@ create_secrets_for_env() {
     echo ""
     echo -e "${BLUE}${env_name^^} environment:${NC}"
     echo -e "  Created: $created secrets"
-    echo -e "  Updated: $updated secrets"
     echo -e "  Skipped: $skipped secrets (already exist)"
     echo ""
 }
@@ -292,7 +260,7 @@ create_secrets_for_env() {
 echo -e "${BLUE}Loading/generating base secrets for '${ENV}'...${NC}"
 for base_secret in "${BASE_SECRETS[@]}"; do
     env_file="$ENV_SECRETS_DIR/$base_secret"
-    if [ -f "$env_file" ] && [ "$REGENERATE" = false ]; then
+    if [ -f "$env_file" ]; then
         echo -e "  ${GREEN}✓${NC} $base_secret (from file)"
     else
         get_or_generate_secret "$base_secret" > /dev/null
