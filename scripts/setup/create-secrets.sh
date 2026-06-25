@@ -15,7 +15,12 @@
 #   ./scripts/setup/create-secrets.sh --env prod       # Create prod secrets
 #   ./scripts/setup/create-secrets.sh --env dev        # Create dev secrets
 #   ./scripts/setup/create-secrets.sh --env staging    # Create staging secrets
-#   ./scripts/setup/create-secrets.sh --env prod --regenerate  # Force regenerate
+#
+# IDEMPOTENT BY DESIGN: an existing secret (file or docker secret) is NEVER
+# modified. There is intentionally NO --regenerate: regenerating the on-disk
+# files while the docker secrets stay immutable (in-use) silently desyncs the
+# two (file != value running in containers) — which broke cert/admin/influx/minio
+# auth. Real rotation requires a dedicated, service-aware procedure, not this.
 # =============================================================================
 
 set -e
@@ -33,6 +38,8 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SECRETS_DIR="$PROJECT_DIR/secrets"
 
 ENV=""
+# Always idempotent — never regenerate an existing secret (see header). Kept as a
+# constant (not a flag) so the existing "skip if exists" guards read cleanly.
 REGENERATE=false
 
 # =============================================================================
@@ -44,12 +51,8 @@ while [[ $# -gt 0 ]]; do
             ENV="$2"
             shift 2
             ;;
-        --regenerate)
-            REGENERATE=true
-            shift
-            ;;
         --help|-h)
-            echo "Usage: $0 --env <prod|dev|staging> [--regenerate]"
+            echo "Usage: $0 --env <prod|dev|staging>"
             echo ""
             echo "Required:"
             echo "  --env <env>    Environment to create secrets for"
@@ -57,10 +60,7 @@ while [[ $# -gt 0 ]]; do
             echo "                 dev      - Development environment"
             echo "                 staging  - Staging environment"
             echo ""
-            echo "Optional:"
-            echo "  --regenerate   Rotate secrets not currently used by any service."
-            echo "                 Secrets in use will abort the script with an error —"
-            echo "                 stateful services need their dedicated rotation scripts."
+            echo "Idempotent: existing secrets are never modified (no --regenerate)."
             echo ""
             echo "Each environment gets an independent password — there is no"
             echo "'--env all' shortcut on purpose: a dev compromise must never"
@@ -69,7 +69,6 @@ while [[ $# -gt 0 ]]; do
             echo "Examples:"
             echo "  $0 --env prod          # Create secrets for production"
             echo "  $0 --env dev           # Create secrets for dev"
-            echo "  $0 --env prod --regenerate  # Regenerate all prod secrets"
             exit 0
             ;;
         *)
