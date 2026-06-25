@@ -257,3 +257,19 @@ fi
 
 echo ""
 echo -e "${GREEN}Certificate generation complete!${NC}"
+
+# Reload Traefik so it serves the NEW cert. In Swarm, Traefik's file-provider
+# does NOT reliably pick up a cert replaced via bind-mount (inotify misses it),
+# so the proxy keeps serving the OLD cert while consumers that mount the file
+# (e.g. Grafana extra-cas) already trust the NEW one → x509: unknown authority
+# on internal HTTPS calls (JWKS), breaking JWT login. Force a rolling restart.
+# Best-effort: no-op when docker/Traefik isn't present (compose, fresh install).
+if command -v docker >/dev/null 2>&1; then
+    _traefik_svc=$(docker service ls --format '{{.Name}}' 2>/dev/null | grep -iE 'traefik' | grep -vi socket | head -1)
+    if [ -n "$_traefik_svc" ]; then
+        echo "↻ Reloading Traefik ($_traefik_svc) so it serves the new cert..."
+        docker service update --force "$_traefik_svc" >/dev/null 2>&1 \
+            && echo -e "${GREEN}✓ Traefik reloaded${NC}" \
+            || echo "⚠ Could not reload Traefik automatically — run: docker service update --force $_traefik_svc"
+    fi
+fi
