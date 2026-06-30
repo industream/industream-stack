@@ -32,7 +32,10 @@ services:
 
   flowmaker-confighub:
     environment:
-      - FM_CORS_ORIGIN=${FM_PROTOCOL:-https}://frontend.${FM_DOMAIN}
+      # Interim '*': ConfigHub serves both the FlowMaker UI and the DataCatalog UI
+      # but echoes a single Access-Control-Allow-Origin (no list possible). JWT
+      # (Bearer) protects it. TODO: restore restricted origin via allowlist/proxy.
+      - FM_CORS_ORIGIN=*
     networks:
       - flowmaker-net
     restart: unless-stopped
