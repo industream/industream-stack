@@ -65,9 +65,14 @@ services:
       - FM_AUTH_JWKS_URL=${HUB_AUTH_JWKS_URL}
       - FM_AUTH_ISSUER=${HUB_AUTH_ISSUER}
       - FM_AUTH_AUDIENCE=${HUB_AUTH_AUDIENCE}
-      # CORS: single-level ${VAR} ONLY (swarm stack deploy won't expand a nested
-      # default ${A:-${B}} — it passes the literal string; found at the VM gate).
-      - FM_CORS_ORIGIN=https://flowmaker.${INDUSTREAM_DOMAIN}
+      # CORS: ConfigHub serves several frontends (FlowMaker UI + DataCatalog UI),
+      # but its current code echoes a SINGLE Access-Control-Allow-Origin value and
+      # that header cannot hold a list. Use '*' so the DataCatalog acquisition view
+      # can reach /boxes. ConfigHub is JWT-protected (Bearer, not cookies), so this
+      # is acceptable as an interim fix.
+      # TODO: restore a restricted origin once ConfigHub supports an allowlist (or
+      # the DataCatalog API reverse-proxies ConfigHub).
+      - FM_CORS_ORIGIN=*
     volumes:
       - flowmaker-confighub-data:/data
     healthcheck:
