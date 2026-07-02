@@ -84,7 +84,10 @@ services:
       resources:
         # Grafana 13 + GF_INSTALL_PLUGINS (installs 3-4 plugins at boot) spikes
         # well past 384M → OOMKilled crash-loop on swarm. 1024M is the safe floor.
-        limits:       { cpus: '0.5', memory: 1024M }
+        # CPU: 0.5 throttled Grafana 13 badly (noticeably slow UI + queries);
+        # raised to 2.0 — the node has spare cores and Grafana idles ~2% but
+        # needs headroom for dashboard render + backend datasource queries.
+        limits:       { cpus: '2.0', memory: 2048M }
         reservations: { cpus: '0.08', memory: 256M }
       restart_policy: { condition: any, delay: 10s, max_attempts: 0, window: 120s }
 
