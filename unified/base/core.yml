@@ -53,7 +53,15 @@ services:
       # same /run/secrets/<name> mechanism as datacatalog_api_key; the runtime
       # overlay declares the secret object + per-env name.
       - IH_JWT_SIGNING_KEY_FILE=/run/secrets/hub_jwt_signing_key
-      - IH_ACCESS_TOKEN_TTL_SECONDS=900
+      # 360s (not 900): the menu shared-worker schedules the silent refresh at
+      # 0.75 * TTL. In EE/OIDC mode the backend trashes the OIDC session if the
+      # /auth/refresh heartbeat slips past ~300s (oidc.service nextHeartbeatDeadline).
+      # 0.75 * 900 = 675s > 300s → session killed at ~5 min → forced re-login
+      # (seen acutely in Grafana, whose dashboards poll every 30s). 0.75 * 360 =
+      # 270s < 300s → refresh lands inside the window, session stays alive.
+      # TODO: proper fix is capping the client refresh cadence (industream-menu
+      # shared-worker) or aligning the server heartbeat window with the TTL.
+      - IH_ACCESS_TOKEN_TTL_SECONDS=360
       - IH_REFRESH_TOKEN_TTL_SECONDS=2592000
       - IH_BACKEND_ORIGIN=${INDUSTREAM_HUB_ORIGIN}
       - HUB_DATA_PATH=/app/data/hub
