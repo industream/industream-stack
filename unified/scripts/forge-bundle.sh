@@ -16,6 +16,8 @@
 #   ./forge-bundle.sh list --json                  # raw normalized JSON
 #   ./forge-bundle.sh fetch <exportKey> <version>  # download → releases/bundle-platform-forge-…/
 #   ./forge-bundle.sh fetch <exportKey> <version> --name 1.0.1   # into bundle-platform-1.0.1/
+#   ./forge-bundle.sh import <bundle.zip> [--name <key>]   # OFFLINE: materialize from a local zip
+#   ./forge-bundle.sh check <bundle-key|dir>       # verify a bundle satisfies base/*.yml image vars
 #   ./forge-bundle.sh interactive                  # menu; prints the resolved bundle key
 #
 # On `fetch`/`interactive` the RESOLVED BUNDLE KEY (e.g. forge-flowmaker-ce-2.1.0)
@@ -124,6 +126,25 @@ cmd_list() {
     | [$e.exportKey, ($e.projectKey // $e.exportKey), $v] | @tsv'
 }
 
+# ---- shared: copy the .env.* out of an extracted archive into a bundle dir ---
+# Finds .env.* anywhere under $extract_dir, wipes the destination's prior .env.*
+# (so a re-import never leaves stale image refs), copies, and returns the count
+# via stdout. Used by both `fetch` (Forge download) and `import` (local zip).
+install_env_files_from_dir() {
+  local extract_dir="$1" dest_dir="$2"
+  shopt -s globstar nullglob
+  local -a env_files=("$extract_dir"/**/.env.*)
+  shopt -u globstar nullglob
+  [[ ${#env_files[@]} -eq 0 ]] && { log_error "no .env.* files found in the bundle archive"; return 1; }
+
+  mkdir -p "$dest_dir"
+  shopt -s nullglob; local f; for f in "$dest_dir"/.env.*; do rm -f "$f"; done; shopt -u nullglob
+
+  local copied=0
+  for f in "${env_files[@]}"; do cp "$f" "$dest_dir/$(basename "$f")"; copied=$((copied + 1)); done
+  log_success "copied ${copied} env file(s) → releases/$(basename "$dest_dir")/"
+}
+
 # ---- download + extract a bundle into releases/bundle-platform-<key>/ --------
 cmd_fetch() {
   local export_key="" version="" name="" print_key=true
@@ -160,25 +181,92 @@ cmd_fetch() {
   }
   unzip -q "$zip" -d "$extract" || { log_error "failed to extract bundle archive"; return 1; }
 
-  shopt -s globstar nullglob
-  local -a env_files=("$extract"/**/.env.*)
-  shopt -u globstar nullglob
-  [[ ${#env_files[@]} -eq 0 ]] && { log_error "no .env.* files in Forge bundle archive"; return 1; }
-
-  # Fresh dir: wipe any prior .env.* so a re-fetch never leaves stale image refs.
-  mkdir -p "$dest_dir"
-  shopt -s nullglob; local f; for f in "$dest_dir"/.env.*; do rm -f "$f"; done; shopt -u nullglob
-
-  local copied=0
-  for f in "${env_files[@]}"; do cp "$f" "$dest_dir/$(basename "$f")"; copied=$((copied + 1)); done
-  log_success "copied ${copied} env file(s) → releases/bundle-platform-${key}/"
+  install_env_files_from_dir "$extract" "$dest_dir" || return 1
 
   # Provenance breadcrumb (matches David's # Forge … metadata), non-.env so it's
   # never sourced as an env-file by deploy.sh's .env.* glob.
-  printf 'exportKey=%s\nversion=%s\nforgeUrl=%s\n' "$export_key" "$version" "$forge_url" > "$dest_dir/FORGE_SOURCE"
+  printf 'source=forge\nexportKey=%s\nversion=%s\nforgeUrl=%s\n' "$export_key" "$version" "$forge_url" > "$dest_dir/FORGE_SOURCE"
 
   # LAST stdout line = the bundle key deploy.sh should pass to --bundle.
   [[ "$print_key" == true ]] && echo "$key"
+}
+
+# ---- import a bundle from a LOCAL zip (offline / air-gapped) -----------------
+# Same materialization as `fetch`, but the archive comes from disk instead of
+# Forge — for when the box can't reach forge-api (VPN down, air-gapped site):
+# download the .zip on a machine that CAN, copy it over, then `import` it.
+cmd_import() {
+  local zip_path="" name="" print_key=true
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name)   name="$2"; shift 2 ;;
+      --name=*) name="${1#--name=}"; shift ;;
+      --quiet)  print_key=false; shift ;;
+      -*)       log_error "unknown option: $1"; return 1 ;;
+      *)        if [[ -z "$zip_path" ]]; then zip_path="$1"; else log_error "unexpected arg: $1"; return 1; fi; shift ;;
+    esac
+  done
+  [[ -z "$zip_path" ]] && { log_error "usage: forge-bundle.sh import <bundle.zip> [--name <key>]"; return 1; }
+  [[ -f "$zip_path" ]] || { log_error "zip not found: $zip_path"; return 1; }
+  require unzip || return 1
+
+  # Default key = the zip's basename (sans .zip), sanitized. --name overrides.
+  local key
+  if [[ -n "$name" ]]; then key="$(sanitize_key "$name")"; else key="$(sanitize_key "$(basename "${zip_path%.zip}")")"; fi
+  [[ -n "$key" ]] || { log_error "could not derive a bundle key from '$zip_path' — pass --name <key>"; return 1; }
+  local dest_dir="$RELEASES_DIR/bundle-platform-${key}"
+
+  local tmp_dir; tmp_dir="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp_dir'" RETURN
+  local extract="$tmp_dir/x"; mkdir -p "$extract"
+
+  log_info "importing local bundle: $zip_path"
+  unzip -q "$zip_path" -d "$extract" || { log_error "failed to extract $zip_path"; return 1; }
+  install_env_files_from_dir "$extract" "$dest_dir" || return 1
+  printf 'source=import\nzip=%s\n' "$(readlink -f "$zip_path")" > "$dest_dir/FORGE_SOURCE"
+
+  [[ "$print_key" == true ]] && echo "$key"
+}
+
+# ---- check: does a materialized bundle satisfy unified base/*.yml? -----------
+# Cross-checks the ${X_IMAGE} vars a bundle PROVIDES against those the assembled
+# base/*.yml REQUIRE, so a var-name/coverage mismatch is caught BEFORE a live
+# deploy (a swarm --render only validates YAML, it does NOT expand vars, so it
+# passes even when image refs would resolve EMPTY). Exit 0 = all required vars
+# present; exit 2 = one or more missing.
+cmd_check() {
+  local target="${1:-}"
+  [[ -z "$target" ]] && { log_error "usage: forge-bundle.sh check <bundle-key|bundle-dir>"; return 1; }
+
+  # Accept a full path, a bundle-platform-<key> name, or a bare key.
+  local dir
+  if [[ -d "$target" ]]; then dir="$target"
+  elif [[ -d "$RELEASES_DIR/$target" ]]; then dir="$RELEASES_DIR/$target"
+  elif [[ -d "$RELEASES_DIR/bundle-platform-$target" ]]; then dir="$RELEASES_DIR/bundle-platform-$target"
+  else log_error "bundle not found: $target"; return 1; fi
+  shopt -s nullglob; local -a bfiles=("$dir"/.env.*); shopt -u nullglob
+  [[ ${#bfiles[@]} -eq 0 ]] && { log_error "no .env.* in $dir"; return 1; }
+
+  local base_dir="$HERE/base"
+  local provided required missing extra
+  provided="$(grep -hoE '^[A-Z0-9_]+_IMAGE' "${bfiles[@]}" 2>/dev/null | sort -u)"
+  required="$(grep -rhoE '\$\{[A-Z0-9_]+_IMAGE' "$base_dir"/*.yml 2>/dev/null | tr -d '${' | sort -u)"
+  missing="$(comm -23 <(printf '%s\n' "$required") <(printf '%s\n' "$provided"))"
+  extra="$(comm -13 <(printf '%s\n' "$required") <(printf '%s\n' "$provided"))"
+
+  echo "▶ checking bundle: $(basename "$dir")" >&2
+  echo "  provided image vars: $(printf '%s' "$provided" | grep -c .)   required by base/*.yml: $(printf '%s' "$required" | grep -c .)" >&2
+  if [[ -n "$extra" ]]; then
+    log_warn "provided but unused by base/*.yml (renamed/foreign vars — likely a naming-contract gap):"
+    printf '    + %s\n' $extra >&2
+  fi
+  if [[ -n "$missing" ]]; then
+    log_error "REQUIRED by base/*.yml but MISSING from the bundle (would deploy EMPTY image refs):"
+    printf '    - %s\n' $missing >&2
+    return 2
+  fi
+  log_success "all required image vars are present — bundle is deployable by the unified tree"
 }
 
 # ---- interactive selection (menu) → fetch → print key -----------------------
@@ -226,11 +314,13 @@ cmd_interactive() {
   cmd_fetch "$ek" "$v"
 }
 
-usage() { sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; }
 
 case "${1:-}" in
   list)        shift; cmd_list "$@" ;;
   fetch)       shift; cmd_fetch "$@" ;;
+  import)      shift; cmd_import "$@" ;;
+  check)       shift; cmd_check "$@" ;;
   interactive) shift; cmd_interactive "$@" ;;
   -h|--help|help|"") usage ;;
   *) log_error "unknown command: $1"; usage; exit 1 ;;
