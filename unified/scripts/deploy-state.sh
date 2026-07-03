@@ -211,8 +211,12 @@ EOF
 }
 
 # ---- Portainer API access -------------------------------------------------------
-# Portainer is reached on the host itself: https://localhost with an SNI-less
-# self-signed cert (-k) and routed by Traefik via the Host header. The domain
+# Portainer is reached on the host itself: https://127.0.0.1 with an SNI-less
+# self-signed cert (-k) and routed by Traefik via the Host header. IPv4 is
+# forced (not "localhost"): on hosts where nss resolves localhost to ::1 first
+# while Traefik publishes :443 on IPv4 only, "https://localhost" hangs with no
+# route to answer — every curl below also carries --max-time as a backstop so a
+# non-answering endpoint soft-fails instead of blocking the deploy. The domain
 # comes from the environment or from the install's .env.<ENV> (the same file
 # deploy.sh sources), so the snapshot hook needs zero extra configuration.
 resolve_portainer_access() {
@@ -256,9 +260,9 @@ resolve_portainer_access() {
     python3 -c 'import json,os;print(json.dumps({
         "username": os.environ.get("PORTAINER_USER", "admin"),
         "password": os.environ["PORTAINER_PASSWORD"]}))' > "$_TMP/auth-body.json"
-    curl -ksS --fail -H "Host: portainer.${INDUSTREAM_DOMAIN}" \
+    curl -ksS --fail --max-time 10 -H "Host: portainer.${INDUSTREAM_DOMAIN}" \
       -H "Content-Type: application/json" -d @"$_TMP/auth-body.json" \
-      -o "$_TMP/auth.json" "https://localhost/api/auth"
+      -o "$_TMP/auth.json" "https://127.0.0.1/api/auth"
     jwt="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("jwt",""))' "$_TMP/auth.json")"
     [[ -n "$jwt" ]] || { echo "✗ Portainer auth succeeded but returned no jwt" >&2; exit 1; }
     printf 'Authorization: Bearer %s\n' "$jwt" > "$_TMP/auth-headers"
@@ -268,9 +272,9 @@ resolve_portainer_access() {
   fi
 }
 
-papi() {  # papi <api-path> <out-file>  — GET https://localhost/api<path>
-  curl -ksS --fail -H "Host: portainer.${INDUSTREAM_DOMAIN}" -H @"$_TMP/auth-headers" \
-    -o "$2" "https://localhost/api$1"
+papi() {  # papi <api-path> <out-file>  — GET https://127.0.0.1/api<path>
+  curl -ksS --fail --max-time 10 -H "Host: portainer.${INDUSTREAM_DOMAIN}" -H @"$_TMP/auth-headers" \
+    -o "$2" "https://127.0.0.1/api$1"
 }
 
 # ---- snapshot: live ← Portainer -------------------------------------------------
