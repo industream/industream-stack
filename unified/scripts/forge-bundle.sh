@@ -23,14 +23,23 @@
 #   BUNDLE="$(scripts/forge-bundle.sh fetch "$k" "$v")"
 #   ./deploy.sh --runtime swarm --bundle "$BUNDLE" …
 #
-# Config: RELEASE_FORGE_URL (env) overrides the default Forge base URL. All
-# progress/prompt output goes to STDERR so stdout stays clean for capture.
+# Config:
+#   RELEASE_FORGE_URL   override the default Forge base URL.
+#   FORGE_INSECURE=1    skip TLS verification (curl -k). Secure-by-default OFF;
+#                       opt-in ONLY for a Forge behind an internal/self-signed
+#                       cert whose CA is not installed on the host. Prefer
+#                       installing the internal CA over setting this in prod.
+# All progress/prompt output goes to STDERR so stdout stays clean for capture.
 # =============================================================================
 set -euo pipefail
 
 DEFAULT_RELEASE_FORGE_URL="https://forge-api.forge.industream.dev/"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
 RELEASES_DIR="$HERE/releases"
+
+# TLS mode for every Forge curl. Empty by default (verify); -k only when opted in.
+CURL_TLS_OPTS=()
+case "${FORGE_INSECURE:-}" in 1|true|yes) CURL_TLS_OPTS=(-k) ;; esac
 
 # ---- logging (stderr; keeps stdout clean for the printed bundle key) --------
 if [[ -t 2 ]]; then
@@ -73,8 +82,9 @@ sanitize_key() {
 fetch_forge_exports_json() {
   local forge_url; forge_url="$(get_release_forge_url)"
   require curl jq || return 1
-  curl -fsSL "${forge_url}public/bundles/exports" || {
+  curl -fsSL "${CURL_TLS_OPTS[@]}" "${forge_url}public/bundles/exports" || {
     log_error "failed to fetch Forge exports from ${forge_url}public/bundles/exports"
+    [[ ${#CURL_TLS_OPTS[@]} -eq 0 ]] && log_warn "if this is a TLS/cert error, retry with FORGE_INSECURE=1 (internal/self-signed Forge)"
     return 1
   }
 }
@@ -143,7 +153,11 @@ cmd_fetch() {
 
   local url="${forge_url}public/bundles/${export_key}/versions/${version}/export"
   log_info "downloading Forge bundle: ${export_key}@${version}"
-  curl -fsSL "$url" -o "$zip" || { log_error "download failed: $url"; return 1; }
+  curl -fsSL "${CURL_TLS_OPTS[@]}" "$url" -o "$zip" || {
+    log_error "download failed: $url"
+    [[ ${#CURL_TLS_OPTS[@]} -eq 0 ]] && log_warn "if this is a TLS/cert error, retry with FORGE_INSECURE=1 (internal/self-signed Forge)"
+    return 1
+  }
   unzip -q "$zip" -d "$extract" || { log_error "failed to extract bundle archive"; return 1; }
 
   shopt -s globstar nullglob
