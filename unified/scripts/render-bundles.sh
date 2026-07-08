@@ -35,10 +35,14 @@ HUB_UI_IMAGE|uifusion/ui|community|UIFUSION_UI_VERSION|core
 CDN_SERVER_IMAGE|flowmaker.core/cdn-server|community|CDN_SERVER_VERSION|core
 CDN_CACHE_IMAGE|flowmaker.core/cdn-cache|community|CDN_CACHE_VERSION|core
 # --- flowmaker ---
-FLOWMAKER_LAUNCHER_IMAGE|flowmaker.core/flowmaker-launcher|community|FLOWMAKER_CORE_VERSION|flowmaker
-FLOWMAKER_CONFIGHUB_IMAGE|flowmaker.core/flowmaker-confighub-v2|community|FLOWMAKER_CORE_VERSION|flowmaker
-FLOWMAKER_LOGGER_IMAGE|flowmaker.core/flowmaker-logger|community|FLOWMAKER_LOGGER_VERSION|flowmaker
-FLOWMAKER_FRONTEND_IMAGE|flowmaker.core/flowmaker-front|community|FLOWMAKER_FRONTEND_VERSION|flowmaker
+# Var names follow the Forge export contract (the source of truth): the Forge
+# bundle ships these flowmaker.core refs UNPREFIXED, so base/*.yml and the local
+# render both use LAUNCHER/CONFIGHUB/LOGGER/FRONTEND_IMAGE — a local bundle and a
+# Forge bundle are then drop-in interchangeable.
+LAUNCHER_IMAGE|flowmaker.core/flowmaker-launcher|community|FLOWMAKER_CORE_VERSION|flowmaker
+CONFIGHUB_IMAGE|flowmaker.core/flowmaker-confighub-v2|community|FLOWMAKER_CORE_VERSION|flowmaker
+LOGGER_IMAGE|flowmaker.core/flowmaker-logger|community|FLOWMAKER_LOGGER_VERSION|flowmaker
+FRONTEND_IMAGE|flowmaker.core/flowmaker-front|community|FLOWMAKER_FRONTEND_VERSION|flowmaker
 # --- datacatalog ---
 DATACATALOG_API_IMAGE|datacatalog/api|community|DATACATALOG_API_VERSION|datacatalog
 DATACATALOG_UI_IMAGE|datacatalog/ui|community|DATACATALOG_UI_VERSION|datacatalog

@@ -236,8 +236,25 @@ cmd_import() {
 # passes even when image refs would resolve EMPTY). Exit 0 = all required vars
 # present; exit 2 = one or more missing.
 cmd_check() {
-  local target="${1:-}"
-  [[ -z "$target" ]] && { log_error "usage: forge-bundle.sh check <bundle-key|bundle-dir>"; return 1; }
+  # A bundle only covers the groups/edition it was SCOPED for: a CE
+  # `flowmaker-community` Forge bundle ships no data/monitoring/EE images and is
+  # NOT broken for lacking them — you deploy it with a narrowed group set. So
+  # `required` is computed ONLY from the base/*.yml deploy.sh would actually
+  # assemble for --edition/--groups (same mapping as deploy.sh), not all of base/.
+  local target="" edition="ce"
+  local groups="core flowmaker datacatalog workers data monitoring"   # deploy.sh default
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --edition)   edition="$2"; shift 2 ;;
+      --edition=*) edition="${1#--edition=}"; shift ;;
+      --groups)    groups="$2"; shift 2 ;;
+      --groups=*)  groups="${1#--groups=}"; shift ;;
+      -*)          log_error "unknown option: $1"; return 1 ;;
+      *)           if [[ -z "$target" ]]; then target="$1"; else log_error "unexpected arg: $1"; return 1; fi; shift ;;
+    esac
+  done
+  [[ -z "$target" ]] && { log_error "usage: forge-bundle.sh check <bundle-key|bundle-dir> [--edition ce|ee] [--groups \"core flowmaker …\"]"; return 1; }
+  [[ "$edition" == ce || "$edition" == ee ]] || { log_error "--edition must be ce|ee"; return 1; }
 
   # Accept a full path, a bundle-platform-<key> name, or a bare key.
   local dir
@@ -249,24 +266,38 @@ cmd_check() {
   [[ ${#bfiles[@]} -eq 0 ]] && { log_error "no .env.* in $dir"; return 1; }
 
   local base_dir="$HERE/base"
-  local provided required missing extra
-  provided="$(grep -hoE '^[A-Z0-9_]+_IMAGE' "${bfiles[@]}" 2>/dev/null | sort -u)"
-  required="$(grep -rhoE '\$\{[A-Z0-9_]+_IMAGE' "$base_dir"/*.yml 2>/dev/null | tr -d '${' | sort -u)"
-  missing="$(comm -23 <(printf '%s\n' "$required") <(printf '%s\n' "$provided"))"
-  extra="$(comm -13 <(printf '%s\n' "$required") <(printf '%s\n' "$provided"))"
+  # Assemble the SCOPED base file set (mirrors deploy.sh): base/<group>.yml per
+  # selected group, plus base/ee.yml when --edition ee (the EE transform adds
+  # HUB_API_ENTERPRISE_IMAGE etc.). An unknown group is a hard error.
+  local -a base_files=() g
+  for g in $groups; do
+    [[ -f "$base_dir/${g}.yml" ]] || { log_error "unknown group '$g' (no base/${g}.yml)"; return 1; }
+    base_files+=("$base_dir/${g}.yml")
+  done
+  [[ "$edition" == ee && -f "$base_dir/ee.yml" ]] && base_files+=("$base_dir/ee.yml")
 
-  echo "▶ checking bundle: $(basename "$dir")" >&2
-  echo "  provided image vars: $(printf '%s' "$provided" | grep -c .)   required by base/*.yml: $(printf '%s' "$required" | grep -c .)" >&2
-  if [[ -n "$extra" ]]; then
-    log_warn "provided but unused by base/*.yml (renamed/foreign vars — likely a naming-contract gap):"
-    printf '    + %s\n' $extra >&2
-  fi
+  local provided required missing
+  # A var counts as PROVIDED if the bundle carries it OR one of the baseline env
+  # sources deploy.sh ALSO sources defines it. deploy.sh sources, in order,
+  # registries.env + versions.env BEFORE the bundle's .env.* (see deploy.sh env
+  # order), so a full-ref ${X_IMAGE} living there (e.g. CADVISOR_IMAGE — a
+  # third-party infra image a product bundle never exports) is resolved at deploy
+  # time and must NOT be reported missing. Checking the bundle alone yielded a
+  # false "missing CADVISOR_IMAGE" that blocked nothing at deploy but looked fatal.
+  local -a baseline_env=("$HERE/registries.env" "$HERE/versions.env")
+  provided="$(grep -hoE '^[A-Z0-9_]+_IMAGE' "${bfiles[@]}" "${baseline_env[@]}" 2>/dev/null | sort -u)"
+  required="$(grep -rhoE '\$\{[A-Z0-9_]+_IMAGE' "${base_files[@]}" 2>/dev/null | tr -d '${' | sort -u)"
+  missing="$(comm -23 <(printf '%s\n' "$required") <(printf '%s\n' "$provided"))"
+
+  echo "▶ checking bundle: $(basename "$dir")  [edition=${edition}, groups: ${groups}]" >&2
+  echo "  provided image vars (bundle + versions.env/registries.env): $(printf '%s' "$provided" | grep -c .)   required by scoped base: $(printf '%s' "$required" | grep -c .)" >&2
   if [[ -n "$missing" ]]; then
-    log_error "REQUIRED by base/*.yml but MISSING from the bundle (would deploy EMPTY image refs):"
+    log_error "REQUIRED by the scoped base but MISSING from the bundle (would deploy EMPTY image refs):"
     printf '    - %s\n' $missing >&2
+    log_warn "if these belong to groups this bundle doesn't cover, narrow --groups/--edition to its scope"
     return 2
   fi
-  log_success "all required image vars are present — bundle is deployable by the unified tree"
+  log_success "all required image vars are present — bundle is deployable for [edition=${edition}, groups: ${groups}]"
 }
 
 # ---- interactive selection (menu) → fetch → print key -----------------------

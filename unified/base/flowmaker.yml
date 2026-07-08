@@ -21,7 +21,7 @@ services:
   # FLOWMAKER SCHEDULER (launcher v2)
   # ==========================================
   flowmaker-scheduler:
-    image: ${FLOWMAKER_LAUNCHER_IMAGE}
+    image: ${LAUNCHER_IMAGE}
     stop_grace_period: 30s
     environment:
       # Two HTTP ports — the SPA/operator UI talk to the PUBLIC one (3121),
@@ -55,7 +55,7 @@ services:
   # FLOWMAKER CONFIGHUB v2 (LMDB-backed)
   # ==========================================
   flowmaker-confighub:
-    image: ${FLOWMAKER_CONFIGHUB_IMAGE}
+    image: ${CONFIGHUB_IMAGE}
     environment:
       # 4000 = backend (internal, scheduler talks here); 4001 = public (proxied).
       - FM_CONFIGHUB_PORT=4000
@@ -86,7 +86,7 @@ services:
   # FLOWMAKER LOGGING (socket.io)
   # ==========================================
   flowmaker-logging:
-    image: ${FLOWMAKER_LOGGER_IMAGE}
+    image: ${LOGGER_IMAGE}
     environment:
       # 3000 = backend (internal, scheduler streams logs here); 3001 = public.
       - FM_LOGGER_PORT=3000
@@ -109,7 +109,7 @@ services:
   # FLOWMAKER FRONTEND (static SPA)
   # ==========================================
   flowmaker-frontend:
-    image: ${FLOWMAKER_FRONTEND_IMAGE}
+    image: ${FRONTEND_IMAGE}
     environment:
       # confighub PUBLIC URL (domain-shaped) is set per-runtime in the overlay.
       # The SPA dynamically imports ${INDUSTREAM_HUB_ORIGIN}/industream-login.js
