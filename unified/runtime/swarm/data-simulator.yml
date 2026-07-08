@@ -1,0 +1,30 @@
+# =============================================================================
+# runtime/swarm/data-simulator.yml — SWARM plumbing for the demo feed group.
+# Internal-only (no Traefik): publisher → mosquitto → telegraf → platform influx,
+# all on the ${ENV}-platform overlay. Named volumes are ${ENV}-scoped.
+# =============================================================================
+x-app-restart: &app-restart
+  restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
+
+services:
+  data-simulator-mosquitto:
+    networks: [platform]
+    deploy: { <<: *app-restart }
+  data-simulator-publisher:
+    networks: [platform]
+    deploy: { <<: *app-restart }
+  data-simulator-telegraf:
+    networks: [platform]
+    deploy: { <<: *app-restart }
+
+volumes:
+  datasimulator-mqtt-data:        { name: "${ENV}-datasimulator-mqtt-data" }
+  datasimulator-mqtt-log:         { name: "${ENV}-datasimulator-mqtt-log" }
+  datasimulator-config:           { name: "${ENV}-datasimulator-config" }
+  datasimulator-telegraf-config:  { name: "${ENV}-datasimulator-telegraf-config" }
+
+networks:
+  platform:
+    name: ${ENV}-platform
+    driver: overlay
+    attachable: true

@@ -1,0 +1,239 @@
+# =============================================================================
+# base/ironstream.yml — orchestrator-neutral (image + functional env only).
+# =============================================================================
+# IronStream domain-monitoring apps (licensed EE module). Ported from the live
+# `.55` Portainer stack (project `ironstream`, /data/compose/9) into the unified
+# tree so `--groups ironstream` deploys them like any other group. Carries NO
+# deploy:/labels/secrets-backend/net-names — runtime.<swarm|compose>.yml owns
+# those; Caddy/Traefik routing (*.<domain>) lives in the runtime overlay.
+#
+# REUSES THE PLATFORM (not a bespoke ironstream-data stack): the .NET APIs point
+# at the shared postgres via ${IRONSTREAM_DB_HOST} (the same server DataCatalog
+# uses, database ${IRONSTREAM_DB_NAME}); the workers are ordinary FlowMaker boxes
+# that register with flowmaker-scheduler / datacatalog-api / cdn-server /
+# flowmaker-logging by their internal service names; raceway-ui reads DataBridge.
+# So the `data`, `datacatalog`, `flowmaker` groups must be in scope alongside it.
+#
+# VOLUMES — per-module, NOT the single rw `*_shared` grab-bag the .55 stack used
+# (which mounts one local volume into 6 services, breaks in multi-node swarm, and
+# gives zero isolation). Each API owns its data volume; the api→ui translation
+# feed is a PER-MODULE i18n volume (api rw, ui ro) instead of a global share.
+#
+# DB PASSWORD — parameterized as ${IRONSTREAM_DB_PASSWORD} for now (mirrors what
+# the live stack did with an inline password). TODO: switch to the DataCatalog
+# secret-file mechanism (DB_SECRET_NAME + __DB_PASSWORD_PLACEHOLDER__) once the
+# IronStream .NET images are confirmed to support it.
+# =============================================================================
+services:
+  # ==========================================
+  # MATERIAL CATALOG — api + ui + flowmaker box
+  # ==========================================
+  material-catalog-api:
+    image: ${MATERIAL_CATALOG_API_IMAGE}
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=${IRONSTREAM_DB_HOST:-datacatalog-postgresql};Port=5432;Database=${IRONSTREAM_DB_NAME:-ironstream_dev};Username=${IRONSTREAM_DB_USER:-postgres};Password=${IRONSTREAM_DB_PASSWORD};Minimum Pool Size=5;Maximum Pool Size=100
+      - LOGS_DIR=/app/data/Logs
+      - SeedDataFolder=/app/data/SeedData
+      - Logging__LogLevel__Default=Information
+      - Logging__LogLevel__Microsoft.AspNetCore=Information
+      - ASPNETCORE_HTTP_PORTS=8080
+    volumes:
+      - materialcatalog-data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/8080) 2>/dev/null' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  material-catalog-ui:
+    image: ${MATERIAL_CATALOG_UI_IMAGE}
+    environment:
+      # Public API + Hub origin are domain-shaped; the runtime overlay resolves
+      # the real hostnames. (.55: materialcatalog-api / hub.flowmaker.<domain>.)
+      - API_BASE_URL=https://materialcatalog-api.${INDUSTREAM_DOMAIN}
+      - HUB_MENU_URL=${INDUSTREAM_HUB_ORIGIN}
+    volumes:
+      # Translations produced by the api, served by the ui (read-only). Per-module
+      # volume — NOT the global shared one.
+      - materialcatalog-i18n:/usr/share/nginx/html/i18n:ro
+    depends_on:
+      - material-catalog-api
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  material-catalog-worker:
+    image: ${MATERIAL_CATALOG_WORKER_IMAGE}
+    environment:
+      # A standard FlowMaker box — registers with the scheduler and streams logs
+      # over the internal platform network (same service names as base/flowmaker).
+      - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+      - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://material-catalog-worker:5560
+      - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+      - FM_CDN_REGISTRY_URL=http://cdn-server:4873
+      - FM_DATACATALOG_URL=http://datacatalog-api:8080
+      - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+      - FM_WORKER_ID=material-catalog-worker001
+      - FM_WORKER_APP_CONFIG=/app/config/
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/5560) 2>/dev/null' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ==========================================
+  # RECIPE MAKER — api + ui
+  # ==========================================
+  recipe-maker-api:
+    image: ${RECIPE_MAKER_API_IMAGE}
+    environment:
+      - ConnectionStrings__RecipeMaker=Host=${IRONSTREAM_DB_HOST:-datacatalog-postgresql};Port=5432;Database=${IRONSTREAM_DB_NAME:-ironstream_dev};Username=${IRONSTREAM_DB_USER:-postgres};Password=${IRONSTREAM_DB_PASSWORD};Minimum Pool Size=5;Maximum Pool Size=100
+      - Paths__ConfigurationDirectory=/app/data/Config
+      - LOGS_DIR=/app/data/Logs
+      # RecipeMaker reads material data from the MaterialCatalog api (internal).
+      - MaterialCatalog__Source=Api
+      # .55: MaterialCatalog api is reached on 9501 (both RecipeMaker and Caddy);
+      # 8080 is its ASPNETCORE health port. Keep the observed inter-service port.
+      - MaterialCatalog__Api__BaseUrl=http://material-catalog-api:9501
+      - ASPNETCORE_HTTP_PORTS=8080
+    volumes:
+      - recipemaker-data:/app/data
+    depends_on:
+      - material-catalog-api
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/8080) 2>/dev/null' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  recipe-maker-ui:
+    image: ${RECIPE_MAKER_UI_IMAGE}
+    environment:
+      - API_BASE_URL=https://recipemaker-api.${INDUSTREAM_DOMAIN}
+      - HUB_MENU_URL=${INDUSTREAM_HUB_ORIGIN}
+    volumes:
+      - recipemaker-i18n:/usr/share/nginx/html/i18n:ro
+    depends_on:
+      - recipe-maker-api
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ==========================================
+  # BURDEN DESCENT — api + ui
+  # ==========================================
+  burden-descent-api:
+    image: ${BURDEN_DESCENT_API_IMAGE}
+    environment:
+      - ASPNETCORE_HTTP_PORTS=8080
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/8080) 2>/dev/null' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  burden-descent-ui:
+    image: ${BURDEN_DESCENT_UI_IMAGE}
+    environment:
+      - API_BASE_URL=https://burdendescent-api.${INDUSTREAM_DOMAIN}
+    depends_on:
+      - burden-descent-api
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ==========================================
+  # BURDEN LAYER — api only
+  # ==========================================
+  burden-layer-api:
+    image: ${BURDEN_LAYER_API_IMAGE}
+    environment:
+      - ASPNETCORE_HTTP_PORTS=8080
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/8080) 2>/dev/null' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ==========================================
+  # RACEWAY — ui + flowmaker box
+  # ==========================================
+  raceway-ui:
+    image: ${RACEWAY_UI_IMAGE}
+    environment:
+      # Reads time-series through DataBridge (platform `data` group). Domain-shaped
+      # URLs resolved by the runtime overlay.
+      - DataSource=DataBridge
+      # Browser-facing DataBridge endpoints — the platform's public hosts (swarm
+      # default; the compose overlay overrides to the FM_DOMAIN subdomains).
+      - DataBridgeInfluxDB__BaseUrl=https://databridge.${INDUSTREAM_DOMAIN}
+      - DataBridgeInfluxDB__DatabaseName=${IRONSTREAM_DATABRIDGE_DB:-IronStream}
+      - DataBridgePostgreSQL__BaseUrl=https://databridge-pg.${INDUSTREAM_DOMAIN}
+      - DataBridgePostgreSQL__DatabaseName=${IRONSTREAM_DATABRIDGE_DB:-IronStream}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  raceway-worker:
+    image: ${RACEWAY_WORKER_IMAGE}
+    environment:
+      - FM_ROUTER_TRANSPORT_ADDRESS=tcp://*:5560
+      - FM_WORKER_TRANSPORT_ADV_ADDRESS=tcp://raceway-worker:5560
+      - FM_WORKER_LOG_SOCKET_IO_ENDPOINT=http://flowmaker-logging:3000
+      - FM_CDN_REGISTRY_URL=http://cdn-server:4873
+      - FM_DATACATALOG_URL=http://datacatalog-api:8080
+      - FM_RUNTIME_HTTP_ADDRESS=http://flowmaker-scheduler:3120
+      - FM_WORKER_ID=raceway-worker001
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/5560) 2>/dev/null' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ==========================================
+  # FILE BROWSER (ops tool over the module data — third-party image)
+  # ==========================================
+  # Browses the IronStream data volumes for operator convenience. Optional; a
+  # runtime overlay may drop it in hardened deployments. Read-only mounts of the
+  # per-module data volumes rather than the whole shared area.
+  ironstream-filebrowser:
+    image: hurlenko/filebrowser:${FILEBROWSER_VERSION}
+    command: ["--root=/data", "--address=0.0.0.0", "--database=/config/filebrowser.db"]
+    environment:
+      - FB_BASE_URL=/
+    volumes:
+      - ironstream-filebrowser-config:/config
+      - materialcatalog-data:/data/material-catalog:ro
+      - recipemaker-data:/data/recipe-maker:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+# Per-module volumes — replaces the single rw `ironstream-dev_shared` grab-bag.
+volumes:
+  materialcatalog-data:
+  materialcatalog-i18n:
+  recipemaker-data:
+  recipemaker-i18n:
+  ironstream-filebrowser-config:

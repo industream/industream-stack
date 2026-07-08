@@ -71,6 +71,19 @@ WORKER_OPC_UA_CLIENT_IMAGE|flowmaker.boxes/opc-ua-client|enterprise|WORKER_OPC_U
 WORKER_RTSP_CLIENT_IMAGE|flowmaker.boxes/rtsp-client|enterprise|WORKER_RTSP_CLIENT_VERSION|workers-premium
 WORKER_LUMINOSITY_BOX_IMAGE|flowmaker.boxes/luminosity-box|enterprise|WORKER_LUMINOSITY_BOX_VERSION|workers-premium
 WORKER_MINIO_SINK_IMAGE|flowmaker.boxes/minio-sink|enterprise|WORKER_MINIO_SINK_VERSION|workers-premium
+# --- ironstream (enterprise, opt-in EE-only group) ---
+MATERIAL_CATALOG_API_IMAGE|ironstream/material-catalog/api|enterprise|MATERIAL_CATALOG_API_VERSION|ironstream
+MATERIAL_CATALOG_UI_IMAGE|ironstream/material-catalog/ui|enterprise|MATERIAL_CATALOG_UI_VERSION|ironstream
+MATERIAL_CATALOG_WORKER_IMAGE|ironstream/material-catalog/boxes|enterprise|MATERIAL_CATALOG_WORKER_VERSION|ironstream
+RECIPE_MAKER_API_IMAGE|ironstream/recipe-maker/api|enterprise|RECIPE_MAKER_API_VERSION|ironstream
+RECIPE_MAKER_UI_IMAGE|ironstream/recipe-maker/ui|enterprise|RECIPE_MAKER_UI_VERSION|ironstream
+BURDEN_DESCENT_API_IMAGE|ironstream/burden-descent/api|enterprise|BURDEN_DESCENT_API_VERSION|ironstream
+BURDEN_DESCENT_UI_IMAGE|ironstream/burden-descent/ui|enterprise|BURDEN_DESCENT_UI_VERSION|ironstream
+BURDEN_LAYER_API_IMAGE|ironstream/burden-layer/api|enterprise|BURDEN_LAYER_API_VERSION|ironstream
+RACEWAY_UI_IMAGE|ironstream/raceway/ui|enterprise|RACEWAY_UI_VERSION|ironstream
+RACEWAY_WORKER_IMAGE|ironstream/raceway/worker|enterprise|RACEWAY_WORKER_VERSION|ironstream
+# --- data-simulator (enterprise demo feed, opt-in EE-only group) ---
+DATA_SIMULATOR_IMAGE|ironstream/data-simulator|enterprise|DATA_SIMULATOR_VERSION|data-simulator
 '
 
 emit() {  # $1=bundle file suffix
@@ -91,4 +104,4 @@ emit() {  # $1=bundle file suffix
   echo "  ✓ $out ($(grep -c '=' "$out") images)"
 }
 echo "▶ bundle-platform-${VER}  (community=$COMMUNITY_REGISTRY / enterprise=$ENTERPRISE_REGISTRY)"
-emit core; emit flowmaker; emit datacatalog; emit data; emit monitoring; emit workers; emit workers-premium
+emit core; emit flowmaker; emit datacatalog; emit data; emit monitoring; emit workers; emit workers-premium; emit ironstream; emit data-simulator

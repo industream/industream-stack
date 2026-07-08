@@ -1,0 +1,115 @@
+# =============================================================================
+# runtime/compose/ironstream.yml — COMPOSE-only plumbing for the ironstream group.
+# Merged LAST over base/ironstream.yml. Caddy labels + flowmaker-net + restart.
+# =============================================================================
+# Compose topology: each app lives on its own Caddy subdomain under FM_DOMAIN
+# (base defaults use INDUSTREAM_DOMAIN for the swarm/Traefik layout — overridden
+# here, exactly like runtime.compose.yml does for DataCatalog). All services join
+# the shared external flowmaker-net so they reach the platform's postgres,
+# datacatalog-api, flowmaker-scheduler, cdn-server, flowmaker-logging, DataBridge.
+# Ports mirror the live .55 stack: UIs 8080, most APIs 8080, material-catalog api
+# 9501, filebrowser 8080. Workers are internal (no route).
+# =============================================================================
+services:
+  material-catalog-api:
+    networks: [flowmaker-net]
+    restart: unless-stopped
+    labels:
+      caddy: materialcatalog-api.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 9501}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  material-catalog-ui:
+    environment:
+      - API_BASE_URL=${FM_PROTOCOL:-https}://materialcatalog-api.${FM_DOMAIN}
+    networks: [flowmaker-net]
+    restart: unless-stopped
+    labels:
+      caddy: materialcatalog-ui.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  material-catalog-worker:
+    networks: [flowmaker-net]
+    restart: unless-stopped
+
+  recipe-maker-api:
+    networks: [flowmaker-net]
+    restart: unless-stopped
+    labels:
+      caddy: recipemaker-api.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  recipe-maker-ui:
+    environment:
+      - API_BASE_URL=${FM_PROTOCOL:-https}://recipemaker-api.${FM_DOMAIN}
+    networks: [flowmaker-net]
+    restart: unless-stopped
+    labels:
+      caddy: recipemaker-ui.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  burden-descent-api:
+    networks: [flowmaker-net]
+    restart: unless-stopped
+    labels:
+      caddy: burdendescent-api.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  burden-descent-ui:
+    environment:
+      - API_BASE_URL=${FM_PROTOCOL:-https}://burdendescent-api.${FM_DOMAIN}
+    networks: [flowmaker-net]
+    restart: unless-stopped
+    labels:
+      caddy: burdendescent-ui.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  burden-layer-api:
+    networks: [flowmaker-net]
+    restart: unless-stopped
+    labels:
+      caddy: burdenlayer-api.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  raceway-ui:
+    environment:
+      - DataBridgeInfluxDB__BaseUrl=${FM_PROTOCOL:-https}://databridge.${FM_DOMAIN}
+      - DataBridgePostgreSQL__BaseUrl=${FM_PROTOCOL:-https}://databridge-pg.${FM_DOMAIN}
+    networks: [flowmaker-net]
+    restart: unless-stopped
+    labels:
+      caddy: raceway-ui.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  raceway-worker:
+    networks: [flowmaker-net]
+    restart: unless-stopped
+
+  ironstream-filebrowser:
+    networks: [flowmaker-net]
+    restart: unless-stopped
+    labels:
+      caddy: filebrowser.${FM_DOMAIN}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+networks:
+  flowmaker-net:
+    external: true
+    name: ${FM_NETWORK:-flowmaker-net}
