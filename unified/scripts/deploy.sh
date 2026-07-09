@@ -84,6 +84,9 @@ cd "$HERE"
 #   - timescale       : TimescaleDB store (CE uses InfluxDB via the `data` group).
 #   - workers-premium : the 4 enterprise flow-box workers (opc-ua / rtsp /
 #                       luminosity / minio-sink), pulled from ENTERPRISE_REGISTRY.
+#   - auth            : the SSO edge (oauth2-proxy) fronting apps without native
+#                       OIDC via Traefik forwardAuth → Logto. EE-only (needs Logto).
+#                       Co-deploy with `ironstream` to gate filebrowser.
 #   - ironstream      : the IronStream domain apps (material-catalog / recipe-maker
 #                       / burden-descent / burden-layer / raceway). A SPECIAL
 #                       licensed module — EE alone is NOT enough: it ships ONLY
@@ -92,7 +95,7 @@ cd "$HERE"
 #                       expected to gate it further on the license entitlement
 #                       (JWT `modules` list) before ever adding it here.
 # Reject any of them present in GROUP_SET unless --edition ee.
-EE_ONLY_GROUPS="timescale workers-premium ironstream data-simulator"
+EE_ONLY_GROUPS="timescale workers-premium ironstream data-simulator auth"
 if [[ "$EDITION" != ee ]]; then
   for _g in $EE_ONLY_GROUPS; do
     if [[ " $GROUP_SET " == *" $_g "* ]]; then

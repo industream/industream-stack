@@ -1,0 +1,62 @@
+# =============================================================================
+# base/auth.yml — platform SSO edge (oauth2-proxy → Logto). Orchestrator-neutral.
+# =============================================================================
+# A single oauth2-proxy that fronts apps WITHOUT native OIDC (filebrowser today;
+# Prometheus/Alertmanager next) via Traefik forwardAuth. It runs the OIDC
+# authorization-code flow against the platform Logto, then hands the identity to
+# the protected app as request headers (X-Auth-Request-*).
+#
+# EE-only: it authenticates against Logto, which ships ONLY under --edition ee.
+# The Logto OIDC *client* (a Traditional/confidential app) must exist BEFORE this
+# deploys — its client_id is injected via ${OAUTH2_PROXY_CLIENT_ID} and its secret
+# via the ${OAUTH2_PROXY_CLIENT_SECRET_NAME} docker secret. See VM-GATE-RUNBOOK.
+#
+# Neutral here: image + env only. deploy:/labels/nets/secrets-backend live in
+# runtime/{swarm,compose}/auth.yml. Secret FILE PATHS are parametrized
+# (/run/secrets/${...SECRET_NAME}) so both runtimes share this file — same doctrine
+# as base/ee.yml.
+#
+# Split-horizon note: on this platform the public issuer host (auth.${DOMAIN})
+# ALSO resolves from inside the overlay to Traefik, and Logto's discovery over the
+# public URL advertises fully-public endpoints with the correct `iss`. So plain
+# OIDC discovery works from the container — NO --skip-oidc-discovery needed. (A
+# customer env without internal resolution of the public host would need the
+# explicit login/redeem/jwks URLs instead.)
+# =============================================================================
+services:
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:${OAUTH2_PROXY_VERSION}   # PINNED (never `latest`)
+    environment:
+      - OAUTH2_PROXY_PROVIDER=oidc
+      # Public issuer — the browser is redirected here; the container also reaches
+      # it (resolves to Traefik) so normal discovery succeeds.
+      - OAUTH2_PROXY_OIDC_ISSUER_URL=https://auth.${INDUSTREAM_DOMAIN}/oidc
+      # Trust the platform's internal Traefik CA for the backend OIDC calls. On an
+      # internal .lan domain Traefik serves a self-signed cert oauth2-proxy won't
+      # trust → discovery fails with x509 "unknown authority". Opt-in per env
+      # (true for internal self-signed; false = verify, the secure default).
+      - OAUTH2_PROXY_SSL_INSECURE_SKIP_VERIFY=${OAUTH2_PROXY_SSL_INSECURE_SKIP_VERIFY:-false}
+      - OAUTH2_PROXY_CLIENT_ID=${OAUTH2_PROXY_CLIENT_ID}
+      # Secrets from FILES (docker secret), never inline env. The cookie secret
+      # MUST be raw 16/24/32 bytes; the client secret file must hold ONLY the
+      # secret with no trailing newline.
+      - OAUTH2_PROXY_CLIENT_SECRET_FILE=/run/secrets/${OAUTH2_PROXY_CLIENT_SECRET_NAME}
+      - OAUTH2_PROXY_COOKIE_SECRET_FILE=/run/secrets/${OAUTH2_PROXY_COOKIE_SECRET_NAME}
+      - OAUTH2_PROXY_SCOPE=openid email profile
+      # forwardAuth mode: no real upstream — return 202 on authenticated /oauth2/auth.
+      - OAUTH2_PROXY_UPSTREAMS=static://202
+      - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
+      - OAUTH2_PROXY_REVERSE_PROXY=true
+      # Emit X-Auth-Request-{Email,User,Preferred-Username} for the protected app.
+      - OAUTH2_PROXY_SET_XAUTHREQUEST=true
+      - OAUTH2_PROXY_EMAIL_DOMAINS=*
+      - OAUTH2_PROXY_SKIP_PROVIDER_BUTTON=true
+      - OAUTH2_PROXY_COOKIE_SECURE=true
+      # Share the session cookie + allow post-login redirects across every app
+      # subdomain, so ONE oauth2-proxy can front filebrowser, prometheus, … .
+      - OAUTH2_PROXY_COOKIE_DOMAINS=.${INDUSTREAM_DOMAIN}
+      - OAUTH2_PROXY_WHITELIST_DOMAINS=.${INDUSTREAM_DOMAIN}
+    # No healthcheck: the distroless oauth2-proxy image ships no shell/wget/curl and
+    # the binary has no health subcommand, so a `/ping` probe can't run in-container
+    # (a wget test crash-loops the task). Swarm running-state covers liveness — same
+    # rationale as the flow-box workers in base/ironstream.yml.

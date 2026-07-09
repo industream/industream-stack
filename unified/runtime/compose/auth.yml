@@ -1,0 +1,43 @@
+# runtime/compose/auth.yml — compose plumbing for the SSO edge (oauth2-proxy).
+# Merged after base/auth.yml when the `auth` group is assembled (EE-only).
+#
+# Compose uses Caddy (caddy-docker-proxy), not Traefik. oauth2-proxy is reached
+# by Caddy's `forward_auth`. The service networking + file secrets below are the
+# tested parts.
+#
+# ⚠️ UNVERIFIED: the Caddy `forward_auth` → sign-in redirect UX has NOT been
+# exercised on a live compose-EE stack (the current target is swarm). Validate the
+# filebrowser labels below when compose-EE is next brought up; the swarm path
+# (runtime/swarm/auth.yml) is the source of truth for behaviour.
+services:
+  oauth2-proxy:
+    networks: [ flowmaker-net ]
+    restart: unless-stopped
+    secrets:
+      - oauth2_proxy_client_secret
+      - oauth2_proxy_cookie_secret
+    environment:
+      # compose secret file paths (flat names under /run/secrets)
+      - OAUTH2_PROXY_CLIENT_SECRET_FILE=/run/secrets/oauth2_proxy_client_secret
+      - OAUTH2_PROXY_COOKIE_SECRET_FILE=/run/secrets/oauth2_proxy_cookie_secret
+      # public issuer over the compose domain
+      - OAUTH2_PROXY_OIDC_ISSUER_URL=https://auth.${FM_DOMAIN}/oidc
+      - OAUTH2_PROXY_COOKIE_DOMAINS=.${FM_DOMAIN}
+      - OAUTH2_PROXY_WHITELIST_DOMAINS=.${FM_DOMAIN}
+    labels:
+      # oauth2-proxy endpoints (callback/sign_in/static) on the filebrowser host
+      caddy: filebrowser.${FM_DOMAIN}
+      caddy.@oauth2.path: /oauth2/*
+      caddy.reverse_proxy: "@oauth2 {{upstreams 4180}}"
+      caddy.tls.issuer: internal
+
+secrets:
+  oauth2_proxy_client_secret:
+    file: ${SECRETS_DIR:-./secrets}/oauth2_proxy_client_secret
+  oauth2_proxy_cookie_secret:
+    file: ${SECRETS_DIR:-./secrets}/oauth2_proxy_cookie_secret
+
+networks:
+  flowmaker-net:
+    external: true
+    name: ${FM_NETWORK}
