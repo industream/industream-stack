@@ -88,6 +88,13 @@ APPS=(
   "grafana|Grafana|Visual dashboards|GR|#f46800|#f46800|#ff8c00|dashboard|/"
   "databridge|DataBridge|Time-series API|DB|#10b981|#10b981|#34d399|databridge|/swagger"
 
+  # IronStream domain apps — user-facing, gated on the `ironstream` group.
+  "material-catalog|Material Catalog|Manage materials & i18n|MC|#0d9488|#0d9488|#14b8a6|materialcatalog-ui|/||ironstream"
+  "recipe-maker|Recipe Maker|Design & edit recipes|RM|#db2777|#db2777|#ec4899|recipemaker-ui|/||ironstream"
+  "burden-descent|Burden Descent|Descent modeling|BD|#7c3aed|#7c3aed|#8b5cf6|burdendescent-ui|/||ironstream"
+  "raceway|Raceway|Raceway monitoring|RW|#ea580c|#ea580c|#f97316|raceway-ui|/||ironstream"
+  "filebrowser|Filebrowser|Browse & edit config files|FB|#475569|#475569|#64748b|filebrowser|/||ironstream"
+
   # Admin-only ops tiles — allowedRoles=admin, gated on their deploy group.
   "portainer|Portainer|Container & stack ops|PT|#13bef9|#13bef9|#0ea5e9|portainer|/|admin|portainer"
   "confighub|ConfigHub|Platform configuration|CH|#6366f1|#6366f1|#818cf8|confighub|/|admin|flowmaker"
