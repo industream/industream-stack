@@ -469,6 +469,14 @@ PY
   # restart resets the window. Polling `docker stack services` returns as soon as
   # all replicas are N/N for 2 consecutive checks — bounded by DEPLOY_TIMEOUT; on
   # timeout we name the stragglers instead of hanging (the stack stays deployed).
+  # SSO edge: oauth2-proxy references external oauth2 secrets that do not exist
+  # yet (the real client secret needs Logto, seeded post-deploy). Pre-create a
+  # random cookie secret + a PLACEHOLDER client secret so the stack deploy can
+  # schedule oauth2-proxy; seed-filebrowser-sso.sh swaps in the real one after.
+  if [[ " $GROUP_SET " == *" auth "* ]]; then
+    docker secret ls --format '{{.Name}}' | grep -q "^${ENV}_oauth2_proxy_cookie_secret$" || openssl rand 32 | docker secret create "${ENV}_oauth2_proxy_cookie_secret" - >/dev/null
+    docker secret ls --format '{{.Name}}' | grep -q "^${ENV}_oauth2_proxy_client_secret$" || printf PLACEHOLDER | docker secret create "${ENV}_oauth2_proxy_client_secret" - >/dev/null
+  fi
   docker stack deploy --detach=true --with-registry-auth --prune "${C_FILES[@]}" "$STACK"
   echo "▶ waiting for services to converge (≤${DEPLOY_TIMEOUT:-600}s)…"
   _deadline=$(( $(date +%s) + ${DEPLOY_TIMEOUT:-600} ))
