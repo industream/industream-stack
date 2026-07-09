@@ -22,8 +22,10 @@
 # replaces __DB_PASSWORD_PLACEHOLDER__. The base NEVER inlines an image tag
 # (versions.env) or a password (placeholder).
 #
-# The databridge-timescaledb variant reuses the community DATABRIDGE_API_IMAGE
-# pointed at the timescaledb store (timescale/timescaledb is a third-party image).
+# This group is EE-only (deploy.sh gates it behind --edition ee), so the
+# databridge-timescaledb variant uses the ENTERPRISE DataBridge image directly
+# (DATABRIDGE_API_ENTERPRISE_IMAGE — the connector-rich build that actually speaks
+# Timescale). timescale/timescaledb itself is a third-party image.
 # =============================================================================
 services:
   # ---------------------------------------------------------------------------
@@ -50,7 +52,7 @@ services:
   # DataBridge (TimescaleDB variant) — same image, pointed at timescaledb.
   # ---------------------------------------------------------------------------
   databridge-timescaledb:
-    image: ${DATABRIDGE_API_IMAGE}
+    image: ${DATABRIDGE_API_ENTERPRISE_IMAGE}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:

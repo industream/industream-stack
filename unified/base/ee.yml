@@ -14,6 +14,27 @@
 # (/run/secrets/${...SECRET_NAME}) so both runtimes share this file.
 # =============================================================================
 services:
+  # ---- DataBridge → enterprise image (in-place swap; community image never runs in EE) ----
+  # The EE build (timeseries/api-enterprise) adds IbaHD / PostgreSQL / Timescale /
+  # SqlServer connectors on top of the CE InfluxDB one. Same service names as
+  # base/data.yml → this OVERRIDES the image, it does NOT add a second databridge.
+  # NOTE: only services guaranteed present when ee.yml is applied are overridden
+  # here (databridge + databridge-postgresql live in the always-on `data` group).
+  # databridge-timescaledb lives in the EE-only `timescale` group and references
+  # the EE image directly in base/timescale.yml (overriding it here would create a
+  # broken image-only service whenever the timescale group is out of scope).
+  databridge:
+    image: ${DATABRIDGE_API_ENTERPRISE_IMAGE}
+  databridge-postgresql:
+    image: ${DATABRIDGE_API_ENTERPRISE_IMAGE}
+
+  # ---- Timer worker → enterprise timer/replay (in-place swap) ----
+  # EE replaces the community timer box with the consolidated timer/replay worker
+  # (modes: to-now / range / multi). Same service name as base/workers.yml
+  # (worker-timer) → the community timer NEVER runs alongside it in EE.
+  worker-timer:
+    image: ${WORKER_TIMER_REPLAY_IMAGE}
+
   # ---- Hub backend → enterprise image + OAUTH against Logto ----
   industream-hub-backend:
     image: ${HUB_API_ENTERPRISE_IMAGE}

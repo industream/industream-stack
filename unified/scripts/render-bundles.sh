@@ -44,11 +44,15 @@ DATACATALOG_API_IMAGE|datacatalog/api|community|DATACATALOG_API_VERSION|datacata
 DATACATALOG_UI_IMAGE|datacatalog/ui|community|DATACATALOG_UI_VERSION|datacatalog
 # --- data ---
 DATABRIDGE_API_IMAGE|timeseries/api|community|DATABRIDGE_API_VERSION|data
+# EE swap (base/ee.yml overrides databridge* → this): more connectors (IbaHD/PG/Timescale/SqlServer). Never used alongside the community image.
+DATABRIDGE_API_ENTERPRISE_IMAGE|timeseries/api-enterprise|enterprise|DATABRIDGE_API_EE_VERSION|data
 # --- monitoring ---
 GRAFANA_WRAPPER_IMAGE|grafana-hub-wrapper|community|GRAFANA_WRAPPER_VERSION|monitoring
 # --- workers (community) ---
 WORKER_DATA_LOGGER_IMAGE|flowmaker.boxes/data-logger|community|WORKER_DATA_LOGGER_VERSION|workers
 WORKER_TIMER_IMAGE|flowmaker.boxes/timer|community|WORKER_TIMER_VERSION|workers
+# EE swap (base/ee.yml overrides the worker-timer service → this). Lands in .env.workers (always sourced in EE) so the swap never references an undefined var. Never runs alongside the community timer.
+WORKER_TIMER_REPLAY_IMAGE|flowmaker.boxes/timer-replay|enterprise|WORKER_TIMER_REPLAY_VERSION|workers
 WORKER_JS_EXPRESSION_IMAGE|flowmaker.boxes/js-expression|community|WORKER_JS_EXPRESSION_VERSION|workers
 WORKER_HTTP_IMAGE|flowmaker.boxes/http|community|WORKER_HTTP_VERSION|workers
 WORKER_POSTGRES_CLIENT_IMAGE|flowmaker.boxes/postgres-client|community|WORKER_POSTGRES_CLIENT_VERSION|workers
