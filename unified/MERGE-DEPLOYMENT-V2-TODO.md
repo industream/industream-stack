@@ -78,3 +78,70 @@ T0 ─┬─ T1 ─┬─ T3 ── T4 ─┐
     └─ T6 (independent, onto David's branch)
 ```
 T1/T2/T5/T6 run in parallel; T3 needs T1+T2; T4 needs T3; T7 gates everything.
+
+## Surfaced from the .205 EE/swarm greenfield run (2026-07-09)
+
+A full **from-scratch** validation on `cdm@192.168.122.205` (wipe all stacks +
+19 volumes + 21 secrets → recreate secrets from the on-disk source → deploy EE
+swarm `core flowmaker datacatalog data ironstream data-simulator auth` → seed →
+e2e) proved T7 EE/swarm end-to-end (Hub login, FlowMaker scheduler, filebrowser
+SSO all green). It also surfaced 5 items NOT yet in the plan above:
+
+### C1 — Fold the new `auth` group (oauth2-proxy SSO) into the converged tree
+- New group added on `feature/ironstream-integration`: `base/auth.yml` +
+  `runtime/{swarm,compose}/auth.yml` — an oauth2-proxy SSO edge fronting apps
+  without native OIDC (filebrowser today; Prometheus/Alertmanager next) via
+  Traefik forwardAuth → Logto. EE-only; gated in `deploy.sh` `EE_ONLY_GROUPS`.
+- Swarm path is validated live; the compose/Caddy `forward_auth` overlay is
+  UNVERIFIED (marked in-file).
+- **TODO:** land it in the converged tree; verify the compose/Caddy path; decide
+  whether the shared edge stays forwardAuth (one proxy, N hosts) or per-host.
+- Gotchas baked into the files: forwardAuth address = oauth2-proxy ROOT `/` (not
+  `/oauth2/auth`) so unauth browsers get a 302 (Traefik v3 `errors` can't restatus
+  a 401); no healthcheck (distroless image, no shell); `SSL_INSECURE_SKIP_VERIFY`
+  opt-in for the internal self-signed Traefik cert.
+
+### C2 — Logto bootstrap is NOT hands-off (blocks a repeatable `industream init` EE)
+- `seed-logto.sh` needs `secrets/<env>/logto_m2m_credentials` (appId/appSecret of
+  a Management-API M2M app) that today is minted **interactively** via the Logto
+  first-run wizard + admin console. A fresh Logto has none.
+- Neither the Hub self-provisioning nor the seeders create a **login user** or
+  **assign a role** — the platform boots with zero usable identities.
+- On .205 this was bootstrapped by hand: the built-in admin-tenant `m-default`
+  app (secret readable from `logto-postgres`) drove the Management API to create
+  an `industream-seeder` M2M app (DEFAULT tenant, granted a `management-api` role)
+  → wrote the creds file; then a test user + `industream-admin` role were created.
+- **TODO (→ T4):** a non-interactive Logto bootstrap (seeder M2M app + an initial
+  admin user + role assignment) so `industream init` EE is reproducible.
+
+### C3 — Seeder provisioning overlaps / conflicts with Hub self-provisioning
+- The Hub backend **self-provisions** on boot: the `industream-hub-app` SPA login
+  client (id=`industream-hub-app`, redirect `https://<domain>/`) AND the launchpad
+  tiles. Confirmed on .205 (appeared ~minutes after deploy, no seeder).
+- `seed-logto.sh` ALSO creates an `industream-hub-app` (random id, redirect
+  `dashboard.<domain>/auth/callback`) → a **duplicate** for a `dashboard` host not
+  deployed here. Harmless but confusing.
+- **Resolution:** let the Hub own the login app + tiles; trim `seed-logto.sh` to
+  ONLY resources + roles (its unique value); likely **retire `seed-menu-apps-stack.sh`**
+  (Hub already seeds tiles, and it is broken — see C4).
+
+### C4 — `seed-menu-apps-stack.sh` still assumes the `uifusion-api` container name (→ T1)
+- Fails with "No running 'uifusion-api' container found" — the service is now
+  `industream-hub-backend`. This is residual T1 rename work in the seeders (T1 is
+  done for the stack overlays but not the `scripts/setup/` seeders).
+
+### C5 — Seeders fail on the internal self-signed TLS (no `curl -k`)
+- `seed-logto.sh` (and peers) call `curl -sS --fail-with-body` without `-k`, so
+  they die on the internal `.lan` self-signed Traefik cert
+  (`SSL certificate problem: self-signed certificate`). Worked around on .205 with
+  a `PATH`-injected `curl` wrapper adding `-k`.
+- **TODO:** make the seeders honor an insecure/CA option for internal domains
+  (env flag or `--cacert`), rather than requiring a wrapper.
+
+### Also noted
+- The seeders live in the **deployment-v2 parent** `scripts/setup/`
+  (`create-secrets{,-ee}.sh`, `seed-{logto,confighub,menu-apps-stack}.sh`), NOT in
+  `unified/scripts/`. Folding them into the unified driver is part of T4.
+- `create-secrets.sh` is idempotent and sources on-disk `secrets/<env>/*` — so a
+  full secret wipe is recoverable by re-running it (identical values, couplings
+  like `logto_db_url`↔`logto_db_password` preserved). Good property to keep.
