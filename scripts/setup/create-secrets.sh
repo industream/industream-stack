@@ -172,7 +172,7 @@ get_or_generate_secret() {
     if [ -f "$legacy_file" ] && [ "$REGENERATE" = false ]; then
         echo -e "  ${YELLOW}⚠ Migrating legacy $legacy_file → $env_file (deprecated flat layout)${NC}" >&2
         cp "$legacy_file" "$env_file"
-        chmod 600 "$env_file"
+        chmod 644 "$env_file"   # readable by non-root container UIDs (ENV_SECRETS_DIR stays 0700)
         cat "$env_file"
         return
     fi
@@ -193,7 +193,13 @@ get_or_generate_secret() {
         new_secret=$(openssl rand -hex 24)
     fi
     printf '%s' "$new_secret" > "$env_file"
-    chmod 600 "$env_file"
+    # 0644 (not 0600): the compose runtime bind-mounts each file into
+    # /run/secrets/<name>; non-root container UIDs (.NET datacatalog/databridge,
+    # grafana, postgres-exporter) must be able to read it or they crash-loop on an
+    # empty password. Host exposure is still blocked by the 0700 ENV_SECRETS_DIR
+    # (other host users can't traverse into it); swarm reads the file once at
+    # `docker secret create` time, so this is compose-only and safe there too.
+    chmod 644 "$env_file"
     printf '%s' "$new_secret"
 }
 

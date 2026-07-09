@@ -331,6 +331,14 @@ seed_ee() {
 # ---- Dispatch ---------------------------------------------------------------
 if [[ "$RUNTIME" == compose ]]; then
   [[ -n "$PROJECT" ]] || { echo "✗ --project required for compose" >&2; exit 1; }
+  # The shared bridge is declared `external: true` in every runtime/compose/*.yml
+  # (name: ${FM_NETWORK}) — compose will NOT create it and `up` dies with
+  # "network  not found" if it's absent. Create it here (idempotent) from the
+  # FM_NETWORK the env files define, so a greenfield compose deploy is self-contained.
+  FM_NET="$(grep -hE '^FM_NETWORK=' ".env.${ENV}" "runtime.${RUNTIME}.env" 2>/dev/null | tail -1 | cut -d= -f2-)"
+  if [[ -n "$FM_NET" ]] && ! docker network inspect "$FM_NET" >/dev/null 2>&1; then
+    docker network create "$FM_NET" >/dev/null && echo "▶ created external network '$FM_NET'"
+  fi
   docker compose -p "$PROJECT" "${ENV_FILES[@]}" "${FILES[@]}" up -d
   # Source the env so the seeders see INDUSTREAM_DOMAIN / OIDC_CLIENT_ID / admin creds
   # (compose dispatch uses --env-file, which doesn't export into this process).
