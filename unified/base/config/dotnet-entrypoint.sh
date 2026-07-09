@@ -39,14 +39,18 @@ if [ -n "$DB_SECRET_FILE" ] && [ -f "$DB_SECRET_FILE" ]; then
     DB_PASSWORD=$(read_secret "$DB_SECRET_FILE")
     echo "Loaded database password from secret: $DB_SECRET_FILE"
 
-    # Replace __DB_PASSWORD_PLACEHOLDER__ in PostgreSql connection string using sed
-    if [ -n "${PostgreSql__ConnectionString}" ]; then
-        # Escape special characters in password for sed
-        ESCAPED_PASSWORD=$(printf '%s\n' "$DB_PASSWORD" | sed 's/[&/\]/\\&/g')
-        NEW_CONN_STRING=$(echo "$PostgreSql__ConnectionString" | sed "s/__DB_PASSWORD_PLACEHOLDER__/$ESCAPED_PASSWORD/g")
-        export PostgreSql__ConnectionString="$NEW_CONN_STRING"
-        echo "Injected password into PostgreSql__ConnectionString"
-    fi
+    # Replace __DB_PASSWORD_PLACEHOLDER__ in EVERY env var that carries it — not
+    # only PostgreSql__ConnectionString. This covers ConnectionStrings__* (used by
+    # IronStream MaterialCatalog/RecipeMaker) and URL-form vars (POSTGRES_URL for
+    # the data-simulator) too, so any app can opt in with the placeholder + a
+    # DB_SECRET_PATTERN, no per-app hardcoding here.
+    ESCAPED_PASSWORD=$(printf '%s\n' "$DB_PASSWORD" | sed 's/[&/\]/\\&/g')
+    for _v in $(env | grep '__DB_PASSWORD_PLACEHOLDER__' | cut -d= -f1); do
+        eval "_cur=\$$_v"
+        _new=$(printf '%s' "$_cur" | sed "s/__DB_PASSWORD_PLACEHOLDER__/$ESCAPED_PASSWORD/g")
+        export "$_v=$_new"
+        echo "Injected DB password into $_v"
+    done
 fi
 
 # Read InfluxDB token from secret if available

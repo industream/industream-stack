@@ -16,6 +16,11 @@ x-app-restart: &app-restart
 services:
   material-catalog-api:
     networks: [traefik-public, platform]
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    secrets:
+      - source: postgres_admin_password
+        target: ${ENV}_postgres_admin_password
     deploy:
       <<: *app-restart
       labels:
@@ -50,6 +55,11 @@ services:
 
   recipe-maker-api:
     networks: [traefik-public, platform]
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    secrets:
+      - source: postgres_admin_password
+        target: ${ENV}_postgres_admin_password
     deploy:
       <<: *app-restart
       labels:
@@ -163,6 +173,13 @@ volumes:
   recipemaker-data:              { name: "${ENV}-ironstream-recipemaker-data" }
   recipemaker-i18n:              { name: "${ENV}-ironstream-recipemaker-i18n" }
   ironstream-filebrowser-config: { name: "${ENV}-ironstream-filebrowser-config" }
+
+secrets:
+  # Reuse the platform's postgres admin secret — the superuser password lets EF
+  # Core's Database.Migrate() create ironstream_dev on first boot.
+  postgres_admin_password:
+    name: ${ENV}_postgres_admin_password
+    external: true
 
 networks:
   traefik-public:

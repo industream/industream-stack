@@ -12,6 +12,11 @@ services:
     deploy: { <<: *app-restart }
   data-simulator-publisher:
     networks: [platform]
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    secrets:
+      - source: postgres_admin_password
+        target: ${ENV}_postgres_admin_password
     deploy: { <<: *app-restart }
   data-simulator-telegraf:
     networks: [platform]
@@ -22,6 +27,11 @@ volumes:
   datasimulator-mqtt-log:         { name: "${ENV}-datasimulator-mqtt-log" }
   datasimulator-config:           { name: "${ENV}-datasimulator-config" }
   datasimulator-telegraf-config:  { name: "${ENV}-datasimulator-telegraf-config" }
+
+secrets:
+  postgres_admin_password:
+    name: ${ENV}_postgres_admin_password
+    external: true
 
 networks:
   platform:
