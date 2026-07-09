@@ -29,10 +29,20 @@ services:
         - traefik.http.routers.${ENV}-materialcatalog-api-secure.rule=Host(`materialcatalog-api.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-materialcatalog-api-secure.tls=true
         - traefik.http.routers.${ENV}-materialcatalog-api-secure.service=${ENV}-materialcatalog-api
+        - traefik.http.routers.${ENV}-materialcatalog-api-secure.middlewares=${ENV}-ironstream-cors
         - traefik.http.routers.${ENV}-materialcatalog-api.entrypoints=web
         - traefik.http.routers.${ENV}-materialcatalog-api.rule=Host(`materialcatalog-api.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-materialcatalog-api.middlewares=redirect-to-https@file
         - traefik.http.services.${ENV}-materialcatalog-api.loadbalancer.server.port=9501
+        # CORS: IronStream UIs call their *-api on a different subdomain → the API
+        # must allow the UI origins (Authorization header = credentialed → explicit
+        # origins, not *). Traefik also answers the OPTIONS preflight.
+        - traefik.http.middlewares.${ENV}-ironstream-cors.headers.accessControlAllowOriginList=https://materialcatalog-ui.${INDUSTREAM_DOMAIN},https://recipemaker-ui.${INDUSTREAM_DOMAIN},https://burdendescent-ui.${INDUSTREAM_DOMAIN},https://raceway-ui.${INDUSTREAM_DOMAIN}
+        - traefik.http.middlewares.${ENV}-ironstream-cors.headers.accessControlAllowMethods=GET,POST,PUT,DELETE,PATCH,OPTIONS
+        - traefik.http.middlewares.${ENV}-ironstream-cors.headers.accessControlAllowHeaders=Content-Type,Authorization
+        - traefik.http.middlewares.${ENV}-ironstream-cors.headers.accessControlAllowCredentials=true
+        - traefik.http.middlewares.${ENV}-ironstream-cors.headers.accessControlMaxAge=100
+        - traefik.http.middlewares.${ENV}-ironstream-cors.headers.addVaryHeader=true
 
   material-catalog-ui:
     networks: [traefik-public, platform]
@@ -68,6 +78,7 @@ services:
         - traefik.http.routers.${ENV}-recipemaker-api-secure.rule=Host(`recipemaker-api.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-recipemaker-api-secure.tls=true
         - traefik.http.routers.${ENV}-recipemaker-api-secure.service=${ENV}-recipemaker-api
+        - traefik.http.routers.${ENV}-recipemaker-api-secure.middlewares=${ENV}-ironstream-cors
         - traefik.http.routers.${ENV}-recipemaker-api.entrypoints=web
         - traefik.http.routers.${ENV}-recipemaker-api.rule=Host(`recipemaker-api.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-recipemaker-api.middlewares=redirect-to-https@file
@@ -98,6 +109,7 @@ services:
         - traefik.http.routers.${ENV}-burdendescent-api-secure.rule=Host(`burdendescent-api.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-burdendescent-api-secure.tls=true
         - traefik.http.routers.${ENV}-burdendescent-api-secure.service=${ENV}-burdendescent-api
+        - traefik.http.routers.${ENV}-burdendescent-api-secure.middlewares=${ENV}-ironstream-cors
         - traefik.http.routers.${ENV}-burdendescent-api.entrypoints=web
         - traefik.http.routers.${ENV}-burdendescent-api.rule=Host(`burdendescent-api.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-burdendescent-api.middlewares=redirect-to-https@file
@@ -128,6 +140,7 @@ services:
         - traefik.http.routers.${ENV}-burdenlayer-api-secure.rule=Host(`burdenlayer-api.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-burdenlayer-api-secure.tls=true
         - traefik.http.routers.${ENV}-burdenlayer-api-secure.service=${ENV}-burdenlayer-api
+        - traefik.http.routers.${ENV}-burdenlayer-api-secure.middlewares=${ENV}-ironstream-cors
         - traefik.http.routers.${ENV}-burdenlayer-api.entrypoints=web
         - traefik.http.routers.${ENV}-burdenlayer-api.rule=Host(`burdenlayer-api.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-burdenlayer-api.middlewares=redirect-to-https@file
