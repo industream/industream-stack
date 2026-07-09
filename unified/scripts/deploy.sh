@@ -499,6 +499,10 @@ PY
     sleep 3
   done
   seed_menu_apps                       # both editions: seed the Hub launchpad
+  # ConfigHub: scheduler + environment (both editions; flowmaker is core). Uses
+  # `docker exec node` against the container's localhost:4000 → no host TLS.
+  bash "$HERE/../scripts/setup/seed-confighub.sh" --stack "$STACK" --domain "${INDUSTREAM_DOMAIN:-localhost}" >/dev/null 2>&1 \
+    && echo "  \u2713 ConfigHub seeded (scheduler + environment)" || echo "  \u26a0 ConfigHub seeding skipped (non-fatal)"
   # NB: an `&&`-chained `seed_ee` as the script's LAST statement made deploy.sh
   # exit 1 on CE (the `[[ == ee ]]` test is false → non-zero → propagated as the
   # script's exit code → the CLI reported a phantom 'install failed'). Use a plain
