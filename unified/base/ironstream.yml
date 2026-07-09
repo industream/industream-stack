@@ -68,9 +68,9 @@ services:
       - API_BASE_URL=https://materialcatalog-api.${INDUSTREAM_DOMAIN}
       - HUB_MENU_URL=${INDUSTREAM_HUB_ORIGIN}
     volumes:
-      # Translations produced by the api, served by the ui (read-only). Per-module
-      # volume — NOT the global shared one.
-      - materialcatalog-i18n:/usr/share/nginx/html/i18n:ro
+      # i18n on a per-module volume (rw): the UI image's seed script populates it
+      # on first boot, and devs/ops edit the translations live via the filebrowser.
+      - materialcatalog-i18n:/usr/share/nginx/html/i18n
     depends_on:
       - material-catalog-api
     healthcheck:
@@ -133,7 +133,7 @@ services:
       - API_BASE_URL=https://recipemaker-api.${INDUSTREAM_DOMAIN}
       - HUB_MENU_URL=${INDUSTREAM_HUB_ORIGIN}
     volumes:
-      - recipemaker-i18n:/usr/share/nginx/html/i18n:ro
+      - recipemaker-i18n:/usr/share/nginx/html/i18n
     depends_on:
       - recipe-maker-api
     healthcheck:
@@ -232,8 +232,13 @@ services:
       - FB_BASE_URL=/
     volumes:
       - ironstream-filebrowser-config:/config
-      - materialcatalog-data:/data/material-catalog:ro
-      - recipemaker-data:/data/recipe-maker:ro
+      # rw access to EVERY IronStream app volume so devs/ops browse & edit the
+      # config, seed data and translations live (dev: tweak keys/vars; prod: edit
+      # or add keys). Each app volume shows up as its own folder under /data.
+      - materialcatalog-data:/data/material-catalog
+      - materialcatalog-i18n:/data/material-catalog-i18n
+      - recipemaker-data:/data/recipe-maker
+      - recipemaker-i18n:/data/recipe-maker-i18n
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
       interval: 30s
