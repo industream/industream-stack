@@ -5,115 +5,11 @@
 # objects/${ENV}-* overlay nets + volume names. Merged LAST over
 # base/monitoring.yml.
 #
-# Secret NAMES + DB hosts come from runtime.swarm.env (consumed by base
-# interpolation), not here. The grafana JWKS-over-selfsigned-CA trust mount
-# (mirror of docker-stack.grafana-wrapper-selfsigned.yml) is folded in here so
-# selfsigned swarm deploys validate the Hub JWT.
-#
-# Topology mirrors docker-stack.monitoring.yml + docker-stack.grafana-wrapper.yml:
-#   browser → traefik → grafana-wrapper:8080 (nginx)  [owns dashboard.${DOMAIN}]
-#                    ├─ /grafana/  → grafana:3000      (same-origin proxy)
-#                    └─ grafana-direct.${DOMAIN}       (back-door, no wrapper)
+# Grafana + grafana-wrapper moved to runtime/swarm/grafana.yml (deployed with the
+# platform). This overlay is the OPTIONAL observability backend (Prometheus +
+# Alertmanager + exporters) that plugs into Grafana.
 # =============================================================================
 services:
-  # NB: the Hub SPA iframe-allow label (allow-iframe@file on
-  # industream-hub-frontend-ui-secure) now lives in runtime/swarm/core.yml next
-  # to the service it belongs to, so per-group mode-B stacks keep it. It used to
-  # sit here and was dropped by the imageless-stub split.
-  grafana:
-    # Route the public Hub hostname back to the swarm host so Grafana can fetch
-    # JWKS over HTTPS via Traefik (:443 published port). host-gateway = the
-    # Docker host bridge gateway = the swarm node itself.
-    extra_hosts:
-      - "${INDUSTREAM_DOMAIN}:host-gateway"
-    environment:
-      # Trust the platform self-signed CA so the JWKS fetch succeeds (Grafana 13
-      # ignores tls_skip_verify). Go honors SSL_CERT_FILE (public Mozilla roots)
-      # + SSL_CERT_DIR (extra roots) additively → uid 472 stays non-root.
-      # TLS_MODE=selfsigned only; with letsencrypt the public cert is already
-      # trusted and the cert mount below is a harmless empty dir.
-      - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-      - SSL_CERT_DIR=/etc/grafana/extra-cas
-    volumes:
-      # Traefik's self-signed leaf/CA mounted read-only into the extra-CA dir.
-      - ./certs/${INDUSTREAM_DOMAIN}.crt:/etc/grafana/extra-cas/platform.crt:ro
-    networks:
-      - traefik-public
-      - platform
-    # Cross-group startup ordering (services defined in core group): swarm uses
-    # the SHARED postgres for Grafana's DB.
-    depends_on:
-      - postgres
-      - industream-hub-backend
-    secrets:
-      - source: grafana_admin_password
-        target: ${ENV}_grafana_admin_password
-      - source: grafana_db_password
-        target: ${ENV}_grafana_db_password
-      - source: influx_admin_token
-        target: ${ENV}_influx_admin_token
-      - source: datacatalog_db_password
-        target: ${ENV}_datacatalog_db_password
-      - source: datacatalog_api_key
-        target: ${ENV}_datacatalog_api_key
-      - source: postgres_admin_password
-        target: ${ENV}_postgres_admin_password
-    deploy:
-      labels:
-        - traefik.enable=true
-        # grafana-direct.* = admin back-door to Grafana without the wrapper.
-        # The wrapper owns dashboard.${DOMAIN} (see grafana-wrapper below).
-        - traefik.http.routers.${ENV}-grafana-secure.entrypoints=websecure
-        - traefik.http.routers.${ENV}-grafana-secure.rule=Host(`grafana-direct.${INDUSTREAM_DOMAIN}`)
-        - traefik.http.routers.${ENV}-grafana-secure.tls=true
-        - traefik.http.routers.${ENV}-grafana-secure.service=${ENV}-grafana
-        - traefik.http.routers.${ENV}-grafana-secure.middlewares=allow-iframe@file
-        - traefik.http.routers.${ENV}-grafana.entrypoints=web
-        - traefik.http.routers.${ENV}-grafana.rule=Host(`grafana-direct.${INDUSTREAM_DOMAIN}`)
-        - traefik.http.routers.${ENV}-grafana.middlewares=redirect-to-https@file
-        - traefik.http.services.${ENV}-grafana.loadbalancer.server.port=3000
-        # WebSocket router on dashboard.${DOMAIN}/grafana/api/live/* — higher
-        # priority than the wrapper catch-all. Grafana serves at /grafana/* via
-        # serve_from_sub_path=true, so no stripprefix.
-        - traefik.http.routers.${ENV}-grafana-live-secure.entrypoints=websecure
-        - traefik.http.routers.${ENV}-grafana-live-secure.rule=Host(`dashboard.${INDUSTREAM_DOMAIN}`) && PathPrefix(`/grafana/api/live`)
-        - traefik.http.routers.${ENV}-grafana-live-secure.tls=true
-        - traefik.http.routers.${ENV}-grafana-live-secure.service=${ENV}-grafana
-        - traefik.http.routers.${ENV}-grafana-live-secure.middlewares=allow-iframe@file
-        - traefik.http.routers.${ENV}-grafana-live-secure.priority=200
-      resources:
-        # Grafana 13 + GF_INSTALL_PLUGINS (installs 3-4 plugins at boot) spikes
-        # well past 384M → OOMKilled crash-loop on swarm. 1024M is the safe floor.
-        # CPU: 0.5 throttled Grafana 13 badly (noticeably slow UI + queries);
-        # raised to 2.0 — the node has spare cores and Grafana idles ~2% but
-        # needs headroom for dashboard render + backend datasource queries.
-        limits:       { cpus: '2.0', memory: 2048M }
-        reservations: { cpus: '0.08', memory: 256M }
-      restart_policy: { condition: any, delay: 10s, max_attempts: 0, window: 120s }
-
-  grafana-wrapper:
-    networks:
-      - traefik-public
-      - platform
-    depends_on:
-      - industream-hub-backend
-    deploy:
-      labels:
-        - traefik.enable=true
-        - traefik.http.routers.${ENV}-grafana-wrapper-secure.entrypoints=websecure
-        - traefik.http.routers.${ENV}-grafana-wrapper-secure.rule=Host(`dashboard.${INDUSTREAM_DOMAIN}`)
-        - traefik.http.routers.${ENV}-grafana-wrapper-secure.tls=true
-        - traefik.http.routers.${ENV}-grafana-wrapper-secure.service=${ENV}-grafana-wrapper
-        - traefik.http.routers.${ENV}-grafana-wrapper-secure.middlewares=allow-iframe@file
-        - traefik.http.routers.${ENV}-grafana-wrapper.entrypoints=web
-        - traefik.http.routers.${ENV}-grafana-wrapper.rule=Host(`dashboard.${INDUSTREAM_DOMAIN}`)
-        - traefik.http.routers.${ENV}-grafana-wrapper.middlewares=redirect-to-https@file
-        - traefik.http.services.${ENV}-grafana-wrapper.loadbalancer.server.port=8080
-      resources:
-        limits:       { cpus: '0.1', memory: 64M }
-        reservations: { cpus: '0.01', memory: 16M }
-      restart_policy: { condition: any, delay: 5s, window: 120s }
-
   prometheus:
     networks:
       - traefik-public
@@ -191,27 +87,11 @@ services:
       restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
 
 secrets:
-  grafana_admin_password:
-    name: ${ENV}_grafana_admin_password
-    external: true
-  grafana_db_password:
-    name: ${ENV}_grafana_db_password
-    external: true
   postgres_admin_password:
     name: ${ENV}_postgres_admin_password
     external: true
-  datacatalog_db_password:
-    name: ${ENV}_datacatalog_db_password
-    external: true
-  datacatalog_api_key:
-    name: ${ENV}_datacatalog_api_key
-    external: true
-  influx_admin_token:
-    name: ${ENV}_influx_admin_token
-    external: true
 
 volumes:
-  grafana-data:      { name: "${ENV}-grafana-data" }
   prometheus-data:   { name: "${ENV}-prometheus-data" }
   alertmanager-data: { name: "${ENV}-alertmanager-data" }
 

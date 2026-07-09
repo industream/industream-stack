@@ -1,0 +1,95 @@
+# =============================================================================
+# runtime/compose/grafana.yml — COMPOSE-only plumbing for the Grafana app.
+# =============================================================================
+# Grafana + grafana-wrapper (Hub-SSO) + the dedicated Grafana Postgres. Split out
+# of runtime/compose/monitoring.yml so Grafana deploys with the platform. Caddy
+# labels / file-secrets / flowmaker-net. Merged LAST over base/grafana.yml.
+#
+# ┌─ TODO (Caddy internal-CA ↔ Grafana JWKS trust) ─────────────────────────────
+# │ Grafana fetches the Hub JWKS over HTTPS at
+# │   https://${FM_DOMAIN:-flowmaker.localhost}/api/uifusion/auth/jwks
+# │ which Caddy serves over an INTERNAL cert. Grafana 13 IGNORES tls_skip_verify
+# │ for the JWKS fetch — so Caddy's internal CA root MUST be trusted by Grafana or
+# │ the keyset stays empty and every token is rejected. Mount Caddy's local CA
+# │ root (CADDY_LOCAL_CA, at <caddy-data>/caddy/pki/authorities/local/root.crt)
+# │ into Grafana's extra-CA dir (done below), non-root via SSL_CERT_DIR.
+# └─────────────────────────────────────────────────────────────────────────────
+services:
+  grafana:
+    # In the compose/FlowMaker topology the public Hub hostname is ${FM_DOMAIN:-flowmaker.localhost}
+    # (Caddy-served), not the swarm ${INDUSTREAM_DOMAIN}. Resolve it to the
+    # Caddy host so the JWKS fetch over https reaches Caddy's published :443.
+    extra_hosts:
+      - "${FM_DOMAIN:-flowmaker.localhost}:host-gateway"
+    environment:
+      # Override the JWKS URL + root URL to the Caddy public hostname (FM_DOMAIN).
+      - GF_AUTH_JWT_JWK_SET_URL=https://${FM_DOMAIN:-flowmaker.localhost}/api/uifusion/auth/jwks
+      - GF_SERVER_ROOT_URL=https://dashboard.${FM_DOMAIN:-flowmaker.localhost}/grafana/
+      # Trust Caddy's internal CA so the JWKS fetch validates (see TODO above).
+      - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+      - SSL_CERT_DIR=/etc/grafana/extra-cas
+    volumes:
+      - ${CADDY_LOCAL_CA:-./secrets/caddy-internal-ca.crt}:/etc/grafana/extra-cas/caddy-internal-ca.crt:ro
+    secrets:
+      - grafana_admin_password
+      - datacatalog_api_key
+      - grafana_db_password
+    depends_on:
+      - grafana-postgresql
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      # The wrapper owns dashboard.${FM_DOMAIN:-flowmaker.localhost}; grafana-direct.* is the
+      # back-door route straight to Grafana (admin/debug, no wrapper).
+      caddy: grafana-direct.${FM_DOMAIN:-flowmaker.localhost}
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  grafana-wrapper:
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+    labels:
+      # The wrapper SPA must be iframeable from the Hub origin — Caddy internal
+      # cert; the wrapper terminates the Hub auth-bridge in front of Grafana.
+      caddy: dashboard.${FM_DOMAIN:-flowmaker.localhost}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      caddy.tls.issuer: internal
+      caddy.tls.issuer.lifetime: 24000h
+
+  # Dedicated Grafana Postgres (compose topology; swarm uses the shared one).
+  grafana-postgresql:
+    image: postgres:${POSTGRES_VERSION}
+    environment:
+      - POSTGRES_DB=${GRAFANA_DB_NAME}
+      - POSTGRES_USER=${GRAFANA_DB_USER}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/grafana_db_password
+      # postgres:18 refuses a bare /var/lib/postgresql/data mount — pin PGDATA to a
+      # subdir (Postgres 18+ moved the default). Matches base/data.yml's shared postgres.
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    secrets:
+      - grafana_db_password
+    volumes:
+      - grafana-pgdata:/var/lib/postgresql/data
+    networks:
+      - flowmaker-net
+    restart: unless-stopped
+
+secrets:
+  grafana_admin_password:
+    file: ${SECRETS_DIR:-./secrets}/grafana_admin_password
+  datacatalog_api_key:
+    file: ${SECRETS_DIR:-./secrets}/datacatalog_api_key
+  grafana_db_password:
+    file: ${SECRETS_DIR:-./secrets}/grafana_db_password
+
+volumes:
+  grafana-data:
+  grafana-pgdata:
+
+networks:
+  flowmaker-net:
+    external: true
+    name: ${FM_NETWORK}

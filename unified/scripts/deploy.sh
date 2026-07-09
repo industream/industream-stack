@@ -34,7 +34,7 @@ WORKERS_ENABLED=""   # CSV allowlist of flow-box worker services; empty = all
 TYPE="" ATTACH=false
 # GROUP_SET = the base/<group>.yml set to assemble. Default = full platform; an
 # instance footprint narrows it (e.g. a core-only or a workers-only instance, T3).
-GROUP_SET="core flowmaker datacatalog workers data monitoring"
+GROUP_SET="core flowmaker datacatalog workers data grafana"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -67,7 +67,7 @@ done
 #                  (canary/parallel). On compose the attach is already native
 #                  (workers join the external ${FM_NETWORK} / flowmaker-net).
 case "$TYPE" in
-  core)    GROUP_SET="core flowmaker datacatalog data monitoring" ;;
+  core)    GROUP_SET="core flowmaker datacatalog data grafana" ;;
   workers) GROUP_SET="workers"; ATTACH=true ;;
   "")      : ;;   # full platform, or an explicit --groups
   *) echo "✗ --type core|workers" >&2; exit 1 ;;
