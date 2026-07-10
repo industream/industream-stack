@@ -102,6 +102,10 @@ services:
     secrets:
       - source: databridge_pg_password
         target: ${ENV}_databridge_pg_password
+      # DataBridge resolves databases from InfluxDB buckets → the pg variant needs
+      # the influx token too (dotnet-entrypoint injects it into the placeholder).
+      - source: influx_admin_token
+        target: ${ENV}_influx_admin_token
     deploy:
       labels:
         - traefik.enable=true

@@ -114,6 +114,14 @@ services:
       # replaces __DB_PASSWORD_PLACEHOLDER__ in the connection string below.
       - DB_SECRET_PATTERN=${DATABRIDGE_PG_DB_SECRET_PATTERN}
       - PostgreSql__ConnectionString=Server=${DATABRIDGE_PG_DB_HOST};Port=5432;User Id=${DATABRIDGE_PG_DB_USER};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${DATABRIDGE_PG_DB_NAME};
+      # DataBridge resolves "databases" from InfluxDB buckets (databases == buckets)
+      # regardless of the record store — so even the PostgreSQL variant needs a valid
+      # InfluxDB connection, else every /records/query throws "Expecting a non-empty
+      # string for token" (500). Token injected by dotnet-entrypoint.sh from the
+      # mounted influx_admin_token secret (same mechanism as the influx variant).
+      - InfluxDB__Connection__Url=http://influxdb:8086
+      - InfluxDB__Connection__Token=__INFLUX_TOKEN_PLACEHOLDER__
+      - InfluxDB__Connection__Organization=${INFLUX_ORG}
     volumes:
       - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
     healthcheck:
