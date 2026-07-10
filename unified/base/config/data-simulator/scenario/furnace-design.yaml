@@ -1,0 +1,12 @@
+section: FurnaceDesign
+
+constants:
+  schema: raceway
+  keys:
+    - Key
+  entries:
+    # Inner radius of the hearth (Raceway IOList §1, Static)
+    - name: hearthRadius
+      data:
+        Key: HearthRadius
+        Value: 5.5

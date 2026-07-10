@@ -1,0 +1,125 @@
+# IOList §9 — Plasma injection
+section: Injection
+topic_prefix: ironstream/injection/plasma-4
+
+default_tags:
+  Id: 4
+  Type: Plasma
+
+value_generators:
+  eachTuyere:
+    range:
+      from: 1
+      to: 30
+
+streams:
+  - name: temperature
+    topic: Temperature
+    interval_s: 1.0
+    baseline: 80
+    drift_per_tick: 0.3
+    min: 20
+    max: 200
+
+  - name: torch.power
+    topic: TorchPower
+    interval_s: 1.0
+    tags:
+      TuyereNo: { value_generator: eachTuyere }
+    baseline: 4
+    drift_per_tick: 0.05
+    min: 0
+    max: 8
+
+  - name: torch.efficiency
+    topic: TorchEfficiency
+    interval_s: 3600.0
+    tags:
+      TuyereNo: { value_generator: eachTuyere }
+    baseline: 80
+    drift_per_tick: 0
+    min: 60
+    max: 95
+
+  - name: plasmaGas.flowRate
+    topic: PlasmaGasFlowRate
+    interval_s: 1.0
+    tags:
+      TuyereNo: { value_generator: eachTuyere }
+    baseline: 5
+    drift_per_tick: 0.05
+    min: 0
+    max: 10
+
+  # Plasma gas defaults to argon; tune if a different carrier is used.
+  - name: plasmaGas.composition.Ar
+    topic: PlasmaGasAr
+    interval_s: 1.0
+    baseline: 100
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: plasmaGas.composition.N2
+    topic: PlasmaGasN2
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: plasmaGas.composition.Air
+    topic: PlasmaGasAir
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: plasmaGas.composition.O2
+    topic: PlasmaGasO2
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: plasmaGas.composition.CO2
+    topic: PlasmaGasCO2
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: plasmaGas.composition.CO
+    topic: PlasmaGasCO
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: plasmaGas.composition.H2
+    topic: PlasmaGasH2
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: plasmaGas.composition.CH4
+    topic: PlasmaGasCH4
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: plasmaGas.composition.H2O
+    topic: PlasmaGasH2O
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100

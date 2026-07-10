@@ -1,0 +1,192 @@
+# IOList §6 — Coal injection (PCI: Pulverized Coal Injection)
+# All §6/§7/§8/§9 share the `Injection` measurement; rows are distinguished
+# by the `Type` tag (Coal/Gas/ByProduct/Plasma) and `Id` tag (instance).
+section: Injection
+topic_prefix: ironstream/injection/pci-2
+
+default_tags:
+  Id: 2
+  Type: Coal
+
+value_generators:
+  eachTuyere:
+    range:
+      from: 1
+      to: 30
+
+streams:
+  - name: temperature
+    topic: Temperature
+    interval_s: 1.0
+    baseline: 80
+    drift_per_tick: 0.3
+    min: 20
+    max: 200
+
+  - name: flowRate
+    topic: FlowRate
+    interval_s: 1.0
+    tags:
+      TuyereNo: { value_generator: eachTuyere }
+    baseline: 60
+    drift_per_tick: 0.5
+    min: 0
+    max: 120
+
+  - name: lhv
+    topic: Lhv
+    interval_s: 600.0
+    baseline: 30000
+    drift_per_tick: 100
+    min: 25000
+    max: 35000
+
+  - name: chemicalProps.C
+    topic: C
+    interval_s: 600.0
+    baseline: 82
+    drift_per_tick: 0.2
+    min: 70
+    max: 90
+
+  - name: chemicalProps.H
+    topic: H
+    interval_s: 600.0
+    baseline: 5
+    drift_per_tick: 0.1
+    min: 2
+    max: 10
+
+  - name: chemicalProps.O
+    topic: O
+    interval_s: 600.0
+    baseline: 5
+    drift_per_tick: 0.1
+    min: 1
+    max: 10
+
+  - name: chemicalProps.N
+    topic: N
+    interval_s: 600.0
+    baseline: 1.5
+    drift_per_tick: 0.05
+    min: 0.5
+    max: 3
+
+  - name: chemicalProps.S
+    topic: S
+    interval_s: 600.0
+    baseline: 0.8
+    drift_per_tick: 0.02
+    min: 0.1
+    max: 2
+
+  - name: chemicalProps.ashes
+    topic: Ashes
+    interval_s: 600.0
+    baseline: 10
+    drift_per_tick: 0.2
+    min: 5
+    max: 15
+
+  - name: chemicalProps.humidity
+    topic: Humidity
+    interval_s: 600.0
+    baseline: 1
+    drift_per_tick: 0.05
+    min: 0.5
+    max: 2
+
+  - name: chemicalProps.volatileMatter
+    topic: VolatileMatter
+    interval_s: 600.0
+    baseline: 25
+    drift_per_tick: 0.5
+    min: 8
+    max: 42
+
+  - name: transportGas.flowRate
+    topic: TransportGasFlowRate
+    interval_s: 1.0
+    tags:
+      TuyereNo: { value_generator: eachTuyere }
+    baseline: 2
+    drift_per_tick: 0.05
+    min: 0
+    max: 5
+
+  # IOList transport gas composition is pure N2 by default. Other species
+  # (Air, O2, CO2, CO, H2, CH4, Ar, H2O) are flat at 0 — kept here for the
+  # full IOList contract; tweak in the YAML when a customer uses another
+  # carrier gas.
+  - name: transportGas.composition.N2
+    topic: TransportGasN2
+    interval_s: 1.0
+    baseline: 100
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: transportGas.composition.Air
+    topic: TransportGasAir
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: transportGas.composition.O2
+    topic: TransportGasO2
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: transportGas.composition.CO2
+    topic: TransportGasCO2
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: transportGas.composition.CO
+    topic: TransportGasCO
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: transportGas.composition.H2
+    topic: TransportGasH2
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: transportGas.composition.CH4
+    topic: TransportGasCH4
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: transportGas.composition.Ar
+    topic: TransportGasAr
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: transportGas.composition.H2O
+    topic: TransportGasH2O
+    interval_s: 1.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100

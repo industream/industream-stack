@@ -1,0 +1,18 @@
+section: OperationalSettings
+
+constants:
+  schema: raceway
+  keys:
+    - Key
+  entries:
+    # O2 purity from supplier (Raceway IOList §3, Static)
+    - name: o2EnrichmentPurity
+      data:
+        Key: O2EnrichmentPurity
+        Value: 99.5
+
+    # Coke temperature at tuyere level (Raceway IOList §4, Static)
+    - name: cokeTemperatureAtTuyere
+      data:
+        Key: CokeTemperatureAtTuyere
+        Value: 1500
