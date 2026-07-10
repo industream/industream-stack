@@ -25,8 +25,6 @@ services:
 volumes:
   datasimulator-mqtt-data:        { name: "${ENV}-datasimulator-mqtt-data" }
   datasimulator-mqtt-log:         { name: "${ENV}-datasimulator-mqtt-log" }
-  datasimulator-config:           { name: "${ENV}-datasimulator-config" }
-  datasimulator-telegraf-config:  { name: "${ENV}-datasimulator-telegraf-config" }
 
 secrets:
   postgres_admin_password:

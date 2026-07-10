@@ -47,8 +47,9 @@ services:
       - CONFIG_DIR=/app/config
       - POSTGRES_URL=postgresql://${IRONSTREAM_DB_USER:-postgres}:__DB_PASSWORD_PLACEHOLDER__@${IRONSTREAM_DB_HOST:-postgres}:5432/${IRONSTREAM_DB_NAME:-ironstream_dev}
     volumes:
-      # Scenario yamls (demo assets — see header). Read-only.
-      - datasimulator-config:/app/config:ro
+      # Scenario yamls — the recovered IronStream IOList files, bind-mounted from
+      # the vendored config/ (./config/ resolves to base/config/). Read-only.
+      - ./config/data-simulator/scenario:/app/config:ro
     depends_on:
       - data-simulator-mosquitto
 
@@ -62,13 +63,11 @@ services:
       - INFLUX_ORG=${INFLUX_ORG}
       - INFLUX_BUCKET=${INFLUX_BUCKET}
     volumes:
-      # mqtt_consumer → influxdb_v2 bridge config (demo asset — see header). Read-only.
-      - datasimulator-telegraf-config:/etc/telegraf/telegraf.conf:ro
+      # mqtt_consumer → influxdb_v2 bridge config (recovered, vendored). Read-only.
+      - ./config/data-simulator/telegraf.conf:/etc/telegraf/telegraf.conf:ro
     depends_on:
       - data-simulator-mosquitto
 
 volumes:
   datasimulator-mqtt-data:
   datasimulator-mqtt-log:
-  datasimulator-config:
-  datasimulator-telegraf-config:
