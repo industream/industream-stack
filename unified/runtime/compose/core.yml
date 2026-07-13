@@ -47,6 +47,16 @@ services:
       caddy.reverse_proxy: "{{upstreams 80}}"
       caddy.tls.issuer: internal
       caddy.tls.issuer.lifetime: 24000h
+      # Apex (${FM_DOMAIN}): the app UIs load industream-login.js from the apex
+      # origin AND the Hub token flow / Grafana JWKS fetch https://${FM_DOMAIN}/api/uifusion/*.
+      # Route order matters: the /api/uifusion path handler proxies to the Hub
+      # backend (prefix stripped → /auth/jwks etc.); the catch-all serves the SPA.
+      caddy_1: ${FM_DOMAIN}
+      caddy_1.tls.issuer: internal
+      caddy_1.tls.issuer.lifetime: 24000h
+      caddy_1.route.0_handle_path: /api/uifusion/*
+      caddy_1.route.0_handle_path.0_reverse_proxy: industream-hub-backend:3050
+      caddy_1.route.1_reverse_proxy: "{{upstreams 80}}"
 
   minio:
     networks:
@@ -76,6 +86,30 @@ services:
       caddy.tls.issuer: internal
       caddy.tls.issuer.lifetime: 24000h
 
+  # ---------------------------------------------------------------------------
+  # Caddy reverse proxy — the COMPOSE ingress. Swarm uses Traefik (a separate
+  # stack); the compose tree self-serves via caddy-docker-proxy, which reads the
+  # `caddy.*` service labels above off the shared flowmaker-net and publishes
+  # :80/:443. TLS is Caddy's internal CA (caddy.tls.issuer: internal) → browsers
+  # warn until the local CA is trusted (root at /data/caddy/pki/authorities/local).
+  # This service is compose-only (it lives in runtime/compose/, never merged on swarm).
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: lucaslorentz/caddy-docker-proxy:2.9-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Only proxy containers attached to the shared FlowMaker network.
+      - CADDY_INGRESS_NETWORKS=${FM_NETWORK}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - flowmaker-net
+
 # Literal secret names on the compose tree (compose does NOT interpolate the
 # KEYS of the top-level secrets map). They MUST match MINIO_ROOT_USER_SECRET_NAME
 # / MINIO_ROOT_PASSWORD_SECRET_NAME in runtime.compose.env (= minio_root_user /
@@ -92,3 +126,7 @@ networks:
   flowmaker-net:
     external: true
     name: ${FM_NETWORK}
+
+volumes:
+  caddy-data:      # Caddy certs + internal CA (persist across restarts)
+  caddy-config:

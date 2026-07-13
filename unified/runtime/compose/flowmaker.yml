@@ -15,10 +15,12 @@
 services:
   flowmaker-scheduler:
     # CORS: the flowmaker UI calls these backends cross-subdomain; allow the
-    # compose frontend origin (frontend.${FM_DOMAIN}) — base defaults to the
-    # swarm host (flowmaker.${INDUSTREAM_DOMAIN}).
+    # flowmaker.${FM_DOMAIN} origin — the SAME host as swarm (Traefik) and the Hub
+    # menu-apps seeder, so the Hub allows the origin and confighub CORS matches.
+    # (Previously diverged to frontend.* on compose → Hub "origin not allowed" +
+    # confighub CORS block.)
     environment:
-      - FM_CORS_ORIGIN=${FM_PROTOCOL:-https}://frontend.${FM_DOMAIN}
+      - FM_CORS_ORIGIN=${FM_PROTOCOL:-https}://flowmaker.${FM_DOMAIN}
     networks:
       - flowmaker-net
     depends_on:
@@ -32,7 +34,7 @@ services:
 
   flowmaker-confighub:
     environment:
-      - FM_CORS_ORIGIN=${FM_PROTOCOL:-https}://frontend.${FM_DOMAIN}
+      - FM_CORS_ORIGIN=${FM_PROTOCOL:-https}://flowmaker.${FM_DOMAIN}
     networks:
       - flowmaker-net
     restart: unless-stopped
@@ -44,7 +46,7 @@ services:
 
   flowmaker-logging:
     environment:
-      - FM_CORS_ORIGIN=${FM_PROTOCOL:-https}://frontend.${FM_DOMAIN}
+      - FM_CORS_ORIGIN=${FM_PROTOCOL:-https}://flowmaker.${FM_DOMAIN}
     networks:
       - flowmaker-net
     restart: unless-stopped
@@ -65,7 +67,7 @@ services:
       - flowmaker-scheduler
     restart: unless-stopped
     labels:
-      caddy: frontend.${FM_DOMAIN}
+      caddy: flowmaker.${FM_DOMAIN}
       caddy.reverse_proxy: "{{upstreams 80}}"
       caddy.tls.issuer: internal
       caddy.tls.issuer.lifetime: 24000h

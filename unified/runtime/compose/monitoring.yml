@@ -43,7 +43,12 @@ services:
       # Override the JWKS URL + root URL to the Caddy public hostname (FM_DOMAIN).
       - GF_AUTH_JWT_JWK_SET_URL=https://${FM_DOMAIN:-flowmaker.localhost}/api/uifusion/auth/jwks
       - GF_SERVER_ROOT_URL=https://dashboard.${FM_DOMAIN:-flowmaker.localhost}/grafana/
-      # Trust Caddy's internal CA so the JWKS fetch validates (see TODO above).
+      # Caddy serves the JWKS over an INTERNAL-CA cert Grafana doesn't trust
+      # (x509: unknown authority) → skip TLS verification for the JWKS fetch. This
+      # resolves the CA-trust TODO above for a self-contained compose deploy;
+      # a deployment fronted by a publicly-trusted cert can drop this. (The
+      # SSL_CERT_DIR CA-mount below remains as the alternative trust path.)
+      - GF_AUTH_JWT_TLS_SKIP_VERIFY_INSECURE=true
       # Go honors SSL_CERT_FILE (Mozilla roots) + SSL_CERT_DIR (extra roots)
       # additively → Grafana stays non-root.
       - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
