@@ -272,6 +272,28 @@ seed_menu_apps() {
   fi
 }
 
+# ---- ConfigHub seeder (BOTH editions) ---------------------------------------
+# FlowMaker's confighub ships EMPTY on a greenfield deploy: no default scheduler
+# and no cdn/confighub/datacatalog environment vars → the FlowMaker UI shows no
+# scheduler and flows can't resolve those services. seed-confighub.sh creates
+# them; it is runtime-aware (discovers the confighub container by swarm/compose
+# label). We run it here (mirrors seed_menu_apps) so BOTH runtimes get a working
+# FlowMaker out of the box. Best-effort, strictly NON-FATAL, idempotent
+# (re-runs PUT-update an existing scheduler / overwrite env vars).
+seed_confighub() {
+  echo ""
+  echo "▶ FlowMaker ConfigHub seeder (default scheduler + env vars)…"
+  local domain scope_args
+  domain="${INDUSTREAM_DOMAIN:-localhost}"
+  scope_args=(--domain "$domain" --runtime "$RUNTIME")
+  [[ "$RUNTIME" == swarm ]] && scope_args+=(--stack "$STACK") || scope_args+=(--project "$PROJECT")
+  if bash "$HERE/../scripts/setup/seed-confighub.sh" "${scope_args[@]}" >/dev/null 2>&1; then
+    echo "  ✓ ConfigHub seeded (Scheduler 1 + environment vars)"
+  else
+    echo "  ⚠ ConfigHub seeding failed or timed out (non-fatal)"
+  fi
+}
+
 # ---- EE post-deploy seeders -------------------------------------------------
 # A greenfield EE deploy is loginnable WITHOUT the interactive Logto admin
 # wizard: the EE hub image ships offline seeders (/app/oidc-seeds, /app/menu-seeds)
@@ -349,6 +371,7 @@ if [[ "$RUNTIME" == compose ]]; then
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
   seed_menu_apps                              # both editions: seed the Hub launchpad
+  seed_confighub                              # both editions: FlowMaker default scheduler + env
   [[ "$EDITION" == ee ]] && seed_ee           # EE-only: Logto app/roles/user
 else
   [[ -n "$STACK" ]] || { echo "✗ --stack required for swarm" >&2; exit 1; }
@@ -439,6 +462,7 @@ PY
     sleep 3
   done
   seed_menu_apps                       # both editions: seed the Hub launchpad
+  seed_confighub                       # both editions: FlowMaker default scheduler + env
   # NB: an `&&`-chained `seed_ee` as the script's LAST statement made deploy.sh
   # exit 1 on CE (the `[[ == ee ]]` test is false → non-zero → propagated as the
   # script's exit code → the CLI reported a phantom 'install failed'). Use a plain

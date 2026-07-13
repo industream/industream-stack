@@ -3,8 +3,9 @@
 # SEED CONFIGHUB - Set environment variables and scheduler after deployment
 # =============================================================================
 # Usage:
-#   ./scripts/setup/seed-confighub.sh --stack industream-dev --domain dev.industream.platform.lan
-#   ./scripts/setup/seed-confighub.sh --stack industream-prod --domain industream.platform.lan
+#   ./scripts/setup/seed-confighub.sh --domain <domain> --runtime swarm   --stack   industream-prod
+#   ./scripts/setup/seed-confighub.sh --domain <domain> --runtime compose --project fm-dev
+# (--stack implies --runtime swarm, --project implies --runtime compose, for back-compat.)
 # =============================================================================
 
 set -e
@@ -19,29 +20,39 @@ NC='\033[0m'
 
 # Parse arguments
 STACK_NAME=""
+COMPOSE_PROJECT=""
+RUNTIME="swarm"          # default; --stack/--project set it explicitly below
 DOMAIN=""
 MAX_WAIT=120
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --stack) STACK_NAME="$2"; shift 2 ;;
-        --domain) DOMAIN="$2"; shift 2 ;;
+        --runtime) RUNTIME="$2"; shift 2 ;;
+        --stack)   STACK_NAME="$2"; RUNTIME="swarm"; shift 2 ;;
+        --project) COMPOSE_PROJECT="$2"; RUNTIME="compose"; shift 2 ;;
+        --domain)  DOMAIN="$2"; shift 2 ;;
         --timeout) MAX_WAIT="$2"; shift 2 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
 
-if [ -z "$STACK_NAME" ] || [ -z "$DOMAIN" ]; then
-    echo -e "${RED}Usage: $0 --stack <stack-name> --domain <domain>${NC}"
-    echo "  Example: $0 --stack industream-dev --domain dev.industream.platform.lan"
+if [ -z "$DOMAIN" ]; then
+    echo -e "${RED}Usage: $0 --domain <domain> (--runtime swarm --stack <name> | --runtime compose --project <name>)${NC}"
     exit 1
 fi
+case "$RUNTIME" in
+    swarm)   [ -z "$STACK_NAME" ]      && { echo -e "${RED}✗ --runtime swarm requires --stack <name>${NC}" >&2; exit 1; } ;;
+    compose) [ -z "$COMPOSE_PROJECT" ] && { echo -e "${RED}✗ --runtime compose requires --project <name>${NC}" >&2; exit 1; } ;;
+    *) echo -e "${RED}✗ Unknown --runtime '$RUNTIME' (expected: swarm|compose)${NC}" >&2; exit 1 ;;
+esac
 
 # URLs derived from domain (aligned with fm CLI conventions)
 CONFIGHUB_EXTERNAL_URL="https://confighub.${DOMAIN}"
 CONFIGHUB_INTERNAL_URL="http://flowmaker-confighub:4000"
 CDN_URL="https://cdn.${DOMAIN}"
-DATACATALOG_URL="https://datacatalog.${DOMAIN}"
+# The datacatalog ENV var flows consume is the DataCatalog *API* — served at the
+# datacatalog-api.<domain> host on both runtimes (datacatalog.<domain> is the UI).
+DATACATALOG_URL="https://datacatalog-api.${DOMAIN}"
 SCHEDULER_URL="https://scheduler.${DOMAIN}"
 LOGGER_URL="https://logger.${DOMAIN}"
 
@@ -99,7 +110,15 @@ req.end();
 CONFIGHUB_CONTAINER=""
 ATTEMPTS=$((MAX_WAIT / 5))
 for i in $(seq 1 "$ATTEMPTS"); do
-    CONFIGHUB_CONTAINER=$(docker ps --format '{{.Names}}' | grep "${STACK_NAME}_flowmaker-confighub\." | head -1)
+    # Resolve the confighub container by orchestrator label (swarm or compose).
+    if [ "$RUNTIME" = swarm ]; then
+        CONFIGHUB_CONTAINER=$(docker ps -q \
+            --filter "label=com.docker.swarm.service.name=${STACK_NAME}_flowmaker-confighub" | head -1)
+    else
+        CONFIGHUB_CONTAINER=$(docker ps -q \
+            --filter "label=com.docker.compose.project=${COMPOSE_PROJECT}" \
+            --filter "label=com.docker.compose.service=flowmaker-confighub" | head -1)
+    fi
     if [ -n "$CONFIGHUB_CONTAINER" ]; then
         HEALTH=$(confighub_request "GET" "/" 2>/dev/null || true)
         if [ -n "$HEALTH" ]; then
@@ -114,7 +133,11 @@ done
 if [ -z "$CONFIGHUB_CONTAINER" ]; then
     echo -e "  ${RED}✗ ConfigHub not found after ${MAX_WAIT}s${NC}"
     echo -e "  ${YELLOW}Run this script again once the stack is up:${NC}"
-    echo -e "    ${BOLD}$0 --stack ${STACK_NAME} --domain ${DOMAIN}${NC}"
+    if [ "$RUNTIME" = swarm ]; then
+        echo -e "    ${BOLD}$0 --domain ${DOMAIN} --runtime swarm --stack ${STACK_NAME}${NC}"
+    else
+        echo -e "    ${BOLD}$0 --domain ${DOMAIN} --runtime compose --project ${COMPOSE_PROJECT}${NC}"
+    fi
     exit 1
 fi
 
