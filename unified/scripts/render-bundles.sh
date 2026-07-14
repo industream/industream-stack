@@ -71,6 +71,7 @@ WORKER_OPC_UA_CLIENT_IMAGE|flowmaker.boxes/opc-ua-client|enterprise|WORKER_OPC_U
 WORKER_RTSP_CLIENT_IMAGE|flowmaker.boxes/rtsp-client|enterprise|WORKER_RTSP_CLIENT_VERSION|workers-premium
 WORKER_LUMINOSITY_BOX_IMAGE|flowmaker.boxes/luminosity-box|enterprise|WORKER_LUMINOSITY_BOX_VERSION|workers-premium
 WORKER_MINIO_SINK_IMAGE|flowmaker.boxes/minio-sink|enterprise|WORKER_MINIO_SINK_VERSION|workers-premium
+WORKER_TIMER_REPLAY_IMAGE|flowmaker.boxes/timer-replay|enterprise|WORKER_TIMER_REPLAY_VERSION|workers-premium
 # --- ironstream (enterprise, opt-in EE-only group) ---
 MATERIAL_CATALOG_API_IMAGE|ironstream/material-catalog/api|enterprise|MATERIAL_CATALOG_API_VERSION|ironstream
 MATERIAL_CATALOG_UI_IMAGE|ironstream/material-catalog/ui|enterprise|MATERIAL_CATALOG_UI_VERSION|ironstream

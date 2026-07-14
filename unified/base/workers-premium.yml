@@ -83,3 +83,13 @@ services:
       FM_WORKER_ID: worker-minio-sink001
       FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-minio-sink:5560
       MINIO_ENDPOINT: http://minio:9000
+
+  # Replay Clock (EE) — emits advancing {windowStart,windowEnd} windows for historical
+  # replay through the DataBridge Data Source. Registers as industream/timer-replay.
+  worker-timer-replay:
+    <<: *worker
+    image: ${WORKER_TIMER_REPLAY_IMAGE}
+    environment:
+      <<: *worker-env
+      FM_WORKER_ID: worker-timer-replay001
+      FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-timer-replay:5560
