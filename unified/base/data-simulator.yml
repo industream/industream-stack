@@ -1,0 +1,72 @@
+# =============================================================================
+# base/data-simulator.yml — orchestrator-neutral (image + functional env only).
+# =============================================================================
+# IronStream DEMO data feed (ported from the live .55 Portainer stack
+# `data-simulator`, /data/compose/10). A simulated blast-furnace publisher feeds
+# an MQTT broker; telegraf bridges MQTT → the platform InfluxDB. NOT a production
+# service — a demo/showcase group, EE-gated and opt-in like `ironstream`, NEVER
+# deployed by default.
+#
+# REUSES THE PLATFORM: the publisher writes to the shared postgres
+# (${IRONSTREAM_DB_HOST}) and telegraf outputs to the platform influx — no
+# bespoke data backend (the .55 stack's own influx is the platform's DataBridge
+# store here).
+#
+# CONFIG ASSETS (NOT vendored — demo/product content, supplied at deploy time
+# under base/config/data-simulator/):
+#   - scenario/*.yaml : the 11 blast-furnace scenario files the publisher reads
+#     (furnace-design, hot-blast, tuyere, charged-coke/ore, injection-*, …).
+#   - telegraf.conf   : an [[inputs.mqtt_consumer]] → [[outputs.influxdb_v2]]
+#     bridge (topics/format are product-specific — supply the IronStream demo one).
+# Mount them read-only via the runtime overlay's bind or a pre-seeded volume.
+# =============================================================================
+services:
+  # MQTT broker (third-party). Default eclipse-mosquitto config (anonymous 1883)
+  # is enough for the internal demo feed; no custom mosquitto.conf needed.
+  data-simulator-mosquitto:
+    image: eclipse-mosquitto:${MOSQUITTO_VERSION}
+    volumes:
+      - datasimulator-mqtt-data:/mosquitto/data
+      - datasimulator-mqtt-log:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/1883) 2>/dev/null' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Blast-furnace simulator: reads scenario yamls, publishes to MQTT, and writes
+  # to the shared postgres (same server/db as the IronStream apps).
+  data-simulator-publisher:
+    image: ${DATA_SIMULATOR_IMAGE}
+    environment:
+      - MQTT_HOST=data-simulator-mosquitto
+      - MQTT_PORT=1883
+      - CONFIG_DIR=/app/config
+      - POSTGRES_URL=postgresql://${IRONSTREAM_DB_USER:-postgres}:${IRONSTREAM_DB_PASSWORD}@${IRONSTREAM_DB_HOST:-datacatalog-postgresql}:5432/${IRONSTREAM_DB_NAME:-ironstream_dev}
+    volumes:
+      # Scenario yamls (demo assets — see header). Read-only.
+      - datasimulator-config:/app/config:ro
+    depends_on:
+      - data-simulator-mosquitto
+
+  # MQTT → InfluxDB bridge (third-party telegraf). Outputs to the platform influx
+  # (service `influxdb` on the platform net); INFLUX_TOKEN comes from the env/secret.
+  data-simulator-telegraf:
+    image: telegraf:${TELEGRAF_VERSION}
+    environment:
+      - INFLUX_URL=${DATASIMULATOR_INFLUX_URL:-http://influxdb:8086}
+      - INFLUX_TOKEN=${INFLUX_TOKEN}
+      - INFLUX_ORG=${INFLUX_ORG}
+      - INFLUX_BUCKET=${INFLUX_BUCKET}
+    volumes:
+      # mqtt_consumer → influxdb_v2 bridge config (demo asset — see header). Read-only.
+      - datasimulator-telegraf-config:/etc/telegraf/telegraf.conf:ro
+    depends_on:
+      - data-simulator-mosquitto
+
+volumes:
+  datasimulator-mqtt-data:
+  datasimulator-mqtt-log:
+  datasimulator-config:
+  datasimulator-telegraf-config:

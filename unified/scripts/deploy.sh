@@ -12,6 +12,10 @@
 # --bundle <ver> picks releases/bundle-platform-<ver>/ (the full-ref ${X_IMAGE}
 # vars). Omit it when exactly one bundle exists (auto-selected).
 #
+# --forge <exportKey>@<version> | --forge-interactive downloads a bundle's .env.*
+# from the Forge API (RELEASE_FORGE_URL) into releases/ and uses it as $BUNDLE —
+# Forge is just a bundle SOURCE. See scripts/forge-bundle.sh.
+#
 # --workers "svcA,svcB,…" deploys ONLY those flow-box workers (subset of the
 # `workers`/`workers-premium` groups); omit it to deploy every worker in the
 # selected groups. Client custom/ worker overlays are never filtered.
@@ -25,6 +29,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
 RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false BUNDLE=""
+FORGE_SPEC="" FORGE_INTERACTIVE=false   # --forge <exportKey>@<version> | --forge-interactive
 WORKERS_ENABLED=""   # CSV allowlist of flow-box worker services; empty = all
 TYPE="" ATTACH=false
 # GROUP_SET = the base/<group>.yml set to assemble. Default = full platform; an
@@ -40,11 +45,13 @@ while [[ $# -gt 0 ]]; do
     --project)   PROJECT="$2"; shift 2 ;;
     --community) COMMUNITY=true; shift ;;
     --bundle)    BUNDLE="$2"; shift 2 ;;
+    --forge)     FORGE_SPEC="$2"; shift 2 ;;
+    --forge-interactive) FORGE_INTERACTIVE=true; shift ;;
     --groups)    GROUP_SET="$2"; shift 2 ;;
     --workers)   WORKERS_ENABLED="$2"; shift 2 ;;
     --type)      TYPE="$2"; shift 2 ;;
     --render)    RENDER=true; shift ;;
-    -h|--help)   sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -77,8 +84,15 @@ cd "$HERE"
 #   - timescale       : TimescaleDB store (CE uses InfluxDB via the `data` group).
 #   - workers-premium : the 4 enterprise flow-box workers (opc-ua / rtsp /
 #                       luminosity / minio-sink), pulled from ENTERPRISE_REGISTRY.
+#   - ironstream      : the IronStream domain apps (material-catalog / recipe-maker
+#                       / burden-descent / burden-layer / raceway). A SPECIAL
+#                       licensed module — EE alone is NOT enough: it ships ONLY
+#                       when explicitly `--groups …ironstream…`, NEVER by default
+#                       (absent from every default GROUP_SET above). The CLI is
+#                       expected to gate it further on the license entitlement
+#                       (JWT `modules` list) before ever adding it here.
 # Reject any of them present in GROUP_SET unless --edition ee.
-EE_ONLY_GROUPS="timescale workers-premium"
+EE_ONLY_GROUPS="timescale workers-premium ironstream data-simulator"
 if [[ "$EDITION" != ee ]]; then
   for _g in $EE_ONLY_GROUPS; do
     if [[ " $GROUP_SET " == *" $_g "* ]]; then
@@ -86,6 +100,27 @@ if [[ "$EDITION" != ee ]]; then
       exit 1
     fi
   done
+fi
+
+# ---- FORGE: materialize a bundle from the Forge API (optional source) --------
+# --forge <exportKey>@<version> (non-interactive, CI-friendly) or
+# --forge-interactive (menu) download a release bundle's .env.* from Forge into
+# releases/bundle-platform-forge-<…>/ and set $BUNDLE to it. Forge is just a
+# SOURCE — the assembled deploy below consumes the bundle exactly like a local
+# render-bundles.sh one. Mutually exclusive with an explicit --bundle.
+if [[ "$FORGE_INTERACTIVE" == true || -n "$FORGE_SPEC" ]]; then
+  [[ "$FORGE_INTERACTIVE" == true && -n "$FORGE_SPEC" ]] && { echo "✗ use --forge OR --forge-interactive, not both" >&2; exit 1; }
+  [[ -n "$BUNDLE" ]] && { echo "✗ --bundle is incompatible with --forge/--forge-interactive (Forge sets the bundle)" >&2; exit 1; }
+  if [[ "$FORGE_INTERACTIVE" == true ]]; then
+    BUNDLE="$(scripts/forge-bundle.sh interactive)" || { echo "✗ Forge bundle selection failed" >&2; exit 1; }
+  else
+    # exportKey@version — '@' splits on the LAST occurrence so an exportKey may contain none.
+    _fk="${FORGE_SPEC%@*}"; _fv="${FORGE_SPEC##*@}"
+    [[ -n "$_fk" && -n "$_fv" && "$_fk" != "$_fv" ]] || { echo "✗ --forge expects <exportKey>@<version> (got '$FORGE_SPEC')" >&2; exit 1; }
+    BUNDLE="$(scripts/forge-bundle.sh fetch "$_fk" "$_fv")" || { echo "✗ Forge bundle download failed" >&2; exit 1; }
+  fi
+  [[ -n "$BUNDLE" ]] || { echo "✗ Forge returned no bundle key" >&2; exit 1; }
+  echo "▶ Forge bundle materialized: bundle-platform-${BUNDLE}"
 fi
 
 # ---- BUNDLE: resolve the release bundle holding the full-ref ${X_IMAGE} vars -

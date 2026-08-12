@@ -35,10 +35,14 @@ HUB_UI_IMAGE|uifusion/ui|community|UIFUSION_UI_VERSION|core
 CDN_SERVER_IMAGE|flowmaker.core/cdn-server|community|CDN_SERVER_VERSION|core
 CDN_CACHE_IMAGE|flowmaker.core/cdn-cache|community|CDN_CACHE_VERSION|core
 # --- flowmaker ---
-FLOWMAKER_LAUNCHER_IMAGE|flowmaker.core/flowmaker-launcher|community|FLOWMAKER_CORE_VERSION|flowmaker
-FLOWMAKER_CONFIGHUB_IMAGE|flowmaker.core/flowmaker-confighub-v2|community|FLOWMAKER_CORE_VERSION|flowmaker
-FLOWMAKER_LOGGER_IMAGE|flowmaker.core/flowmaker-logger|community|FLOWMAKER_LOGGER_VERSION|flowmaker
-FLOWMAKER_FRONTEND_IMAGE|flowmaker.core/flowmaker-front|community|FLOWMAKER_FRONTEND_VERSION|flowmaker
+# Var names follow the Forge export contract (the source of truth): the Forge
+# bundle ships these flowmaker.core refs UNPREFIXED, so base/*.yml and the local
+# render both use LAUNCHER/CONFIGHUB/LOGGER/FRONTEND_IMAGE — a local bundle and a
+# Forge bundle are then drop-in interchangeable.
+LAUNCHER_IMAGE|flowmaker.core/flowmaker-launcher|community|FLOWMAKER_CORE_VERSION|flowmaker
+CONFIGHUB_IMAGE|flowmaker.core/flowmaker-confighub-v2|community|FLOWMAKER_CORE_VERSION|flowmaker
+LOGGER_IMAGE|flowmaker.core/flowmaker-logger|community|FLOWMAKER_LOGGER_VERSION|flowmaker
+FRONTEND_IMAGE|flowmaker.core/flowmaker-front|community|FLOWMAKER_FRONTEND_VERSION|flowmaker
 # --- datacatalog ---
 DATACATALOG_API_IMAGE|datacatalog/api|community|DATACATALOG_API_VERSION|datacatalog
 DATACATALOG_UI_IMAGE|datacatalog/ui|community|DATACATALOG_UI_VERSION|datacatalog
@@ -67,6 +71,19 @@ WORKER_OPC_UA_CLIENT_IMAGE|flowmaker.boxes/opc-ua-client|enterprise|WORKER_OPC_U
 WORKER_RTSP_CLIENT_IMAGE|flowmaker.boxes/rtsp-client|enterprise|WORKER_RTSP_CLIENT_VERSION|workers-premium
 WORKER_LUMINOSITY_BOX_IMAGE|flowmaker.boxes/luminosity-box|enterprise|WORKER_LUMINOSITY_BOX_VERSION|workers-premium
 WORKER_MINIO_SINK_IMAGE|flowmaker.boxes/minio-sink|enterprise|WORKER_MINIO_SINK_VERSION|workers-premium
+# --- ironstream (enterprise, opt-in EE-only group) ---
+MATERIAL_CATALOG_API_IMAGE|ironstream/material-catalog/api|enterprise|MATERIAL_CATALOG_API_VERSION|ironstream
+MATERIAL_CATALOG_UI_IMAGE|ironstream/material-catalog/ui|enterprise|MATERIAL_CATALOG_UI_VERSION|ironstream
+MATERIAL_CATALOG_WORKER_IMAGE|ironstream/material-catalog/boxes|enterprise|MATERIAL_CATALOG_WORKER_VERSION|ironstream
+RECIPE_MAKER_API_IMAGE|ironstream/recipe-maker/api|enterprise|RECIPE_MAKER_API_VERSION|ironstream
+RECIPE_MAKER_UI_IMAGE|ironstream/recipe-maker/ui|enterprise|RECIPE_MAKER_UI_VERSION|ironstream
+BURDEN_DESCENT_API_IMAGE|ironstream/burden-descent/api|enterprise|BURDEN_DESCENT_API_VERSION|ironstream
+BURDEN_DESCENT_UI_IMAGE|ironstream/burden-descent/ui|enterprise|BURDEN_DESCENT_UI_VERSION|ironstream
+BURDEN_LAYER_API_IMAGE|ironstream/burden-layer/api|enterprise|BURDEN_LAYER_API_VERSION|ironstream
+RACEWAY_UI_IMAGE|ironstream/raceway/ui|enterprise|RACEWAY_UI_VERSION|ironstream
+RACEWAY_WORKER_IMAGE|ironstream/raceway/worker|enterprise|RACEWAY_WORKER_VERSION|ironstream
+# --- data-simulator (enterprise demo feed, opt-in EE-only group) ---
+DATA_SIMULATOR_IMAGE|ironstream/data-simulator|enterprise|DATA_SIMULATOR_VERSION|data-simulator
 '
 
 emit() {  # $1=bundle file suffix
@@ -87,4 +104,4 @@ emit() {  # $1=bundle file suffix
   echo "  ✓ $out ($(grep -c '=' "$out") images)"
 }
 echo "▶ bundle-platform-${VER}  (community=$COMMUNITY_REGISTRY / enterprise=$ENTERPRISE_REGISTRY)"
-emit core; emit flowmaker; emit datacatalog; emit data; emit monitoring; emit workers; emit workers-premium
+emit core; emit flowmaker; emit datacatalog; emit data; emit monitoring; emit workers; emit workers-premium; emit ironstream; emit data-simulator

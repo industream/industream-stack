@@ -1,0 +1,174 @@
+# =============================================================================
+# runtime/swarm/ironstream.yml — SWARM-only plumbing for the ironstream group.
+# deploy:/Traefik labels/overlay nets/named volumes. Merged LAST over
+# base/ironstream.yml.
+# =============================================================================
+# Each app is routed by Traefik under *.${INDUSTREAM_DOMAIN}; all services join
+# the ${ENV}-platform overlay so they reach the platform's postgres,
+# datacatalog-api, flowmaker-scheduler, cdn-server, flowmaker-logging, DataBridge
+# by service name (internal http — S2S never uses the public https hosts). Ports
+# mirror the live .55 stack: material-catalog api 9501, everything else 8080.
+# Workers are internal (platform net only, no Traefik).
+# =============================================================================
+x-app-restart: &app-restart
+  restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
+
+services:
+  material-catalog-api:
+    networks: [traefik-public, platform]
+    deploy:
+      <<: *app-restart
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-materialcatalog-api-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-materialcatalog-api-secure.rule=Host(`materialcatalog-api.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-materialcatalog-api-secure.tls=true
+        - traefik.http.routers.${ENV}-materialcatalog-api-secure.service=${ENV}-materialcatalog-api
+        - traefik.http.routers.${ENV}-materialcatalog-api.entrypoints=web
+        - traefik.http.routers.${ENV}-materialcatalog-api.rule=Host(`materialcatalog-api.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-materialcatalog-api.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-materialcatalog-api.loadbalancer.server.port=9501
+
+  material-catalog-ui:
+    networks: [traefik-public, platform]
+    deploy:
+      <<: *app-restart
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-materialcatalog-ui-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-materialcatalog-ui-secure.rule=Host(`materialcatalog-ui.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-materialcatalog-ui-secure.tls=true
+        - traefik.http.routers.${ENV}-materialcatalog-ui-secure.service=${ENV}-materialcatalog-ui
+        - traefik.http.routers.${ENV}-materialcatalog-ui.entrypoints=web
+        - traefik.http.routers.${ENV}-materialcatalog-ui.rule=Host(`materialcatalog-ui.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-materialcatalog-ui.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-materialcatalog-ui.loadbalancer.server.port=8080
+
+  material-catalog-worker:
+    networks: [platform]
+    deploy: { <<: *app-restart }
+
+  recipe-maker-api:
+    networks: [traefik-public, platform]
+    deploy:
+      <<: *app-restart
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-recipemaker-api-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-recipemaker-api-secure.rule=Host(`recipemaker-api.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-recipemaker-api-secure.tls=true
+        - traefik.http.routers.${ENV}-recipemaker-api-secure.service=${ENV}-recipemaker-api
+        - traefik.http.routers.${ENV}-recipemaker-api.entrypoints=web
+        - traefik.http.routers.${ENV}-recipemaker-api.rule=Host(`recipemaker-api.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-recipemaker-api.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-recipemaker-api.loadbalancer.server.port=8080
+
+  recipe-maker-ui:
+    networks: [traefik-public, platform]
+    deploy:
+      <<: *app-restart
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-recipemaker-ui-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-recipemaker-ui-secure.rule=Host(`recipemaker-ui.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-recipemaker-ui-secure.tls=true
+        - traefik.http.routers.${ENV}-recipemaker-ui-secure.service=${ENV}-recipemaker-ui
+        - traefik.http.routers.${ENV}-recipemaker-ui.entrypoints=web
+        - traefik.http.routers.${ENV}-recipemaker-ui.rule=Host(`recipemaker-ui.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-recipemaker-ui.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-recipemaker-ui.loadbalancer.server.port=8080
+
+  burden-descent-api:
+    networks: [traefik-public, platform]
+    deploy:
+      <<: *app-restart
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-burdendescent-api-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-burdendescent-api-secure.rule=Host(`burdendescent-api.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-burdendescent-api-secure.tls=true
+        - traefik.http.routers.${ENV}-burdendescent-api-secure.service=${ENV}-burdendescent-api
+        - traefik.http.routers.${ENV}-burdendescent-api.entrypoints=web
+        - traefik.http.routers.${ENV}-burdendescent-api.rule=Host(`burdendescent-api.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-burdendescent-api.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-burdendescent-api.loadbalancer.server.port=8080
+
+  burden-descent-ui:
+    networks: [traefik-public, platform]
+    deploy:
+      <<: *app-restart
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-burdendescent-ui-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-burdendescent-ui-secure.rule=Host(`burdendescent-ui.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-burdendescent-ui-secure.tls=true
+        - traefik.http.routers.${ENV}-burdendescent-ui-secure.service=${ENV}-burdendescent-ui
+        - traefik.http.routers.${ENV}-burdendescent-ui.entrypoints=web
+        - traefik.http.routers.${ENV}-burdendescent-ui.rule=Host(`burdendescent-ui.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-burdendescent-ui.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-burdendescent-ui.loadbalancer.server.port=8080
+
+  burden-layer-api:
+    networks: [traefik-public, platform]
+    deploy:
+      <<: *app-restart
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-burdenlayer-api-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-burdenlayer-api-secure.rule=Host(`burdenlayer-api.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-burdenlayer-api-secure.tls=true
+        - traefik.http.routers.${ENV}-burdenlayer-api-secure.service=${ENV}-burdenlayer-api
+        - traefik.http.routers.${ENV}-burdenlayer-api.entrypoints=web
+        - traefik.http.routers.${ENV}-burdenlayer-api.rule=Host(`burdenlayer-api.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-burdenlayer-api.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-burdenlayer-api.loadbalancer.server.port=8080
+
+  raceway-ui:
+    networks: [traefik-public, platform]
+    deploy:
+      <<: *app-restart
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-raceway-ui-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-raceway-ui-secure.rule=Host(`raceway-ui.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-raceway-ui-secure.tls=true
+        - traefik.http.routers.${ENV}-raceway-ui-secure.service=${ENV}-raceway-ui
+        - traefik.http.routers.${ENV}-raceway-ui.entrypoints=web
+        - traefik.http.routers.${ENV}-raceway-ui.rule=Host(`raceway-ui.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-raceway-ui.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-raceway-ui.loadbalancer.server.port=8080
+
+  raceway-worker:
+    networks: [platform]
+    deploy: { <<: *app-restart }
+
+  ironstream-filebrowser:
+    networks: [traefik-public, platform]
+    deploy:
+      <<: *app-restart
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.${ENV}-ironstream-filebrowser-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-ironstream-filebrowser-secure.rule=Host(`filebrowser.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-ironstream-filebrowser-secure.tls=true
+        - traefik.http.routers.${ENV}-ironstream-filebrowser-secure.service=${ENV}-ironstream-filebrowser
+        - traefik.http.routers.${ENV}-ironstream-filebrowser.entrypoints=web
+        - traefik.http.routers.${ENV}-ironstream-filebrowser.rule=Host(`filebrowser.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-ironstream-filebrowser.middlewares=redirect-to-https@file
+        - traefik.http.services.${ENV}-ironstream-filebrowser.loadbalancer.server.port=8080
+
+volumes:
+  materialcatalog-data:          { name: "${ENV}-ironstream-materialcatalog-data" }
+  materialcatalog-i18n:          { name: "${ENV}-ironstream-materialcatalog-i18n" }
+  recipemaker-data:              { name: "${ENV}-ironstream-recipemaker-data" }
+  recipemaker-i18n:              { name: "${ENV}-ironstream-recipemaker-i18n" }
+  ironstream-filebrowser-config: { name: "${ENV}-ironstream-filebrowser-config" }
+
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  platform:
+    name: ${ENV}-platform
+    driver: overlay
+    attachable: true

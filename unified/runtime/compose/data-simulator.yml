@@ -1,0 +1,20 @@
+# =============================================================================
+# runtime/compose/data-simulator.yml — COMPOSE plumbing for the demo feed group.
+# All services are internal (no Caddy route): publisher → mosquitto → telegraf →
+# platform influx. They join the shared flowmaker-net to reach postgres/influx.
+# =============================================================================
+services:
+  data-simulator-mosquitto:
+    networks: [flowmaker-net]
+    restart: unless-stopped
+  data-simulator-publisher:
+    networks: [flowmaker-net]
+    restart: unless-stopped
+  data-simulator-telegraf:
+    networks: [flowmaker-net]
+    restart: unless-stopped
+
+networks:
+  flowmaker-net:
+    external: true
+    name: ${FM_NETWORK:-flowmaker-net}

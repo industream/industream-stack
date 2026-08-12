@@ -26,6 +26,11 @@ config/uifusion/config.json
 config/cloudbeaver/data-sources.json
 industream-cli/
 
+# Forge-downloaded release bundles (materialized on demand by
+# unified/scripts/forge-bundle.sh) — ephemeral artifacts, never committed. Locally
+# rendered/committed bundles keep a plain bundle-platform-<ver>/ name.
+unified/releases/bundle-platform-forge-*/
+
 # Per-installation deploy-state repo (its OWN nested git repo, managed by
 # unified/scripts/deploy-state.sh — never tracked by the platform clone)
 .deploy-state/
