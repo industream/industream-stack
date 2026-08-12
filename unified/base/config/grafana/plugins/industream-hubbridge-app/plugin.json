@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "app",
+  "name": "Industream Hub Bridge",
+  "id": "industream-hubbridge-app",
+  "autoEnabled": true,
+  "preload": true,
+  "backend": false,
+  "info": {
+    "description": "Bridges Industream Hub auth/theme/route protocol into Grafana",
+    "author": { "name": "Industream" },
+    "keywords": ["industream", "hub", "integration"],
+    "version": "1.0.0-dev",
+    "updated": "2026-05-21",
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    }
+  },
+  "dependencies": {
+    "grafanaDependency": ">=10.4.0",
+    "plugins": []
+  }
+}
