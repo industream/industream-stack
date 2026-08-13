@@ -1,7 +1,14 @@
 # Grafana Live, and how to get it back
 
-Grafana Live is **disabled** (`GF_LIVE_ENABLED=false`, `unified/base/monitoring.yml`).
-This note records why, and what has to change before it can be switched back on.
+Grafana Live is **disabled** via `GF_LIVE_MAX_CONNECTIONS=0` in
+`unified/base/monitoring.yml`, set in `7250cf7` (2026-07-15). This note records why, and
+what has to change before it can be switched back on.
+
+> **Do not reach for `GF_LIVE_ENABLED`.** Grafana 13's `[live]` section has no `enabled`
+> key — only `max_connections`, where `0` disables Live and `-1` means unlimited. An
+> unknown setting is ignored silently, so `GF_LIVE_ENABLED=false` looks applied
+> (`printenv` shows it) while Live keeps running. Verified on 13.0.1: with that variable
+> set, `logger=live … "Initialized channel handler"` still appears in the logs.
 
 ## Symptom
 
@@ -86,7 +93,7 @@ Sketch:
    email.
 3. Drop the JWT plumbing that becomes redundant (`GF_AUTH_JWT_*`), and stop the
    wrapper from injecting a Bearer into Grafana requests.
-4. Re-enable `GF_LIVE_ENABLED=true`.
+4. Raise `GF_LIVE_MAX_CONNECTIONS` back to a real value (`100` is the Grafana default).
 
 Why it works: oauth2-proxy keeps its session in a **cookie**, cookies ride
 WebSocket handshakes, and the header is added by Traefik rather than by the

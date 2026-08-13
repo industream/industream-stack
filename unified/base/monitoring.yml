@@ -96,15 +96,6 @@ services:
       # JWKS fetched over the public https hostname (Grafana refuses http://).
       # The runtime overlay must (a) route ${INDUSTREAM_DOMAIN} back to the
       # proxy and (b) make the proxy's cert trusted by Grafana.
-      # --- Grafana Live (WebSocket push) ------------------------------------
-      # Disabled on purpose. A WebSocket handshake carries neither the Bearer
-      # (a service worker cannot intercept WS, and the WebSocket API cannot set
-      # headers) nor a Grafana session cookie, because enable_login_token never
-      # mints one under auth.jwt — grafana/grafana#90200. The client 401s and
-      # reconnect-loops in every browser console.
-      # Dashboard auto-refresh is NOT affected: it re-runs queries over HTTP.
-      # To re-enable, see docs/GRAFANA-LIVE-SSO.md.
-      - GF_LIVE_ENABLED=false
       - GF_AUTH_JWT_ENABLED=true
       - GF_AUTH_JWT_ENABLE_LOGIN_TOKEN=true
       - GF_AUTH_JWT_HEADER_NAME=Authorization
