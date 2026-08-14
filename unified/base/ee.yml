@@ -1,95 +1,94 @@
-# =============================================================================
-# base/ee.yml — Enterprise Edition transform (orchestrator-neutral).
-# =============================================================================
-# Appended (after base/core.yml) ONLY when EDITION=ee. Turns the community Hub
-# into EE: swaps industream-hub-backend to the enterprise image + OAUTH against a self-
-# hosted Logto, flips the shell to OAUTH, and adds Logto (+ its Postgres).
-#
-# The Hub JWT it MINTS is UNCHANGED (same iss=hub-backend / aud=industream-hub)
-# → datacatalog/grafana/flowmaker JWKS verifiers need NO change between CE and EE.
-# Only the identity SOURCE changes (native admin → Logto).
-#
-# Neutral: env + image + the Logto entrypoint only. deploy:/labels/secrets-backend/
-# nets live in runtime/{swarm,compose}/ee.yml. Secret FILE PATHS are parametrized
-# (/run/secrets/${...SECRET_NAME}) so both runtimes share this file.
-# =============================================================================
 services:
-  # ---- Hub backend → enterprise image + OAUTH against Logto ----
   industream-hub-backend:
     image: ${HUB_API_ENTERPRISE_IMAGE}
     environment:
-      - IH_AUTH_METHOD=OAUTH
-      # single-level ${INDUSTREAM_DOMAIN} only (swarm won't expand a nested default;
-      # it's the override knob). Same class as the CORS fix.
-      - IH_OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
-      # Backend/container URL for OIDC discovery + the refresh-grant token call.
-      # Separate from the public issuer above: discovery via the public URL
-      # advertises browser endpoints unreachable from the container → refresh
-      # grant fails → upstream session goes stale → user logged out (~5 min).
-      - IH_OIDC_BACKEND_ISSUER_URL=${OIDC_BACKEND_ISSUER_URL:-http://logto:3001/oidc}
-      - IH_OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
-      - IH_OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
-      - IH_OIDC_AUDIENCE=${OIDC_AUDIENCE:-}
-      - IH_OIDC_SCOPES=${OIDC_SCOPES:-openid profile email roles offline_access}
-      - IH_OIDC_JWKS_URI=${OIDC_JWKS_URI:-http://logto:3001/oidc/jwks}
-      - IH_OIDC_USERINFO_URI=${OIDC_USERINFO_URI:-http://logto:3001/oidc/me}
-      - IH_OIDC_INTROSPECTION_URL=${OIDC_INTROSPECTION_URL:-http://logto:3001/oidc/token/introspection}
-      - IH_OIDC_REDIRECT_URI=https://${INDUSTREAM_DOMAIN}/
-      - IH_OIDC_REFRESH_GRANT_ENABLED=${OIDC_REFRESH_GRANT_ENABLED:-true}
-      - IH_REVOCATION_CHECK_INTERVAL_SECONDS=${IH_REVOCATION_CHECK_INTERVAL_SECONDS:-300}
-      - IH_REVOCATION_HARD_FAIL_AFTER_SECONDS=${IH_REVOCATION_HARD_FAIL_AFTER_SECONDS:-900}
-
-  # ---- Shell → OAUTH (so the SPA auth-config points at Logto, not BASIC) ----
+    - IH_AUTH_METHOD=OAUTH
+    - IH_OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
+    - IH_OIDC_BACKEND_ISSUER_URL=${OIDC_BACKEND_ISSUER_URL:-http://logto:3001/oidc}
+    - IH_OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+    - IH_OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+    - IH_OIDC_AUDIENCE=${OIDC_AUDIENCE:-}
+    - IH_OIDC_SCOPES=${OIDC_SCOPES:-openid profile email roles offline_access}
+    - IH_OIDC_JWKS_URI=${OIDC_JWKS_URI:-http://logto:3001/oidc/jwks}
+    - IH_OIDC_USERINFO_URI=${OIDC_USERINFO_URI:-http://logto:3001/oidc/me}
+    - IH_OIDC_INTROSPECTION_URL=${OIDC_INTROSPECTION_URL:-http://logto:3001/oidc/token/introspection}
+    - IH_OIDC_REDIRECT_URI=https://${INDUSTREAM_DOMAIN}/
+    - IH_OIDC_REFRESH_GRANT_ENABLED=${OIDC_REFRESH_GRANT_ENABLED:-true}
+    - IH_REVOCATION_CHECK_INTERVAL_SECONDS=${IH_REVOCATION_CHECK_INTERVAL_SECONDS:-300}
+    - IH_REVOCATION_HARD_FAIL_AFTER_SECONDS=${IH_REVOCATION_HARD_FAIL_AFTER_SECONDS:-900}
   industream-hub-frontend:
     environment:
-      - AUTH_METHOD=OAUTH
-      - OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
-      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
-      - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile roles offline_access}
-      - OIDC_REDIRECT_PATH=${OIDC_REDIRECT_PATH:-/}
-
-  # ---- Logto IdP (EE-only) ----
+    - AUTH_METHOD=OAUTH
+    - OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
+    - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+    - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile roles offline_access}
+    - OIDC_REDIRECT_PATH=${OIDC_REDIRECT_PATH:-/}
   logto:
-    image: ghcr.io/logto-io/logto:${LOGTO_VERSION}        # PINNED (never `latest`)
-    # DB init order: `db seed` first builds the schema (+ full alteration history)
-    # and seeds defaults on a FRESH DB. On an already-seeded DB `db seed --swe`
-    # prints "Seeding skipped" and exits 0 (NOT non-zero), so a `seed || alteration`
-    # fallback NEVER migrates an existing DB → after a Logto bump the new start-time
-    # invariants (e.g. RLS on every table incl. `_logto_configs`) are unmet → crash.
-    # So: seed first (tolerate the skip), then ALWAYS `alteration deploy latest`
-    # (idempotent) before start. Seed-first keeps the base schema present so early
-    # alterations don't fail (`alteration deploy` first crash-loops a fresh DB —
-    # `type "application_type" does not exist`. See industream-stack#22.)
-    # NOTE: command substitution MUST be escaped as $$( … ) — docker compose/swarm
-    # interpolation eats a single `$(`, leaving `export DB_URL=(cat …)` → the
-    # container's sh then dies on `unexpected "("` (found at the VM gate). `$$`
-    # emits a literal `$`. ${LOGTO_DB_URL_SECRET_NAME} stays single-$ (we DO want it interpolated).
-    entrypoint: ["sh", "-c", "export DB_URL=$$(cat /run/secrets/${LOGTO_DB_URL_SECRET_NAME}) && (npm run cli db seed -- --swe || true) && npm run cli db alteration deploy latest && npm start"]
+    image: ghcr.io/logto-io/logto:${LOGTO_VERSION}
+    entrypoint:
+    - sh
+    - -c
+    - export DB_URL=$$(cat /run/secrets/${LOGTO_DB_URL_SECRET_NAME}) && (npm run cli db seed -- --swe || true) && npm run cli db alteration deploy latest && npm start
     environment:
-      - TRUST_PROXY_HEADER=1
-      - ENDPOINT=https://auth.${INDUSTREAM_DOMAIN}
-      - ADMIN_ENDPOINT=https://auth-admin.${INDUSTREAM_DOMAIN}
+    - TRUST_PROXY_HEADER=1
+    - ENDPOINT=https://auth.${INDUSTREAM_DOMAIN}
+    - ADMIN_ENDPOINT=https://auth-admin.${INDUSTREAM_DOMAIN}
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 3001 || exit 1"]
+      test:
+      - CMD-SHELL
+      - nc -z 127.0.0.1 3001 || exit 1
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 40s
-
-  # ---- Logto's dedicated Postgres ----
   logto-postgres:
     image: postgres:${POSTGRES_VERSION}
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_DB=logto
-      - POSTGRES_PASSWORD_FILE=/run/secrets/${LOGTO_DB_PASSWORD_SECRET_NAME}
-      # postgres:18 refuses a volume mounted straight at /var/lib/postgresql/data;
-      # data must live in a SUBDIR. Point PGDATA at a subdir (matches base/data.yml's
-      # `postgres`). Without this, logto-postgres exits 1 on 18 (found at the VM gate).
-      - PGDATA=/var/lib/postgresql/data/pgdata
+    - POSTGRES_USER=postgres
+    - POSTGRES_DB=logto
+    - POSTGRES_PASSWORD_FILE=/run/secrets/${LOGTO_DB_PASSWORD_SECRET_NAME}
+    - PGDATA=/var/lib/postgresql/data/pgdata
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d logto || exit 1"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U postgres -d logto || exit 1
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 20s
+  grafana:
+    deploy:
+      labels:
+      - io.industream.logto.register=true
+      - io.industream.logto.client_id=grafana
+      - io.industream.logto.redirect_uri=https://dashboard.${INDUSTREAM_DOMAIN}/grafana/login/generic_oauth
+      - io.industream.logto.app_type=Traditional
+      - io.industream.logto.name=Grafana
+    environment:
+    - GF_AUTH_JWT_ENABLED=false
+    - GF_AUTH_JWT_URL_LOGIN=false
+    - GF_AUTH_JWT_ENABLE_LOGIN_TOKEN=false
+    - GF_AUTH_GENERIC_OAUTH_ENABLED=true
+    - GF_AUTH_GENERIC_OAUTH_NAME=Industream
+    - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=grafana
+    - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OIDC_CLIENT_SECRET}
+    - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email roles
+    - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://auth.${INDUSTREAM_DOMAIN}/oidc/auth
+    - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://auth.${INDUSTREAM_DOMAIN}/oidc/token
+    - GF_AUTH_GENERIC_OAUTH_API_URL=https://auth.${INDUSTREAM_DOMAIN}/oidc/me
+    - GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH=username
+    - GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH=email
+    - GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH=name
+    - GF_AUTH_GENERIC_OAUTH_AUTO_SIGN_UP=true
+    - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(roles, 'admin') && 'Admin' || 'Editor'
+    - GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN=true
+    - GF_AUTH_DISABLE_SIGNOUT_MENU=true
+    - GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE=true
+    - GF_SECURITY_COOKIE_SAMESITE=none
+    - GF_SECURITY_COOKIE_SECURE=true
+    - GF_LIVE_MAX_CONNECTIONS=100
+    - GF_SECURITY_CSRF_TRUSTED_ORIGINS=${INDUSTREAM_DOMAIN} dashboard.${INDUSTREAM_DOMAIN}
+    - GF_LIVE_ALLOWED_ORIGINS=https://${INDUSTREAM_DOMAIN},https://dashboard.${INDUSTREAM_DOMAIN}
+  grafana-wrapper:
+    environment:
+    - INDUSTREAM_OIDC_ORIGIN=https://auth.${INDUSTREAM_DOMAIN}
