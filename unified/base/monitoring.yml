@@ -140,7 +140,13 @@ services:
   # GRAFANA HUB-SSO WRAPPER
   # ==========================================
   # Hub auth bridge in front of Grafana: nginx SPA that fetches the Hub JWT and
-  # injects it into <iframe src=/grafana/>. Enterprise image (proprietary).
+  # injects it into <iframe src=/grafana/>.
+  #
+  # COMMUNITY image on GHCR, not proprietary — render-bundles.sh:52 classifies it
+  # as `community`, and the group is `monitoring`, i.e. CE. The same image serves
+  # both editions: base/ee.yml adds INDUSTREAM_OIDC_ORIGIN, which the entrypoint
+  # substitutes and the page reads as IS_OIDC_EDITION to enable the OIDC paths.
+  # Publishing it EE-only would leave CE with no Grafana tile at all.
   grafana-wrapper:
     image: ${GRAFANA_WRAPPER_IMAGE}
     environment:
