@@ -1,6 +1,34 @@
-# runtime/swarm/ee.yml — swarm plumbing for the EE overlay (Logto).
+# runtime/swarm/ee.yml — swarm plumbing for the EE overlay (Logto + Grafana SSO).
 # Merged after base/ee.yml when EDITION=ee && RUNTIME=swarm.
 services:
+  # ---- Grafana: Logto app registration + OIDC client secret (SWARM surface) ---
+  # seed-logto-stack.sh (shipped in the EE hub image, invoked by deploy.sh
+  # seed_ee) discovers OIDC apps with
+  #     docker service inspect <svc> --format '{{json .Spec.Labels}}'
+  # on swarm — and .Spec.Labels is fed ONLY by `deploy.labels`. `docker stack
+  # deploy` puts a service's top-level `labels:` on the CONTAINER
+  # (TaskTemplate.ContainerSpec.Labels), where the registrar never looks. Compose
+  # is the exact mirror: it ignores deploy.labels and the registrar reads
+  # .Config.Labels, so the SAME five labels are repeated top-level in
+  # runtime/compose/ee.yml. Duplicated on purpose — a single shared block would
+  # silently unregister Grafana on one runtime or the other.
+  # Without the row in Logto the redirect dies on an opaque `invalid_client`.
+  grafana:
+    deploy:
+      labels:
+        - io.industream.logto.register=true
+        - io.industream.logto.client_id=${GRAFANA_OIDC_CLIENT_ID}
+        - io.industream.logto.redirect_uri=https://dashboard.${INDUSTREAM_DOMAIN}/grafana/login/generic_oauth
+        - io.industream.logto.app_type=Traditional
+        - io.industream.logto.name=Grafana
+    secrets:
+      # Read by GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE (base/ee.yml).
+      # Created by scripts/setup/create-secrets-ee.sh, and auto-provisioned by
+      # deploy.sh (ensure_grafana_oidc_secret) so a from-scratch deploy cannot
+      # fail on a missing external secret.
+      - source: grafana_oidc_client_secret
+        target: ${ENV}_grafana_oidc_client_secret
+
   logto:
     networks:
       - traefik-public
@@ -40,6 +68,9 @@ secrets:
     external: true
   logto_db_password:
     name: ${ENV}_logto_db_password
+    external: true
+  grafana_oidc_client_secret:
+    name: ${ENV}_grafana_oidc_client_secret
     external: true
 
 volumes:

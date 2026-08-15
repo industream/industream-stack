@@ -7,12 +7,14 @@
 # to EE-only state, and so it can be safely re-run after a CE → EE promotion.
 #
 # Outputs (per-env, mode 0600):
-#   secrets/<env>/logto_db_password   random hex(24)
-#   secrets/<env>/logto_db_url        postgres://postgres:<pwd>@logto-postgres:5432/logto
+#   secrets/<env>/logto_db_password            random hex(24)
+#   secrets/<env>/logto_db_url                 postgres://postgres:<pwd>@logto-postgres:5432/logto
+#   secrets/<env>/grafana_oidc_client_secret   random hex(32)
 #
 # And the matching Docker Swarm secrets:
 #   <env>_logto_db_password
 #   <env>_logto_db_url
+#   <env>_grafana_oidc_client_secret
 #
 # Usage:
 #   ./scripts/setup/create-secrets-ee.sh --env prod
@@ -128,8 +130,17 @@ LOGTO_DB_PASSWORD=$(get_or_generate "logto_db_password" "openssl rand -hex 24")
 LOGTO_DB_URL_GENERATOR="printf 'postgres://postgres:%s@logto-postgres:5432/logto' \"\$LOGTO_DB_PASSWORD\""
 LOGTO_DB_URL=$(get_or_generate "logto_db_url" "$LOGTO_DB_URL_GENERATOR")
 
-publish_swarm_secret "logto_db_password" "$LOGTO_DB_PASSWORD"
-publish_swarm_secret "logto_db_url"      "$LOGTO_DB_URL"
+# 3) Grafana's OIDC client secret. Grafana reads it from
+#    /run/secrets/<name> via GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE
+#    (unified/base/ee.yml); deploy.sh pushes the same value into Logto's
+#    `applications.secret` row after the label registrar has created it.
+#    Replaces the old committed literal `unused-grafana`, which was derivable
+#    from the public client_id and identical on every install.
+GRAFANA_OIDC_CLIENT_SECRET=$(get_or_generate "grafana_oidc_client_secret" "openssl rand -hex 32")
+
+publish_swarm_secret "logto_db_password"          "$LOGTO_DB_PASSWORD"
+publish_swarm_secret "logto_db_url"               "$LOGTO_DB_URL"
+publish_swarm_secret "grafana_oidc_client_secret" "$GRAFANA_OIDC_CLIENT_SECRET"
 
 echo ""
 echo -e "${BLUE}EE secrets ready under ${ENV_SECRETS_DIR}.${NC}"

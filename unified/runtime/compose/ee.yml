@@ -1,6 +1,52 @@
-# runtime/compose/ee.yml — compose plumbing for the EE overlay (Logto).
-# Merged after base/ee.yml when EDITION=ee && RUNTIME=compose.
+# runtime/compose/ee.yml — compose plumbing for the EE overlay (Logto + Grafana SSO).
+# Merged after base/ee.yml when EDITION=ee && RUNTIME=compose — i.e. LAST for a
+# compose EE deploy, so anything here wins over base/ee.yml.
+#
+# DOMAIN: the compose topology is Caddy-fronted and every host label in
+# runtime/compose/*.yml is built from ${FM_DOMAIN}, while base/*.yml (written for
+# swarm) uses ${INDUSTREAM_DOMAIN}. The two MUST resolve to the same apex on
+# compose — Logto's public ENDPOINT (base/ee.yml) is auth.${INDUSTREAM_DOMAIN}
+# while the Caddy route below publishes auth.${FM_DOMAIN}. deploy.sh refuses a
+# compose EE deploy where they differ (see check_compose_domains). The Grafana
+# overrides here are written with FM_DOMAIN to match GF_SERVER_ROOT_URL in
+# runtime/compose/monitoring.yml.
 services:
+  # ---- Grafana: Logto app registration + OIDC client secret (COMPOSE surface) -
+  # TOP-LEVEL `labels:` here, `deploy.labels` in runtime/swarm/ee.yml — see the
+  # long note there. Compose ignores deploy.labels entirely and the registrar
+  # reads `docker inspect <container> --format '{{json .Config.Labels}}'`, which
+  # is fed only by this block. With the labels under deploy: the compose-EE app
+  # row was NEVER created in Logto and every login died on `invalid_client`
+  # (the seeder call is >/dev/null 2>&1, so it failed silently).
+  # Map form, matching the caddy labels in runtime/compose/monitoring.yml —
+  # mixing map and list form for the same key across merged files is a trap.
+  grafana:
+    labels:
+      io.industream.logto.register: "true"
+      io.industream.logto.client_id: "${GRAFANA_OIDC_CLIENT_ID}"
+      io.industream.logto.redirect_uri: "https://dashboard.${FM_DOMAIN:-flowmaker.localhost}/grafana/login/generic_oauth"
+      io.industream.logto.app_type: "Traditional"
+      io.industream.logto.name: "Grafana"
+    secrets:
+      - grafana_oidc_client_secret
+    environment:
+      # Browser-facing OIDC endpoint on the Caddy host (base/ee.yml uses
+      # INDUSTREAM_DOMAIN; on compose the published route is auth.${FM_DOMAIN},
+      # declared right below on the logto service).
+      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://auth.${FM_DOMAIN:-flowmaker.localhost}/oidc/auth
+      - GF_SECURITY_CSRF_TRUSTED_ORIGINS=${FM_DOMAIN:-flowmaker.localhost} dashboard.${FM_DOMAIN:-flowmaker.localhost}
+      # Grafana Live stays OFF on compose. base/ee.yml raises max_connections to
+      # 100 because a real OAuth session finally lets the WS handshake carry
+      # grafana_session — but that only reaches Grafana on swarm, where
+      # runtime/swarm/monitoring.yml declares a dedicated Traefik router for
+      # Host(dashboard.*) && PathPrefix(/grafana/api/live). On compose every
+      # request goes through the wrapper's nginx, which deliberately does not
+      # forward `Upgrade`/`Connection`, so the WS 400s and the client
+      # reconnect-loops in the console. Re-enable here only together with a
+      # Caddy route that bypasses the wrapper for /grafana/api/live/* — the
+      # compose mirror of that Traefik router.
+      - GF_LIVE_MAX_CONNECTIONS=0
+
   logto:
     networks: [ flowmaker-net ]
     restart: unless-stopped
@@ -26,6 +72,11 @@ secrets:
     file: ${SECRETS_DIR:-./secrets}/logto_db_url
   logto_db_password:
     file: ${SECRETS_DIR:-./secrets}/logto_db_password
+  # Consumed by GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE. deploy.sh
+  # (ensure_grafana_oidc_secret) creates the file before `compose up` if absent —
+  # compose hard-fails on a missing `file:` secret.
+  grafana_oidc_client_secret:
+    file: ${SECRETS_DIR:-./secrets}/grafana_oidc_client_secret
 
 volumes:
   logto-pgdata:

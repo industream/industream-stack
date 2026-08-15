@@ -37,6 +37,12 @@ services:
     # (Caddy-served), not the swarm ${INDUSTREAM_DOMAIN}. Resolve it to the
     # Caddy host so the JWKS fetch over https reaches Caddy's published :443.
     # host-gateway = the Docker host.
+    #
+    # ⚠ Under EE the two names MUST resolve to the same apex: base/ee.yml builds
+    # Logto's ENDPOINT, Grafana's CSRF origins and the OIDC redirect_uri from
+    # INDUSTREAM_DOMAIN while GF_SERVER_ROOT_URL right below uses FM_DOMAIN.
+    # deploy.sh refuses a compose EE deploy where they differ
+    # (check_compose_domains) — see runtime/compose/ee.yml.
     extra_hosts:
       - "${FM_DOMAIN:-flowmaker.localhost}:host-gateway"
     environment:

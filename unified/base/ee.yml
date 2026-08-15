@@ -1,94 +1,224 @@
+# =============================================================================
+# base/ee.yml — Enterprise Edition transform (orchestrator-neutral).
+# =============================================================================
+# Appended (after base/core.yml) ONLY when EDITION=ee. Turns the community Hub
+# into EE: swaps industream-hub-backend to the enterprise image + OAUTH against a self-
+# hosted Logto, flips the shell to OAUTH, and adds Logto (+ its Postgres).
+#
+# The Hub JWT it MINTS is UNCHANGED (same iss=hub-backend / aud=industream-hub)
+# → datacatalog/grafana/flowmaker JWKS verifiers need NO change between CE and EE.
+# Only the identity SOURCE changes (native admin → Logto).
+#
+# It ALSO switches Grafana from the CE Hub-JWT bridge (base/monitoring.yml) to a
+# real generic_oauth login against the same Logto. That is EE-only on purpose:
+# SSO is the differentiator, and only a real login flow makes Grafana mint a
+# `grafana_session` cookie (grafana/grafana#90200 is CLOSED as intended → no
+# cookie under auth.jwt → no WebSocket, no Grafana Live).
+#
+# Neutral: env + image + the Logto entrypoint only. deploy:/labels/secrets-backend/
+# nets live in runtime/{swarm,compose}/ee.yml. Secret FILE PATHS are parametrized
+# (/run/secrets/${...SECRET_NAME}) so both runtimes share this file.
+#
+# ⚠ HAND-MAINTAINED. Do NOT round-trip this file through a YAML serialiser
+# (`docker compose config`, yaml.safe_dump, …): it silently deletes every comment
+# below, and each one is a bug that was paid for once already.
+#
+# ⚠ Every GF_* below is checked against `defaults.ini` inside
+# grafana/grafana-oss:${GRAFANA_VERSION}:
+#     docker run --rm --entrypoint cat grafana/grafana-oss:13.0.1 \
+#       /usr/share/grafana/conf/defaults.ini
+# An unknown GF_* var is accepted and SILENTLY IGNORED — three invented settings
+# shipped this way. `[auth.generic_oauth]` has `allow_sign_up` (NOT auto_sign_up)
+# and `[live]` has `max_connections` (there is no `[live] enabled`).
+# =============================================================================
 services:
+  # ---- Hub backend → enterprise image + OAUTH against Logto ----
   industream-hub-backend:
     image: ${HUB_API_ENTERPRISE_IMAGE}
     environment:
-    - IH_AUTH_METHOD=OAUTH
-    - IH_OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
-    - IH_OIDC_BACKEND_ISSUER_URL=${OIDC_BACKEND_ISSUER_URL:-http://logto:3001/oidc}
-    - IH_OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
-    - IH_OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
-    - IH_OIDC_AUDIENCE=${OIDC_AUDIENCE:-}
-    - IH_OIDC_SCOPES=${OIDC_SCOPES:-openid profile email roles offline_access}
-    - IH_OIDC_JWKS_URI=${OIDC_JWKS_URI:-http://logto:3001/oidc/jwks}
-    - IH_OIDC_USERINFO_URI=${OIDC_USERINFO_URI:-http://logto:3001/oidc/me}
-    - IH_OIDC_INTROSPECTION_URL=${OIDC_INTROSPECTION_URL:-http://logto:3001/oidc/token/introspection}
-    - IH_OIDC_REDIRECT_URI=https://${INDUSTREAM_DOMAIN}/
-    - IH_OIDC_REFRESH_GRANT_ENABLED=${OIDC_REFRESH_GRANT_ENABLED:-true}
-    - IH_REVOCATION_CHECK_INTERVAL_SECONDS=${IH_REVOCATION_CHECK_INTERVAL_SECONDS:-300}
-    - IH_REVOCATION_HARD_FAIL_AFTER_SECONDS=${IH_REVOCATION_HARD_FAIL_AFTER_SECONDS:-900}
+      - IH_AUTH_METHOD=OAUTH
+      # single-level ${INDUSTREAM_DOMAIN} only (swarm won't expand a nested default;
+      # it's the override knob). Same class as the CORS fix.
+      - IH_OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
+      # Backend/container URL for OIDC discovery + the refresh-grant token call.
+      # Separate from the public issuer above: discovery via the public URL
+      # advertises browser endpoints unreachable from the container → refresh
+      # grant fails → upstream session goes stale → user logged out (~5 min).
+      - IH_OIDC_BACKEND_ISSUER_URL=${OIDC_BACKEND_ISSUER_URL:-http://logto:3001/oidc}
+      - IH_OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+      - IH_OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - IH_OIDC_AUDIENCE=${OIDC_AUDIENCE:-}
+      - IH_OIDC_SCOPES=${OIDC_SCOPES:-openid profile email roles offline_access}
+      - IH_OIDC_JWKS_URI=${OIDC_JWKS_URI:-http://logto:3001/oidc/jwks}
+      - IH_OIDC_USERINFO_URI=${OIDC_USERINFO_URI:-http://logto:3001/oidc/me}
+      - IH_OIDC_INTROSPECTION_URL=${OIDC_INTROSPECTION_URL:-http://logto:3001/oidc/token/introspection}
+      - IH_OIDC_REDIRECT_URI=https://${INDUSTREAM_DOMAIN}/
+      - IH_OIDC_REFRESH_GRANT_ENABLED=${OIDC_REFRESH_GRANT_ENABLED:-true}
+      - IH_REVOCATION_CHECK_INTERVAL_SECONDS=${IH_REVOCATION_CHECK_INTERVAL_SECONDS:-300}
+      - IH_REVOCATION_HARD_FAIL_AFTER_SECONDS=${IH_REVOCATION_HARD_FAIL_AFTER_SECONDS:-900}
+
+  # ---- Shell → OAUTH (so the SPA auth-config points at Logto, not BASIC) ----
   industream-hub-frontend:
     environment:
-    - AUTH_METHOD=OAUTH
-    - OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
-    - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
-    - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile roles offline_access}
-    - OIDC_REDIRECT_PATH=${OIDC_REDIRECT_PATH:-/}
+      - AUTH_METHOD=OAUTH
+      - OIDC_ISSUER=https://auth.${INDUSTREAM_DOMAIN}/oidc
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+      - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile roles offline_access}
+      - OIDC_REDIRECT_PATH=${OIDC_REDIRECT_PATH:-/}
+
+  # ---- Logto IdP (EE-only) ----
   logto:
-    image: ghcr.io/logto-io/logto:${LOGTO_VERSION}
-    entrypoint:
-    - sh
-    - -c
-    - export DB_URL=$$(cat /run/secrets/${LOGTO_DB_URL_SECRET_NAME}) && (npm run cli db seed -- --swe || true) && npm run cli db alteration deploy latest && npm start
+    image: ghcr.io/logto-io/logto:${LOGTO_VERSION}        # PINNED (never `latest`)
+    # DB init order: `db seed` first builds the schema (+ full alteration history)
+    # and seeds defaults on a FRESH DB. On an already-seeded DB `db seed --swe`
+    # prints "Seeding skipped" and exits 0 (NOT non-zero), so a `seed || alteration`
+    # fallback NEVER migrates an existing DB → after a Logto bump the new start-time
+    # invariants (e.g. RLS on every table incl. `_logto_configs`) are unmet → crash.
+    # So: seed first (tolerate the skip), then ALWAYS `alteration deploy latest`
+    # (idempotent) before start. Seed-first keeps the base schema present so early
+    # alterations don't fail (`alteration deploy` first crash-loops a fresh DB —
+    # `type "application_type" does not exist`. See industream-stack#22.)
+    # NOTE: command substitution MUST be escaped as $$( … ) — docker compose/swarm
+    # interpolation eats a single `$(`, leaving `export DB_URL=(cat …)` → the
+    # container's sh then dies on `unexpected "("` (found at the VM gate). `$$`
+    # emits a literal `$`. ${LOGTO_DB_URL_SECRET_NAME} stays single-$ (we DO want it interpolated).
+    entrypoint: ["sh", "-c", "export DB_URL=$$(cat /run/secrets/${LOGTO_DB_URL_SECRET_NAME}) && (npm run cli db seed -- --swe || true) && npm run cli db alteration deploy latest && npm start"]
     environment:
-    - TRUST_PROXY_HEADER=1
-    - ENDPOINT=https://auth.${INDUSTREAM_DOMAIN}
-    - ADMIN_ENDPOINT=https://auth-admin.${INDUSTREAM_DOMAIN}
+      - TRUST_PROXY_HEADER=1
+      - ENDPOINT=https://auth.${INDUSTREAM_DOMAIN}
+      - ADMIN_ENDPOINT=https://auth-admin.${INDUSTREAM_DOMAIN}
     healthcheck:
-      test:
-      - CMD-SHELL
-      - nc -z 127.0.0.1 3001 || exit 1
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 3001 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 40s
+
+  # ---- Logto's dedicated Postgres ----
   logto-postgres:
     image: postgres:${POSTGRES_VERSION}
     environment:
-    - POSTGRES_USER=postgres
-    - POSTGRES_DB=logto
-    - POSTGRES_PASSWORD_FILE=/run/secrets/${LOGTO_DB_PASSWORD_SECRET_NAME}
-    - PGDATA=/var/lib/postgresql/data/pgdata
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=logto
+      - POSTGRES_PASSWORD_FILE=/run/secrets/${LOGTO_DB_PASSWORD_SECRET_NAME}
+      # postgres:18 refuses a volume mounted straight at /var/lib/postgresql/data;
+      # data must live in a SUBDIR. Point PGDATA at a subdir (matches base/data.yml's
+      # `postgres`). Without this, logto-postgres exits 1 on 18 (found at the VM gate).
+      - PGDATA=/var/lib/postgresql/data/pgdata
     healthcheck:
-      test:
-      - CMD-SHELL
-      - pg_isready -U postgres -d logto || exit 1
+      test: ["CMD-SHELL", "pg_isready -U postgres -d logto || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  # ---- Grafana → Logto generic_oauth (EE ONLY) --------------------------------
+  # CE stays on auth.jwt (base/monitoring.yml): the wrapper's service worker
+  # injects the Hub JWT into every XHR. EE swaps to a real OAuth code flow.
+  #
+  # THE ESCAPE HATCH: auth.jwt is one variable away. Setting
+  # GF_AUTH_GENERIC_OAUTH_ENABLED=false + GF_AUTH_JWT_ENABLED=true (e.g. in
+  # custom/, which merges last) restores the CE behaviour without touching this
+  # file. Keep it that way until EE SSO is released — it is what let us recover
+  # several times during the migration.
+  #
+  # ENV ONLY here, per this file's header. The io.industream.logto.* registrar
+  # labels are NOT neutral: `docker stack deploy` maps a service's top-level
+  # `labels:` onto the CONTAINER (TaskTemplate.ContainerSpec.Labels) while the
+  # registrar reads the SERVICE labels (.Spec.Labels == deploy.labels), and
+  # compose is the exact mirror (ignores deploy.labels, reads .Config.Labels).
+  # One surface cannot serve both → they live in runtime/{swarm,compose}/ee.yml.
   grafana:
-    deploy:
-      labels:
-      - io.industream.logto.register=true
-      - io.industream.logto.client_id=grafana
-      - io.industream.logto.redirect_uri=https://dashboard.${INDUSTREAM_DOMAIN}/grafana/login/generic_oauth
-      - io.industream.logto.app_type=Traditional
-      - io.industream.logto.name=Grafana
     environment:
-    - GF_AUTH_JWT_ENABLED=false
-    - GF_AUTH_JWT_URL_LOGIN=false
-    - GF_AUTH_JWT_ENABLE_LOGIN_TOKEN=false
-    - GF_AUTH_GENERIC_OAUTH_ENABLED=true
-    - GF_AUTH_GENERIC_OAUTH_NAME=Industream
-    - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=grafana
-    - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OIDC_CLIENT_SECRET}
-    - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email roles
-    - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://auth.${INDUSTREAM_DOMAIN}/oidc/auth
-    - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=https://auth.${INDUSTREAM_DOMAIN}/oidc/token
-    - GF_AUTH_GENERIC_OAUTH_API_URL=https://auth.${INDUSTREAM_DOMAIN}/oidc/me
-    - GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH=username
-    - GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH=email
-    - GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH=name
-    - GF_AUTH_GENERIC_OAUTH_AUTO_SIGN_UP=true
-    - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(roles, 'admin') && 'Admin' || 'Editor'
-    - GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN=true
-    - GF_AUTH_DISABLE_SIGNOUT_MENU=true
-    - GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE=true
-    - GF_SECURITY_COOKIE_SAMESITE=none
-    - GF_SECURITY_COOKIE_SECURE=true
-    - GF_LIVE_MAX_CONNECTIONS=100
-    - GF_SECURITY_CSRF_TRUSTED_ORIGINS=${INDUSTREAM_DOMAIN} dashboard.${INDUSTREAM_DOMAIN}
-    - GF_LIVE_ALLOWED_ORIGINS=https://${INDUSTREAM_DOMAIN},https://dashboard.${INDUSTREAM_DOMAIN}
+      # Turn the CE JWT path off. URL_LOGIN especially: while it is true the
+      # wrapper keeps appending ?auth_token=<hub JWT> to the iframe URL and
+      # Grafana would log the bearer into its router log + nginx access log.
+      - GF_AUTH_JWT_ENABLED=false
+      - GF_AUTH_JWT_URL_LOGIN=false
+      - GF_AUTH_JWT_ENABLE_LOGIN_TOKEN=false
+      - GF_AUTH_GENERIC_OAUTH_ENABLED=true
+      - GF_AUTH_GENERIC_OAUTH_NAME=Industream
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=${GRAFANA_OIDC_CLIENT_ID}
+      # Secret by FILE, never by value. An env value is printed in clear by
+      # `docker service inspect` / `docker inspect`, and a literal committed to
+      # runtime.*.env is IDENTICAL on every install. Same `__FILE` mechanism as
+      # GF_SECURITY_ADMIN_PASSWORD__FILE in base/monitoring.yml — it is the
+      # grafana image entrypoint (/run.sh) that expands `GF_X__FILE` into `GF_X`,
+      # and it EXITS 1 if both are set, so never re-add the plain variable.
+      # The per-runtime secret NAME comes from runtime.<runtime>.env; deploy.sh
+      # generates the value (ensure_grafana_oidc_secret) and pushes it into
+      # Logto's `applications.secret` after the registrar has created the row.
+      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE=/run/secrets/${GRAFANA_OIDC_CLIENT_SECRET_NAME}
+      # PKCE binds the authorization code to this exact client, so a leaked
+      # client secret is not enough to redeem a stolen code. [auth.generic_oauth]
+      # use_pkce — present in defaults.ini, default false.
+      - GF_AUTH_GENERIC_OAUTH_USE_PKCE=true
+      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid profile email roles
+      # AUTH_URL is a BROWSER redirect → it MUST be the public hostname.
+      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=https://auth.${INDUSTREAM_DOMAIN}/oidc/auth
+      # TOKEN_URL and API_URL are SERVER-side calls made from inside the grafana
+      # container → internal service URL, exactly like IH_OIDC_USERINFO_URI on
+      # industream-hub-backend above. This is what removes the need for
+      # GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE=true: over the public
+      # hostname the platform self-signed cert failed validation, and skipping
+      # verification meant anyone able to answer for auth.${INDUSTREAM_DOMAIN}
+      # from inside the container collected the client secret on the token
+      # exchange and could return roles:['admin'] from userinfo.
+      # Safe combination: [auth.generic_oauth] has NO `issuer` setting and
+      # validate_id_token stays false (defaults.ini), so Grafana never compares
+      # the id_token `iss` (which Logto stamps with its public ENDPOINT) against
+      # these URLs. If validate_id_token is ever turned on it also needs a
+      # jwk_set_url — and Grafana refuses http:// for JWKS, so that one would
+      # have to stay public.
+      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=${OIDC_BACKEND_ISSUER_URL:-http://logto:3001/oidc}/token
+      - GF_AUTH_GENERIC_OAUTH_API_URL=${OIDC_USERINFO_URI:-http://logto:3001/oidc/me}
+      - GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH=username
+      - GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH=email
+      - GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH=name
+      # `allow_sign_up`, NOT `auto_sign_up`: [auth.generic_oauth] has no
+      # auto_sign_up key (only [auth.proxy] and [auth.jwt] do) and the unknown
+      # variable was silently ignored. Same value as the (true) default, spelled
+      # correctly so it is greppable and overridable.
+      - GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP=true
+      # admin → Admin, editor → Editor, everyone else → Viewer. The previous
+      # `contains(roles,'admin') && 'Admin' || 'Editor'` made EVERY authenticated
+      # Logto user an Editor on every dashboard of the platform, because the
+      # `||` branch is the catch-all.
+      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(roles, 'admin') && 'Admin' || contains(roles, 'editor') && 'Editor' || 'Viewer'
+      - GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN=true
+      - GF_AUTH_DISABLE_SIGNOUT_MENU=true
+      # BREAK-GLASS — do not remove. base/monitoring.yml disables basic auth;
+      # EE puts it back. The login FORM stays hidden (disable_login_form=true in
+      # base/monitoring.yml) and auto_login still bounces the browser to Logto,
+      # but `POST /login` and HTTP Basic on /api/* keep working for
+      # ${GRAFANA_ADMIN_USER} / the grafana_admin_password secret. Without it, a
+      # Logto outage or a missing `applications` row locks EVERY human out of
+      # Grafana with no way back in. Reach it at /grafana/login?disableAutoLogin
+      # (Grafana honours that query param) or `curl -u admin:… /grafana/api/…`.
+      # [auth.basic] enabled — real key, defaults.ini default is true.
+      - GF_AUTH_BASIC_ENABLED=true
+      # Grafana is framed by the Hub from a different sub-domain, so its session
+      # cookie must be SameSite=None + Secure to survive the iframe.
+      - GF_SECURITY_COOKIE_SAMESITE=none
+      - GF_SECURITY_COOKIE_SECURE=true
+      # Grafana Live back on: with a real login there IS a grafana_session cookie
+      # and the WebSocket handshake carries it. [live] max_connections (there is
+      # no [live] enabled key). Swarm has a dedicated Traefik WS router; compose
+      # has no Upgrade path through the wrapper's nginx → runtime/compose/ee.yml
+      # puts this back to 0 there.
+      - GF_LIVE_MAX_CONNECTIONS=100
+      # [security] csrf_trusted_origins / [live] allowed_origins — csrf_trusted_origins
+      # is absent from defaults.ini but present in the binary (documented under
+      # [security] since 9.1); both are needed because the POSTs and the WS
+      # handshake arrive with an Origin of the Hub, not of dashboard.*.
+      - GF_SECURITY_CSRF_TRUSTED_ORIGINS=${INDUSTREAM_DOMAIN} dashboard.${INDUSTREAM_DOMAIN}
+      - GF_LIVE_ALLOWED_ORIGINS=https://${INDUSTREAM_DOMAIN},https://dashboard.${INDUSTREAM_DOMAIN}
+
+  # ---- Grafana Hub-SSO wrapper: allow the OIDC origin in its CSP --------------
+  # The wrapper SPA templates this into its Content-Security-Policy. frame-src
+  # gates the NAVIGATION, not just the render: without the Logto origin in the
+  # allowlist even a silent 303 through Logto that never paints is refused with
+  # "This content is blocked". Browser-side value → public hostname.
   grafana-wrapper:
     environment:
-    - INDUSTREAM_OIDC_ORIGIN=https://auth.${INDUSTREAM_DOMAIN}
+      - INDUSTREAM_OIDC_ORIGIN=https://auth.${INDUSTREAM_DOMAIN}

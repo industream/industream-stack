@@ -244,6 +244,94 @@ if [[ "$RENDER" == true ]]; then
   exit 0
 fi
 
+# ---- Env peek ----------------------------------------------------------------
+# Read a variable exactly as the assembled deploy will see it (same file chain,
+# same order as ENV_FILES above), WITHOUT exporting anything into this process.
+# The compose dispatch deliberately sources the env only AFTER `up -d`, so the
+# pre-flight checks below cannot rely on the process env.
+peek_env() {
+  (
+    set -a
+    source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+    for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+    [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+    set +a
+    printf '%s' "${!1-}"
+  )
+}
+
+# ---- Compose EE: FM_DOMAIN and INDUSTREAM_DOMAIN must be the SAME apex -------
+# The compose topology is Caddy-fronted and every host label in
+# runtime/compose/*.yml derives from ${FM_DOMAIN}, while the base/*.yml files
+# (written for swarm) derive from ${INDUSTREAM_DOMAIN}. Under EE the two meet:
+# Logto's public ENDPOINT is auth.${INDUSTREAM_DOMAIN} (base/ee.yml) but Caddy
+# publishes auth.${FM_DOMAIN} (runtime/compose/ee.yml); Grafana's root_url is
+# dashboard.${FM_DOMAIN} but its CSRF/Live origins come from INDUSTREAM_DOMAIN.
+# If they diverge, the OIDC issuer no longer matches the reachable host and the
+# whole login chain fails with opaque errors. .env.test happens to set both to
+# the same value, which is exactly why this never showed up in testing.
+# Fail LOUD here rather than silently wrong at runtime (same class as the Forge
+# var-name blocker). Swarm is unaffected: it uses INDUSTREAM_DOMAIN throughout.
+check_compose_domains() {
+  local ind fm
+  ind="$(peek_env INDUSTREAM_DOMAIN)"
+  fm="$(peek_env FM_DOMAIN)"
+  if [[ -z "$ind" || -z "$fm" ]]; then
+    echo "✗ compose EE needs BOTH INDUSTREAM_DOMAIN and FM_DOMAIN set (got INDUSTREAM_DOMAIN='${ind}', FM_DOMAIN='${fm}')." >&2
+    echo "  base/ee.yml builds Logto's public ENDPOINT from INDUSTREAM_DOMAIN; the Caddy routes use FM_DOMAIN." >&2
+    exit 1
+  fi
+  if [[ "$ind" != "$fm" ]]; then
+    echo "✗ compose EE requires INDUSTREAM_DOMAIN == FM_DOMAIN (got '${ind}' vs '${fm}')." >&2
+    echo "  Logto is published at auth.\${FM_DOMAIN} but issues tokens for auth.\${INDUSTREAM_DOMAIN};" >&2
+    echo "  Grafana's root_url uses FM_DOMAIN and its OIDC/CSRF origins INDUSTREAM_DOMAIN. Set both to the same apex in .env.${ENV}." >&2
+    exit 1
+  fi
+}
+
+# ---- EE: Grafana OIDC client secret (S2) ------------------------------------
+# Grafana reads it from /run/secrets/<name> via
+# GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE — never as an env VALUE, which
+# `docker service inspect` prints in clear. Canonical home is
+# scripts/setup/create-secrets-ee.sh; this function only makes a from-scratch
+# deploy hands-off, because a missing external swarm secret aborts the WHOLE
+# `stack deploy` and a missing compose `file:` secret aborts `compose up`.
+# Idempotent: an existing file/secret is never touched (rotation is a dedicated
+# procedure — the value also lives in Logto's applications row).
+ensure_grafana_oidc_secret() {
+  local canon="$HERE/../secrets/$ENV/grafana_oidc_client_secret"
+  mkdir -p "$(dirname "$canon")"; chmod 700 "$(dirname "$canon")" 2>/dev/null || true
+  if [[ ! -s "$canon" ]]; then
+    openssl rand -hex 32 | tr -d '\n' > "$canon"
+    chmod 600 "$canon"
+    echo "  ✓ generated secrets/${ENV}/grafana_oidc_client_secret"
+  fi
+  if [[ "$RUNTIME" == swarm ]]; then
+    docker secret inspect "${ENV}_grafana_oidc_client_secret" >/dev/null 2>&1 \
+      || { docker secret create "${ENV}_grafana_oidc_client_secret" "$canon" >/dev/null \
+           && echo "  ✓ created docker secret ${ENV}_grafana_oidc_client_secret"; }
+  else
+    # runtime/compose/ee.yml declares `file: ${SECRETS_DIR:-./secrets}/…`. Two
+    # gotchas we MUST mirror exactly or the file lands where compose won't look:
+    #   - SECRETS_DIR comes from the --env-file chain, not from this process
+    #     (compose sources the env only after `up -d`) → peek_env.
+    #   - compose resolves a RELATIVE path against the project directory, which
+    #     is the directory of the FIRST -f file (unified/base/, not unified/).
+    local dir projdir first
+    first="${FILES[1]}"                      # FILES = (-f base/<group>.yml …)
+    projdir="$(cd "$(dirname "$first")" && pwd)"
+    dir="$(peek_env SECRETS_DIR)"
+    [[ -z "$dir" ]] && dir="./secrets"
+    [[ "$dir" != /* ]] && dir="$projdir/${dir#./}"
+    if [[ ! -s "$dir/grafana_oidc_client_secret" ]]; then
+      mkdir -p "$dir"
+      cp "$canon" "$dir/grafana_oidc_client_secret"
+      chmod 600 "$dir/grafana_oidc_client_secret"
+      echo "  ✓ staged ${dir}/grafana_oidc_client_secret for compose"
+    fi
+  fi
+}
+
 # ---- Convergence helper -----------------------------------------------------
 # List swarm services whose running replicas != desired. Called when the bounded
 # `stack deploy` wait times out, so a non-converging deploy names its culprit(s)
@@ -342,6 +430,7 @@ seed_ee() {
 
   # Extract the seeders shipped in the EE image (absent on pre-2.1.3 images).
   tmp="$(mktemp -d)"
+  docker cp "${hub_cid}:/app/oidc-seeds/logto/seed-logto-stack.sh" "$tmp/seed-logto-stack.sh" 2>/dev/null || true
   docker cp "${hub_cid}:/app/oidc-seeds/logto/seed-logto.sh" "$tmp/seed-logto.sh" 2>/dev/null \
     || { echo "  ⚠ seeders absent from the hub image (pre-2.1.3) — run scripts/setup/ manually" >&2; rm -rf "$tmp"; return 0; }
 
@@ -354,7 +443,11 @@ seed_ee() {
   # secret was never wired into HUB_BACKEND_ADMIN_PASSWORD. ($(cat) strips the
   # trailing newline.)
   local secrets_dir="$HERE/../secrets/$ENV"
-  admin_user="${HUB_BACKEND_ADMIN_USER:-$(cat "$secrets_dir/hub_backend_admin_user" 2>/dev/null || echo admin)}"
+  # Fall back to "industream", the seeder's own default — NOT "admin", which is
+  # also GF_SECURITY_ADMIN_USER. When both carry the same name, Grafana refuses to
+  # link the OIDC identity to its pre-existing local admin and every EE login dies
+  # on a misleading "user not found".
+  admin_user="${HUB_BACKEND_ADMIN_USER:-$(cat "$secrets_dir/hub_backend_admin_user" 2>/dev/null || echo industream)}"
   admin_pass="${HUB_BACKEND_ADMIN_PASSWORD:-$(cat "$secrets_dir/hub_backend_admin_password" 2>/dev/null || echo admin)}"
 
   # 1) Logto: OIDC app + roles + bootstrap user (Argon2i → needs python3 + argon2-cffi).
@@ -367,12 +460,57 @@ seed_ee() {
   else
     echo "  ⚠ python3 argon2-cffi missing on host — Logto user bootstrap skipped"
   fi
+
+  # 2) Register every service carrying io.industream.logto.* labels as an OIDC app
+  #    (base/ee.yml puts them on grafana). Without this the app does not exist in
+  #    Logto and the redirect fails with an opaque invalid_client.
+  if [[ -f "$tmp/seed-logto-stack.sh" ]]; then
+    if bash "$tmp/seed-logto-stack.sh" "${scope[@]}" >/dev/null 2>&1; then
+      echo "  ✓ Logto: label-discovered OIDC apps registered"
+    else echo "  ⚠ Logto app discovery failed (non-fatal)"; fi
+  fi
+
+  # 3) Grant the user scopes those apps request. Logto returns ONLY `sub` without
+  #    them, so Grafana receives no email or username and refuses to create the
+  #    user — surfacing as a misleading "user not found". The registrar does not
+  #    do this, and installation-EE.md documents it as a manual console step.
+  if [[ -n "$pg_cid" ]]; then
+    if docker exec "$pg_cid" psql -U postgres -d logto -v ON_ERROR_STOP=1 -c "
+         INSERT INTO application_user_consent_user_scopes (tenant_id, application_id, user_scope)
+         SELECT 'default', a.id, s.scope
+           FROM applications a
+           CROSS JOIN (VALUES ('profile'),('email'),('roles')) AS s(scope)
+          WHERE a.tenant_id = 'default'
+         ON CONFLICT DO NOTHING;" >/dev/null 2>&1; then
+      echo "  ✓ Logto: profile/email/roles scopes granted"
+    else echo "  ⚠ Logto scope grant failed (non-fatal — roles will fall back)"; fi
+  fi
+
+  # 4) Align Logto's client secret for the Grafana app with the one Grafana
+  #    actually presents (/run/secrets/…, see ensure_grafana_oidc_secret).
+  #    seed-logto-stack.sh hardcodes `secret = 'unused-' || client_id` on INSERT
+  #    — derivable from the public client_id and identical on every install —
+  #    and its ON CONFLICT branch does NOT touch `secret`, so overwriting it here
+  #    is stable across re-runs. The proper fix belongs in the registrar
+  #    (industream-hub): generate a random secret and expose it to the deployer.
+  #    Until then this is the only place the two ends can be made to agree.
+  local oidc_secret_file="$HERE/../secrets/$ENV/grafana_oidc_client_secret"
+  if [[ -n "$pg_cid" && -s "$oidc_secret_file" ]]; then
+    if docker exec -i "$pg_cid" psql -U postgres -d logto -v ON_ERROR_STOP=1 \
+         -v cid="${GRAFANA_OIDC_CLIENT_ID:-grafana}" -v secret="$(cat "$oidc_secret_file")" \
+         -c "UPDATE applications SET secret = :'secret'
+              WHERE tenant_id = 'default' AND id = :'cid';" >/dev/null 2>&1; then
+      echo "  ✓ Logto: Grafana client secret aligned with /run/secrets"
+    else echo "  ⚠ Logto Grafana client-secret update failed (login will fail with invalid_client)"; fi
+  fi
+
   rm -rf "$tmp"
 }
 
 # ---- Dispatch ---------------------------------------------------------------
 if [[ "$RUNTIME" == compose ]]; then
   [[ -n "$PROJECT" ]] || { echo "✗ --project required for compose" >&2; exit 1; }
+  if [[ "$EDITION" == ee ]]; then check_compose_domains; ensure_grafana_oidc_secret; fi
   # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
   # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
   # made in the Portainer UI are never silently lost. Soft-fails (exit 3) when
@@ -394,6 +532,7 @@ if [[ "$RUNTIME" == compose ]]; then
   [[ "$EDITION" == ee ]] && seed_ee           # EE-only: Logto app/roles/user
 else
   [[ -n "$STACK" ]] || { echo "✗ --stack required for swarm" >&2; exit 1; }
+  [[ "$EDITION" == ee ]] && ensure_grafana_oidc_secret
   # `docker stack deploy` interpolates ${VAR} from the PROCESS env (not
   # --env-file), and unlike `compose config` it handles ${ENV}-* network/secret
   # keys. Source the single env sources into the env, then deploy with -c.
