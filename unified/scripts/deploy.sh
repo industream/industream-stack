@@ -494,12 +494,21 @@ seed_ee() {
   #    is stable across re-runs. The proper fix belongs in the registrar
   #    (industream-hub): generate a random secret and expose it to the deployer.
   #    Until then this is the only place the two ends can be made to agree.
+  #
+  #    The statement goes in on STDIN, not via -c: psql only performs :'var'
+  #    interpolation on input it reads from stdin or -f. With -c the string is
+  #    handed to the server verbatim and Postgres rejects the colon
+  #    ("syntax error at or near \":\""), so this step failed on every fresh
+  #    install and Grafana login died with invalid_client. Step 3 above survives
+  #    with -c only because its SQL contains no variables.
   local oidc_secret_file="$HERE/../secrets/$ENV/grafana_oidc_client_secret"
   if [[ -n "$pg_cid" && -s "$oidc_secret_file" ]]; then
-    if docker exec -i "$pg_cid" psql -U postgres -d logto -v ON_ERROR_STOP=1 \
-         -v cid="${GRAFANA_OIDC_CLIENT_ID:-grafana}" -v secret="$(cat "$oidc_secret_file")" \
-         -c "UPDATE applications SET secret = :'secret'
-              WHERE tenant_id = 'default' AND id = :'cid';" >/dev/null 2>&1; then
+    if printf '%s\n' \
+         "UPDATE applications SET secret = :'secret'
+           WHERE tenant_id = 'default' AND id = :'cid';" \
+       | docker exec -i "$pg_cid" psql -U postgres -d logto -v ON_ERROR_STOP=1 \
+           -v cid="${GRAFANA_OIDC_CLIENT_ID:-grafana}" \
+           -v secret="$(cat "$oidc_secret_file")" >/dev/null 2>&1; then
       echo "  ✓ Logto: Grafana client secret aligned with /run/secrets"
     else echo "  ⚠ Logto Grafana client-secret update failed (login will fail with invalid_client)"; fi
   fi
