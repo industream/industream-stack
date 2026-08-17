@@ -450,6 +450,21 @@ seed_ee() {
   admin_user="${HUB_BACKEND_ADMIN_USER:-$(cat "$secrets_dir/hub_backend_admin_user" 2>/dev/null || echo industream)}"
   admin_pass="${HUB_BACKEND_ADMIN_PASSWORD:-$(cat "$secrets_dir/hub_backend_admin_password" 2>/dev/null || echo admin)}"
 
+  # The fallback above is only reached when nothing is configured. An EXISTING
+  # secrets file or env var saying "admin" still lands us in the collision, which
+  # is how the Bernegger install ended up unable to log in to Grafana at all:
+  # Grafana already owns a local `admin` (GF_SECURITY_ADMIN_USER) and refuses to
+  # attach an OIDC identity to it, reporting "user not found" — a message that
+  # points nowhere near the real cause. Override rather than warn: a deploy that
+  # knowingly provisions a broken login is worse than one that renames it.
+  if [[ "$admin_user" == "admin" ]]; then
+    echo "  ⚠ configured Logto user is 'admin', which collides with Grafana's local"
+    echo "    admin account and breaks EE SSO — provisioning 'industream' instead."
+    echo "    Set HUB_BACKEND_ADMIN_USER or secrets/$ENV/hub_backend_admin_user to"
+    echo "    silence this."
+    admin_user="industream"
+  fi
+
   # 1) Logto: OIDC app + roles + bootstrap user (Argon2i → needs python3 + argon2-cffi).
   if python3 -c 'import argon2' 2>/dev/null; then
     if bash "$tmp/seed-logto.sh" --client-id "${OIDC_CLIENT_ID:-industream-hub-app}" \
@@ -511,6 +526,27 @@ seed_ee() {
            -v secret="$(cat "$oidc_secret_file")" >/dev/null 2>&1; then
       echo "  ✓ Logto: Grafana client secret aligned with /run/secrets"
     else echo "  ⚠ Logto Grafana client-secret update failed (login will fail with invalid_client)"; fi
+  fi
+
+  # 5) Audit: Logto accepts a user with no email address, Grafana does not. When
+  #    the userinfo response carries none, Grafana falls back to a GitHub-era
+  #    /me/emails endpoint that Logto does not implement, and the sign-in dies on
+  #    a 404 that names neither the user nor the missing field. Anyone creating an
+  #    account from the Logto console will hit it. Report it here instead, where
+  #    the operator is already looking.
+  if [[ -n "$pg_cid" ]]; then
+    local no_email
+    no_email=$(docker exec "$pg_cid" psql -U postgres -d logto -tAc \
+      "SELECT string_agg(username, ', ')
+         FROM users
+        WHERE tenant_id = 'default'
+          AND username IS NOT NULL
+          AND (primary_email IS NULL OR primary_email = '');" 2>/dev/null | tr -d '[:space:]')
+    if [[ -n "$no_email" && "$no_email" != "" ]]; then
+      echo "  ⚠ Logto users without an email address: ${no_email}"
+      echo "    They can sign in to the Hub but NOT to Grafana — Grafana requires an"
+      echo "    email and fails with an opaque 404. Add one in the Logto console."
+    fi
   fi
 
   rm -rf "$tmp"
