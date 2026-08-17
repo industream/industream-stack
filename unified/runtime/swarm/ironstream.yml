@@ -16,6 +16,11 @@ x-app-restart: &app-restart
 services:
   material-catalog-api:
     networks: [traefik-public, platform]
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    secrets:
+      - source: postgres_admin_password
+        target: ${ENV}_postgres_admin_password
     deploy:
       <<: *app-restart
       labels:
@@ -50,6 +55,11 @@ services:
 
   recipe-maker-api:
     networks: [traefik-public, platform]
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    secrets:
+      - source: postgres_admin_password
+        target: ${ENV}_postgres_admin_password
     deploy:
       <<: *app-restart
       labels:
@@ -152,6 +162,12 @@ services:
         - traefik.http.routers.${ENV}-ironstream-filebrowser-secure.rule=Host(`filebrowser.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-ironstream-filebrowser-secure.tls=true
         - traefik.http.routers.${ENV}-ironstream-filebrowser-secure.service=${ENV}-ironstream-filebrowser
+        # SSO gate — the `auth` group (base+runtime/swarm/auth.yml) MUST be co-deployed:
+        # it defines this forwardAuth middleware (→ oauth2-proxy, injects X-Auth-Request-*,
+        # 302s to Logto when unauthenticated). If `auth` is absent, Traefik disables this
+        # router → filebrowser fails CLOSED (safe). filebrowser reads X-Auth-Request-Email
+        # (auth.method=proxy) — see VM-GATE-RUNBOOK.
+        - traefik.http.routers.${ENV}-ironstream-filebrowser-secure.middlewares=${ENV}-oauth-auth
         - traefik.http.routers.${ENV}-ironstream-filebrowser.entrypoints=web
         - traefik.http.routers.${ENV}-ironstream-filebrowser.rule=Host(`filebrowser.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-ironstream-filebrowser.middlewares=redirect-to-https@file
@@ -163,6 +179,13 @@ volumes:
   recipemaker-data:              { name: "${ENV}-ironstream-recipemaker-data" }
   recipemaker-i18n:              { name: "${ENV}-ironstream-recipemaker-i18n" }
   ironstream-filebrowser-config: { name: "${ENV}-ironstream-filebrowser-config" }
+
+secrets:
+  # Reuse the platform's postgres admin secret — the superuser password lets EF
+  # Core's Database.Migrate() create ironstream_dev on first boot.
+  postgres_admin_password:
+    name: ${ENV}_postgres_admin_password
+    external: true
 
 networks:
   traefik-public:
