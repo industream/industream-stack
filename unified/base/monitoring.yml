@@ -46,7 +46,16 @@ services:
       # rejected on both runtimes.
       - GF_AUTH_BASIC_ENABLED=false
       - GF_AUTH_DISABLE_LOGIN_FORM=true
-      - GF_AUTH_DISABLE_SIGNOUT_MENU=false
+      # Signing out is the HUB's job, in both editions — Grafana is embedded and
+      # owns no identity of its own.
+      #   CE: auth.jwt is stateless, so Grafana's logout clears nothing and lands
+      #       on a login form that DISABLE_LOGIN_FORM has removed — a dead end.
+      #   EE: with generic_oauth + AUTO_LOGIN, logging out immediately re-enters
+      #       the OIDC redirect inside the tile, which the iframe cannot complete
+      #       (Logto refuses to be framed) — a dead end with no way back.
+      # base/ee.yml re-states this for the EE block; keeping both is deliberate,
+      # the value must never diverge between editions.
+      - GF_AUTH_DISABLE_SIGNOUT_MENU=true
       - GF_AUTH_LOGIN_COOKIE_NAME=grafana_session
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
       - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/${GRAFANA_ADMIN_PASSWORD_SECRET_NAME}
