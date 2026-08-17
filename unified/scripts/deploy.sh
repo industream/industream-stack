@@ -465,11 +465,18 @@ seed_ee() {
     admin_user="industream"
   fi
 
+  # Derive the email from the USERNAME, never a hardcoded "admin@". Logto enforces
+  # UNIQUE (tenant_id, primary_email), so a fixed address collides the moment a
+  # second account is seeded — including the rename above: provisioning
+  # `industream` with admin@<domain> on an install whose existing `admin` already
+  # holds it violates the index and the whole seeding step fails.
+  admin_email="${HUB_BACKEND_ADMIN_EMAIL:-${admin_user}@${domain}}"
+
   # 1) Logto: OIDC app + roles + bootstrap user (Argon2i → needs python3 + argon2-cffi).
   if python3 -c 'import argon2' 2>/dev/null; then
     if bash "$tmp/seed-logto.sh" --client-id "${OIDC_CLIENT_ID:-industream-hub-app}" \
          --redirect "https://${domain}/" --user "$admin_user" --password "$admin_pass" \
-         --email "admin@${domain}" --role admin "${scope[@]}" >/dev/null 2>&1; then
+         --email "$admin_email" --role admin "${scope[@]}" >/dev/null 2>&1; then
       echo "  ✓ Logto: app '${OIDC_CLIENT_ID:-industream-hub-app}' + roles + user '${admin_user}'"
     else echo "  ⚠ Logto seeding failed (non-fatal — see scripts/setup/seed-logto.sh)"; fi
   else
