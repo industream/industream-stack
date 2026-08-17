@@ -151,8 +151,13 @@ services:
     deploy:
       mode: global
       resources:
-        limits:       { cpus: '0.5', memory: 128M }
-        reservations: { cpus: '0.08', memory: 64M }
+        # 384M (was 128M): the Docker handler costs far more than the containerd
+        # one it replaced. Measured on the Bernegger host — 67 containers — cAdvisor
+        # settles at 247M and was SIGKILLed (exit 137) every ~15s at the old limit,
+        # restarting forever with nothing in its own logs to explain it.
+        # Scales with the number of containers watched, so a busier host needs more.
+        limits:       { cpus: '0.5', memory: 384M }
+        reservations: { cpus: '0.08', memory: 128M }
       restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
 
   postgres-exporter:
