@@ -75,13 +75,26 @@ services:
       # external TLS Postgres.
       - GF_DATABASE_SSL_MODE=${GF_DATABASE_SSL_MODE}
       - TZ=${TZ}
-      # Runtime plugin install. DataBridge datasource (private Go plugin) is
-      # appended via GRAFANA_DATABRIDGE_PLUGIN, which carries its OWN leading
-      # comma when set (e.g. ",industream-databridge-datasource@1.2.3"); blank
-      # by default. NOTE: `docker stack deploy` interpolation does NOT handle the
+      # Runtime plugin install, SYNCHRONOUS — installs BEFORE Grafana starts and
+      # aborts startup (exit 1) if any install fails. The deprecated
+      # GF_INSTALL_PLUGINS only warns and carries on, which is how a truncated
+      # download once left a 22MB fragment of the 25.8MB DataBridge binary in the
+      # volume: the plugin segfaulted on every load and Grafana reported the
+      # useless "Could not load plugin", with nothing in the logs about the
+      # download. A boot that fails loudly beats a datasource that is silently
+      # dead. Verified against grafana-oss:13.0.1 — a bad URL exits 1.
+      #
+      # Sync also matters because the DataBridge datasource is PROVISIONED from a
+      # file: with the async installer the provisioning pass can run before the
+      # plugin exists.
+      #
+      # Format is `<id>` for catalogue plugins and `<id>@<version>@<url>` for a
+      # custom archive (verified empirically; it is not in defaults.ini).
+      # GRAFANA_DATABRIDGE_PLUGIN carries its OWN leading comma when set; blank by
+      # default. NOTE: `docker stack deploy` interpolation does NOT handle the
       # nested ${VAR:+,${VAR}} form (compose does) — it leaks the literal — so a
       # flat ${VAR} is used to stay correct on BOTH runtimes.
-      - GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource,marcusolsson-json-datasource,volkovlabs-echarts-panel${GRAFANA_DATABRIDGE_PLUGIN}
+      - GF_PLUGINS_PREINSTALL_SYNC=yesoreyeram-infinity-datasource,marcusolsson-json-datasource,volkovlabs-echarts-panel${GRAFANA_DATABRIDGE_PLUGIN}
       # The DataBridge datasource and the Hub Bridge app ship unsigned →
       # Grafana must be told to load them.
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=industream-databridge-datasource,industream-hubbridge-app
