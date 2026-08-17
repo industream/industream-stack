@@ -28,6 +28,47 @@ The Industream stack includes a local DNS server (dnsmasq) that provides:
 1. Know the IP address of the Industream server (e.g., `192.168.100.50`)
 2. Have port 53 (TCP/UDP) accessible from clients
 
+## Hostnames the BROWSER must resolve
+
+The wildcard below covers everything automatically. If you instead declare
+records one by one — or fall back to `/etc/hosts` — these must be present on
+**every client machine**, not just on the server.
+
+Do not work from a fixed list — it goes stale. Extract the real one from the
+deployment, which is the only authoritative source:
+
+```bash
+# swarm: every hostname Traefik actually serves
+docker service ls -q | while read s; do
+  docker service inspect "$s" --format '{{json .Spec.Labels}}'
+done | tr ',' '\n' | grep -o 'Host(`[^`]*`)' | sed 's/Host(`//;s/`)//' | sort -u
+```
+
+A real EE deployment returns around twenty names. The ones that matter most:
+
+| Hostname | Edition | Why |
+|---|---|---|
+| `<domain>` | CE + EE | the Hub itself |
+| `dashboard.<domain>` | CE + EE | Grafana, behind the wrapper |
+| `flowmaker.<domain>` | CE + EE | FlowMaker |
+| `datacatalog-ui.` **and** `datacatalog-api.` | CE + EE | the UI calls the API **from the browser** — both are needed |
+| `databridge.` , `cdn.` , `minio.` , `s3.` , `logger.` | CE + EE | called from the browser by the apps that use them |
+| **`auth.<domain>`** | **EE only** | **Logto — mandatory** |
+| `auth-admin.<domain>` | EE, swarm only | Logto admin console; not needed by end users |
+
+⚠️ **`auth.<domain>` is the one that gets missed.** In EE the Hub runs
+`AUTH_METHOD=OAUTH` and the browser is redirected to Logto, so the *client* has to
+resolve it — the server being healthy is not enough. When it is missing the Hub
+login fails with a bare **`Failed to fetch`**, which points at nothing: the
+network, the certificate and the stack are all fine.
+
+The internal URLs (`http://logto:3001/oidc/...`) used by the Hub backend for
+discovery, JWKS and userinfo are container-to-container and need no DNS entry —
+only the two public names above do.
+
+Whatever hostnames you use, the TLS certificate must cover them. A wildcard
+(`*.<domain>`) does; a certificate issued for the apex alone does not.
+
 ## Server Configuration
 
 ### 1. Configure the Server IP
