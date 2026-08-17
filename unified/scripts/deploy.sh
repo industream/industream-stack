@@ -393,6 +393,19 @@ seed_menu_apps() {
   else
     echo "  ⚠ menu-apps seeding failed (non-fatal)"
   fi
+
+  # Languages (BOTH editions). A fresh Hub knows only the locales that have been
+  # POSTed to it, so every install was English-only until someone called the API
+  # by hand. Override the set with HUB_LANGUAGES="en:English,de:Deutsch,…".
+  # Registering a locale only makes it SELECTABLE — the translations and the
+  # language selector ship with the Hub frontend.
+  local lang_args=(--runtime "$RUNTIME")
+  [[ "$RUNTIME" == swarm ]] && lang_args+=(--stack "$STACK") || lang_args+=(--project "$PROJECT")
+  if HUB_BACKEND_SERVICE=industream-hub-backend bash "$HERE/../scripts/setup/seed-hub-languages-stack.sh" "${lang_args[@]}" >/dev/null 2>&1; then
+    echo "  ✓ Hub languages seeded (${HUB_LANGUAGES:-en, de, fr})"
+  else
+    echo "  ⚠ language seeding failed (non-fatal)"
+  fi
 }
 
 # ---- EE post-deploy seeders -------------------------------------------------
