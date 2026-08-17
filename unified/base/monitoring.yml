@@ -228,8 +228,25 @@ services:
       - --disable_metrics=disk,diskIO,tcp,udp,percpu,sched,process
       - --store_container_labels=true
       - --docker_only=true
-      - --containerd=/run/containerd/containerd.sock
-      - --containerd-namespace=moby
+      # NO --containerd/--containerd-namespace. Pointing cAdvisor at containerd
+      # makes it use the containerd handler, which knows nothing of Docker: the
+      # `name` label becomes a 64-hex container id, `image` disappears, and of the
+      # Docker labels only com_docker_engine_bundle_path survives. Six labels
+      # instead of fifty-nine.
+      #
+      # That silently emptied both shipped dashboards. prometheus.yml already
+      # derives `container_service` from the `image` label — a correct rule that
+      # produced nothing because its source label was gone — and both
+      # docker-containers-cadvisor and docker-swarm-services filter every panel on
+      # `container_service=~".+"`. Every install has shown "No data" there.
+      #
+      # docker.sock is already mounted below, so removing these two flags is all
+      # it takes: cAdvisor falls back to the Docker handler.
+      #
+      # Verified on the swarm test VM: real names
+      # (industream-eaf_timescaledb.1.i3zho…), the swarm label set
+      # (com_docker_swarm_service_name / _task_name / stack_namespace) and a
+      # populated container_service — with no change to prometheus.yml.
     volumes:
       - /:/rootfs:ro,rslave
       - /var/run:/var/run:rw
