@@ -34,12 +34,25 @@ The wildcard below covers everything automatically. If you instead declare
 records one by one — or fall back to `/etc/hosts` — these must be present on
 **every client machine**, not just on the server.
 
+Do not work from a fixed list — it goes stale. Extract the real one from the
+deployment, which is the only authoritative source:
+
+```bash
+# swarm: every hostname Traefik actually serves
+docker service ls -q | while read s; do
+  docker service inspect "$s" --format '{{json .Spec.Labels}}'
+done | tr ',' '\n' | grep -o 'Host(`[^`]*`)' | sed 's/Host(`//;s/`)//' | sort -u
+```
+
+A real EE deployment returns around twenty names. The ones that matter most:
+
 | Hostname | Edition | Why |
 |---|---|---|
 | `<domain>` | CE + EE | the Hub itself |
 | `dashboard.<domain>` | CE + EE | Grafana, behind the wrapper |
 | `flowmaker.<domain>` | CE + EE | FlowMaker |
-| `datacatalog-ui.` / `datacatalog-api.` / `databridge.` | CE + EE | as deployed |
+| `datacatalog-ui.` **and** `datacatalog-api.` | CE + EE | the UI calls the API **from the browser** — both are needed |
+| `databridge.` , `cdn.` , `minio.` , `s3.` , `logger.` | CE + EE | called from the browser by the apps that use them |
 | **`auth.<domain>`** | **EE only** | **Logto — mandatory** |
 | `auth-admin.<domain>` | EE, swarm only | Logto admin console; not needed by end users |
 
