@@ -454,7 +454,10 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
 REPO="$(cd "$HERE/.." && pwd)"
 
-RUNTIME="" EDITION="ce" ENV="prod" GROUPS="" OUT="." HARVEST_FROM=""
+# GROUP_SET, not GROUPS: bash's builtin $GROUPS (the caller's group-ID list) silently
+# swallows assignments — this exact collision already bit deploy.sh once (fixed there
+# the same way; see the deploy-unification history). Never reintroduce it here.
+RUNTIME="" EDITION="ce" ENV="prod" GROUP_SET="" OUT="." HARVEST_FROM=""
 MAX_PART_SIZE="3800M" SKIP_IMAGES=false SKIP_ASSETS=false
 
 die() { echo "✗ $*" >&2; exit 1; }
@@ -483,7 +486,7 @@ cmd_prepare() {
   ( cd "$HERE" && find releases -name '.env.*' -type f -print0 ) \
     | ( cd "$HERE" && xargs -0 -r -I{} cp --parents {} "$dest/tree/unified/" )
 
-  local groups_args=(); [[ -n "$GROUPS" ]] && groups_args=(--groups "$GROUPS")
+  local groups_args=(); [[ -n "$GROUP_SET" ]] && groups_args=(--groups "$GROUP_SET")
   echo "▶ resolving the image set"
   local images
   images="$( cd "$HERE" && ./scripts/deploy.sh --runtime "$RUNTIME" --edition "$EDITION" \
@@ -509,7 +512,7 @@ UNCOMPRESSED_BYTES=0
 
 write_bundle_json() {
   local dest="$1" commit="$2" images="$3"
-  python3 - "$dest" "$commit" "$EDITION" "$RUNTIME" "$ENV" "$GROUPS" "$UNCOMPRESSED_BYTES" <<PY
+  python3 - "$dest" "$commit" "$EDITION" "$RUNTIME" "$ENV" "$GROUP_SET" "$UNCOMPRESSED_BYTES" <<PY
 import json, sys, datetime
 dest, commit, edition, runtime, env, groups, uncompressed = sys.argv[1:8]
 images = """$images""".split()
@@ -660,7 +663,7 @@ save_images() {
 # render-bundles.sh already shipped a hand-maintained TABLE that silently
 # omitted six workers; this must not acquire a second one.
 group_names() {
-  if [[ -n "$GROUPS" ]]; then echo "$GROUPS"
+  if [[ -n "$GROUP_SET" ]]; then echo "$GROUP_SET"
   else ( cd "$HERE" && ./scripts/deploy.sh --runtime "$RUNTIME" --edition "$EDITION" \
            --env "$ENV" --print-groups ); fi
 }
