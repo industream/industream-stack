@@ -17,6 +17,11 @@ REPO="$(cd "$HERE/.." && pwd)"
 # swallows assignments — this exact collision already bit deploy.sh once (fixed there
 # the same way; see the deploy-unification history). Never reintroduce it here.
 RUNTIME="" EDITION="ce" ENV="prod" GROUP_SET="" OUT="." HARVEST_FROM=""
+# --harvest-project: compose has no fixed volume-naming convention the way the
+# swarm overlays do (`name: ${ENV}-<volume>`, deterministic) — deploy.sh treats
+# --project as an arbitrary value unrelated to --env, so guessing it from $ENV
+# would only coincidentally match. Empty means "assume it matched $ENV".
+HARVEST_PROJECT=""
 MAX_PART_SIZE="3800M" SKIP_IMAGES=false SKIP_ASSETS=false
 # --bundle picks releases/bundle-platform-<ver>/ — same meaning as deploy.sh's
 # --bundle. Defaulted here (rather than left to deploy.sh's own auto-select) so
@@ -45,7 +50,12 @@ parse_args() {
       --groups)         GROUP_SET="$2"; shift 2 ;;
       --out)            OUT="$2"; shift 2 ;;
       --max-part-size)  MAX_PART_SIZE="$2"; shift 2 ;;
+      # Only the CDN-package harvest uses this: it points at the docker context
+      # holding a warmed, connected instance. Grafana plugins only ever need
+      # internet access, which the build machine has by definition, so the
+      # plugin harvest always uses the local daemon and ignores this flag.
       --harvest-from)   HARVEST_FROM="$2"; shift 2 ;;
+      --harvest-project) HARVEST_PROJECT="$2"; shift 2 ;;
       --skip-images)    SKIP_IMAGES=true; shift ;;
       --skip-assets)    SKIP_ASSETS=true; shift ;;
       *) die "unknown option: $1" ;;
@@ -96,7 +106,13 @@ cmd_prepare() {
   [[ "$SKIP_IMAGES" == true ]] || save_images "$dest" "$images"
   [[ "$SKIP_ASSETS" == true ]] || harvest_assets "$dest"
 
-  write_bundle_json "$dest" "$commit" "$images"
+  # Recorded for audit alongside the other harvest inputs — only meaningful
+  # for compose, whose volume prefix (unlike swarm's fixed ${ENV}-<volume>)
+  # depends on whatever --harvest-project resolved to.
+  local harvest_project=""
+  [[ "$SKIP_ASSETS" == true || "$RUNTIME" != compose ]] || harvest_project="${HARVEST_PROJECT:-$ENV}"
+
+  write_bundle_json "$dest" "$commit" "$images" "$harvest_project"
   ( cd "$dest" && find . -type f ! -name MANIFEST.sha256 -print0 \
       | xargs -0 sha256sum > MANIFEST.sha256 )
   cp "$HERE/scripts/airgap-install.sh" "$dest/install.sh" 2>/dev/null || true
@@ -111,14 +127,14 @@ cmd_prepare() {
 UNCOMPRESSED_BYTES=0
 
 write_bundle_json() {
-  local dest="$1" commit="$2" images="$3"
-  python3 - "$dest" "$commit" "$EDITION" "$RUNTIME" "$ENV" "$GROUP_SET" "$UNCOMPRESSED_BYTES" "$BUNDLE" <<PY
+  local dest="$1" commit="$2" images="$3" harvest_project="$4"
+  python3 - "$dest" "$commit" "$EDITION" "$RUNTIME" "$ENV" "$GROUP_SET" "$UNCOMPRESSED_BYTES" "$BUNDLE" "$harvest_project" <<PY
 import json, sys, datetime
-dest, commit, edition, runtime, env, groups, uncompressed, bundle = sys.argv[1:9]
+dest, commit, edition, runtime, env, groups, uncompressed, bundle, harvest_project = sys.argv[1:10]
 images = """$images""".split()
 json.dump({
     "commit": commit, "edition": edition, "runtime": runtime, "env": env,
-    "groups": groups, "bundle": bundle,
+    "groups": groups, "bundle": bundle, "harvest_project": harvest_project or None,
     "created": datetime.datetime.now().isoformat(timespec="seconds"),
     "uncompressed_bytes": int(uncompressed), "images": images,
 }, open(dest + "/bundle.json", "w"), indent=2)
@@ -196,7 +212,8 @@ save_images() {
 : "${GRAFANA_HARVEST_TIMEOUT:=120}"
 harvest_assets() {
   local dest="$1"
-  local docker_ctx=(); [[ -n "$HARVEST_FROM" ]] && docker_ctx=(--context "$HARVEST_FROM")
+  # shellcheck disable=SC1091
+  set -a; source "$HERE/versions.env"; set +a
 
   # --- Grafana plugins -------------------------------------------------------
   # base/monitoring.yml installs these with GF_PLUGINS_PREINSTALL_SYNC, which is
@@ -207,19 +224,22 @@ harvest_assets() {
   # it, so the real server has to actually run. Bind the plugins directory
   # straight onto the host: grafana writes the finished plugin into it
   # directly, so there is nothing left to re-implement or copy out afterwards.
+  # This step ALWAYS uses the local daemon — it only ever needs internet
+  # access, which the build machine has by definition — so --harvest-from
+  # (docker_ctx below) does not apply here, only to the CDN copy further down.
   echo "▶ assets: grafana plugins"
-  # shellcheck disable=SC1091
-  set -a; source "$HERE/versions.env"; set +a
   local preinstall="yesoreyeram-infinity-datasource,marcusolsson-json-datasource,volkovlabs-echarts-panel${GRAFANA_DATABRIDGE_PLUGIN}"
   mkdir -p "$dest/assets/grafana-plugins"
   # Grafana runs as uid 472 in the image, never the host uid, so the mount
   # must be world-writable or the installer fails silently with nothing ever
   # appearing in the directory (no log line either — it just never starts).
+  # Tightened back to 755 below, once the container is done writing to it —
+  # the bundle output must not ship a world-writable directory.
   chmod 777 "$dest/assets/grafana-plugins"
 
   local plugin_ids; plugin_ids="$(tr ',' '\n' <<<"$preinstall" | cut -d@ -f1)"
   local cid
-  cid="$(docker "${docker_ctx[@]}" run -d --rm \
+  cid="$(docker run -d --rm \
     -e "GF_PLUGINS_PREINSTALL_SYNC=$preinstall" \
     -e GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=industream-databridge-datasource,industream-hubbridge-app \
     -v "$dest/assets/grafana-plugins:/var/lib/grafana/plugins" \
@@ -229,49 +249,76 @@ harvest_assets() {
   # or a log line: Grafana 13 also background-installs its own bundled apps
   # (pyroscope, explore-traces, ...) on the same container, unrelated to our
   # list, so "the container is quiet" is not a valid readiness signal here.
-  local waited=0 id ready
+  # `plugin.json` existing is not proof the plugin finished writing (the same
+  # race class as the 22MB truncation this task exists to prevent) — requiring
+  # the byte total of just our target plugins to also be stable across two
+  # consecutive polls catches one still mid-flight, without a fixed extra
+  # sleep. Scoped to the target dirs only (not the whole grafana-plugins
+  # directory): Grafana's unrelated bundled-app installer keeps writing other
+  # plugins in the background for a while after ours are done, which would
+  # otherwise stop the total from ever settling.
+  local waited=0 id ready size prev_size=-1 target_dirs
   while (( waited < GRAFANA_HARVEST_TIMEOUT )); do
     ready=true
     for id in $plugin_ids; do
       [[ -f "$dest/assets/grafana-plugins/$id/plugin.json" ]] || { ready=false; break; }
     done
-    [[ "$ready" == true ]] && break
+    if [[ "$ready" == true ]]; then
+      target_dirs=(); for id in $plugin_ids; do target_dirs+=("$dest/assets/grafana-plugins/$id"); done
+      size="$(du -sbc "${target_dirs[@]}" 2>/dev/null | tail -1 | cut -f1)"
+      [[ "$size" == "$prev_size" ]] && break
+      prev_size="$size"
+    fi
     sleep 1; waited=$(( waited + 1 ))
   done
-  docker "${docker_ctx[@]}" stop "$cid" >/dev/null 2>&1 || true
+  docker stop "$cid" >/dev/null 2>&1 || true
 
   # Grafana's own background app-updater keeps writing to the same mount after
   # our sync list is done; drop anything that is not one of ours so a plugin
   # stopped mid-download never ships as a silent fragment. Every file in there
   # is owned by the image's uid 472, not the host user, so the removal has to
   # happen inside a container too, not with a host-side rm.
-  docker "${docker_ctx[@]}" run --rm \
+  docker run --rm \
     -e "KEEP=$(tr '\n' ' ' <<<"$plugin_ids")" \
     -v "$dest/assets/grafana-plugins:/plugins" \
-    alpine sh -c 'cd /plugins && for d in */; do
+    "alpine:${ALPINE_VERSION}" sh -c 'cd /plugins && for d in */; do
         d="${d%/}"
         case " $KEEP " in *" $d "*) ;; *) rm -rf -- "$d" ;; esac
       done'
 
   [[ -n "$(ls -A "$dest/assets/grafana-plugins")" ]] \
     || die "no Grafana plugin was produced — Grafana will not boot offline"
+  chmod 755 "$dest/assets/grafana-plugins"
 
   # --- CDN packages ----------------------------------------------------------
   # cdn-server (Verdaccio) proxies npmjs and publishes on demand, so offline it
   # stays empty and FlowMaker boxes lose their definitions. Copy the volumes of
-  # an instance that has ACTUALLY served them. The swarm overlays pin an
-  # explicit `name: ${ENV}-<volume>` (runtime/swarm/core.yml) rather than the
-  # `<project>_<volume>` compose default, so the prefix must follow $ENV, not
-  # a hardcoded stack name.
+  # an instance that has ACTUALLY served them — this is the one asset that
+  # genuinely needs a remote, warmed instance, so --harvest-from applies here.
+  # A bind mount (`-v host:/container`) resolves on the DAEMON's filesystem,
+  # not the client's, so against a real remote --harvest-from it would silently
+  # write to the remote host and this script would see nothing. `docker cp`
+  # streams through the client instead, so it works the same way against the
+  # local daemon or a remote context: create a stopped container with the
+  # volume mounted, `cp` its contents out, then discard the container.
   echo "▶ assets: cdn packages"
+  local docker_ctx=(); [[ -n "$HARVEST_FROM" ]] && docker_ctx=(--context "$HARVEST_FROM")
   local v vol_prefix
-  if [[ "$RUNTIME" == swarm ]]; then vol_prefix="${ENV}-"; else vol_prefix="${ENV}_"; fi
+  if [[ "$RUNTIME" == swarm ]]; then
+    vol_prefix="${ENV}-"
+  else
+    # Compose has no fixed volume-naming convention the way the swarm overlays
+    # do — --harvest-project must be given explicitly if the live instance's
+    # --project differs from $ENV, or the guard below will fire on a genuine
+    # miss (wrong volume name), not an actually empty cache.
+    vol_prefix="${HARVEST_PROJECT:-$ENV}_"
+  fi
   for v in cdn-server-storage cdn-cache-storage; do
     mkdir -p "$dest/assets/cdn-packages/$v"
-    docker "${docker_ctx[@]}" run --rm \
-      -v "${vol_prefix}${v}:/src:ro" \
-      -v "$dest/assets/cdn-packages/$v:/out" \
-      alpine sh -c 'cp -a /src/. /out/ 2>/dev/null || true'
+    local vcid
+    vcid="$(docker "${docker_ctx[@]}" create -v "${vol_prefix}${v}:/src:ro" "alpine:${ALPINE_VERSION}" true)"
+    docker "${docker_ctx[@]}" cp "$vcid:/src/." "$dest/assets/cdn-packages/$v/" 2>/dev/null || true
+    docker "${docker_ctx[@]}" rm "$vcid" >/dev/null 2>&1 || true
   done
   if [[ -n "${AIRGAP_FAKE_EMPTY_CDN:-}" ]] \
      || [[ -z "$(find "$dest/assets/cdn-packages" -type f -print -quit)" ]]; then
