@@ -212,6 +212,10 @@ harvest_assets() {
   set -a; source "$HERE/versions.env"; set +a
   local preinstall="yesoreyeram-infinity-datasource,marcusolsson-json-datasource,volkovlabs-echarts-panel${GRAFANA_DATABRIDGE_PLUGIN}"
   mkdir -p "$dest/assets/grafana-plugins"
+  # Grafana runs as uid 472 in the image, never the host uid, so the mount
+  # must be world-writable or the installer fails silently with nothing ever
+  # appearing in the directory (no log line either — it just never starts).
+  chmod 777 "$dest/assets/grafana-plugins"
 
   local plugin_ids; plugin_ids="$(tr ',' '\n' <<<"$preinstall" | cut -d@ -f1)"
   local cid
