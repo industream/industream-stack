@@ -16,6 +16,13 @@
 - **Branch `feature/airgap-bundle`, off `origin/main`. Never commit to `main`, never merge, never push a tag.** The PR is opened for review by the repo owner, not merged by us.
 - **Images are delivered by `docker load`. No local registry, and no image reference in `base/*.yml` or `runtime/**` is edited** — 15 third-party references hardcode their registry and are load-bearing.
 - **The image list is produced only by `deploy.sh --list-images`.** No second list anywhere.
+- **Every `deploy.sh` and `airgap.sh` invocation passes `--bundle 1.0.1` and `--env test`.**
+  `deploy.sh:134-140` auto-selects a bundle only when exactly one directory matches
+  `releases/bundle-platform-*/`; this branch has two (`1.0.1`, `forge-ref-215`), so without
+  `--bundle` it exits 1 at line 139 **before reaching any flag** — every test would fail at the
+  bundle gate instead of on the behaviour under test. `airgap.sh` therefore takes its own
+  `--bundle <ver>` (default `1.0.1`), forwards it to `--list-images`, and records it in
+  `bundle.json`; `install.sh` reads it back and passes it to the final deploy.
 - **`--max-part-size` defaults to `3800M`** (keeps every file under the FAT32 4 GiB per-file limit). `0` disables splitting.
 - **Loading never reassembles a split file** — `cat parts | zstd -dc | docker load`.
 - **`prepare` refuses a dirty git working tree** on tracked files.
@@ -172,7 +179,11 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$REPO_ROOT/unified"
 
-ce="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --edition ce --list-images)"
+# --bundle is REQUIRED: two directories match releases/bundle-platform-*/ on this
+# branch, so deploy.sh's auto-select exits 1 at line 139 before any flag is read.
+BUNDLE_ARGS=(--bundle 1.0.1 --env test)
+
+ce="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --edition ce "${BUNDLE_ARGS[@]}" --list-images)"
 [[ -n "$ce" ]] || fail "CE list is empty"
 pass "CE list is non-empty"
 
@@ -184,13 +195,13 @@ pass "no unresolved variables"
 assert_contains "$ce" "postgres:" "third-party images are included"
 
 # EE adds Logto and the enterprise Hub, so it must be a strict superset.
-ee="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --edition ee --list-images)"
+ee="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --edition ee "${BUNDLE_ARGS[@]}" --list-images)"
 (( $(wc -l <<<"$ee") > $(wc -l <<<"$ce") )) || fail "EE list is not larger than CE"
 pass "EE list is larger than CE"
 assert_contains "$ee" "logto" "EE includes Logto"
 
 # --groups must narrow the footprint.
-core="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --edition ce --groups core --list-images)"
+core="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --edition ce "${BUNDLE_ARGS[@]}" --groups core --list-images)"
 (( $(wc -l <<<"$core") < $(wc -l <<<"$ce") )) || fail "--groups did not narrow the list"
 pass "--groups narrows the list"
 
@@ -512,6 +523,9 @@ PY
 
 save_images()   { :; }   # Task 5
 harvest_assets(){ :; }   # Task 6
+cmd_split()     { :; }   # Task 5 — stubbed here so the dispatch below routes to a
+                         # defined function (shellcheck and any reviewer flag a
+                         # dispatch to a function no file defines).
 
 # Dispatch. `_split` is exposed so the splitting logic is directly testable.
 case "${1:-}" in
