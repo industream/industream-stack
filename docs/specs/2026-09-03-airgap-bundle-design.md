@@ -193,12 +193,18 @@ is already there.
    bare `cp -r`: both have already clobbered untracked state on these hosts.
    Write `AIRGAP_VERSION`.
 4. **Seed the assets — on every deploy, not only the first.** Grafana plugins
-   into `<stack>_grafana-data/plugins/` (there is no separate plugins volume;
-   `GF_PLUGINS_PREINSTALL_SYNC` installs into `/var/lib/grafana`), CDN
-   packages into `<stack>_cdn-server-storage` and `<stack>_cdn-cache-storage`,
-   each via an ephemeral container mounting the volume. Idempotent, and
-   replayed whenever a bump to `GRAFANA_DATABRIDGE_PLUGIN` would otherwise
-   send Grafana looking for a new version it cannot reach.
+   into the `grafana-data` volume under `plugins/` (there is no separate
+   plugins volume; `GF_PLUGINS_PREINSTALL_SYNC` installs into
+   `/var/lib/grafana`), CDN packages into `cdn-server-storage` and
+   `cdn-cache-storage`, each via an ephemeral container mounting the volume.
+   **The volume names are runtime-dependent, and are not the `<stack>_<volume>`
+   default**: the swarm overlays pin an explicit `name: ${ENV}-<volume>`
+   (`runtime/swarm/monitoring.yml:219`, `core.yml:184-188`), so the real volume
+   is `prod-grafana-data`; compose declares no name and takes the
+   `<project>_<volume>` default. Seeding the wrong name silently creates an
+   unused volume and leaves Grafana unable to boot. Idempotent, and replayed
+   whenever a bump to `GRAFANA_DATABRIDGE_PLUGIN` would otherwise send Grafana
+   looking for a new version it cannot reach.
 5. `deploy.sh --airgap …`, with the edition, runtime and groups read back from
    `bundle.json` so the deploy matches what was bundled; each is overridable on
    the command line for the rare site that narrows its footprint.
