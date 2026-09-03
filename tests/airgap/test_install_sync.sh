@@ -6,6 +6,20 @@ out="$(mktemp -d)"; target="$(mktemp -d)"
 bundle="$(with_docker_stub ./scripts/airgap.sh prepare --runtime swarm --edition ce \
   --out "$out" --skip-images --skip-assets | tail -1)"
 
+# --skip-assets means the bundle carries no harvested asset directories at
+# all, so seed_assets' own "source exists and is non-empty" guard would never
+# fire without something under assets/ — fabricate the same kind of fixture
+# content test_install_preflight.sh fabricates for --skip-images (fake image
+# tarballs). Extra files here don't need a MANIFEST.sha256 regeneration:
+# `sha256sum -c` only checks the files it was given, so files added after
+# `prepare` that are absent from the manifest are simply not checked.
+mkdir -p "$bundle/assets/grafana-plugins/industream-databridge-datasource" \
+         "$bundle/assets/cdn-packages/cdn-server-storage" \
+         "$bundle/assets/cdn-packages/cdn-cache-storage"
+echo '{}' > "$bundle/assets/grafana-plugins/industream-databridge-datasource/plugin.json"
+echo "pkg" > "$bundle/assets/cdn-packages/cdn-server-storage/some.tgz"
+echo "pkg" > "$bundle/assets/cdn-packages/cdn-cache-storage/some.tgz"
+
 # Pre-existing site state that MUST survive an update. All three have already
 # been clobbered on these hosts.
 mkdir -p "$target/unified/custom" "$target/secrets/prod" "$target/unified/instances"
