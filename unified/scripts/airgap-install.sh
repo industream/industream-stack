@@ -85,7 +85,6 @@ load_images() {
   done
 }
 
-
 # Never `git reset --hard`, never a bare `cp -r`: both have already destroyed
 # untracked site state on these hosts. rsync with hard exclusions, after a
 # snapshot that makes the previous tree recoverable.
