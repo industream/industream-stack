@@ -38,3 +38,98 @@ out_log="$(cat "$install_out")"
 assert_contains "$out_log" "manifest mismatch" "install stops on a bad manifest"
 if grep -q "load" "$DOCKER_LOG" 2>/dev/null; then fail "install loaded images despite a bad manifest"; fi
 pass "no image was loaded after a failed verification"
+
+# --- success path: a valid bundle must actually load, both unsplit and split ---
+# `cat "$base" "$base".NN` always fed `cat` one path guaranteed not to exist
+# (the unsuffixed original for a split group; the ".NN" glob for an unsplit
+# one), so `cat` exited 1 even though it streamed everything real — and under
+# `pipefail`, that killed the script before any group finished. Build two
+# fixture groups (one whole, one split) to prove the load actually completes.
+out2="$(mktemp -d)"
+prep2_out="$(mktemp)"
+with_docker_stub ./scripts/airgap.sh prepare --runtime swarm --edition ce \
+  --out "$out2" --skip-images --skip-assets > "$prep2_out"
+bundle2="$(tail -1 "$prep2_out")"
+
+fake_tar="$(mktemp)"; head -c 200000 /dev/urandom > "$fake_tar"
+zstd -q -3 -f -o "$bundle2/images/core.tar.zst" "$fake_tar"          # unsplit group
+zstd -q -3 -f -o "$fake_tar.zst" "$fake_tar"
+split -d -a 2 -b 60000 "$fake_tar.zst" "$bundle2/images/workers.tar.zst."
+rm -f "$bundle2/images/workers.tar.zst"                              # cmd_split removes the original
+rm -f "$fake_tar" "$fake_tar.zst"
+
+# bundle.json's uncompressed_bytes must stay small enough that the fixture
+# "passes" the disk preflight on any machine running this test.
+python3 - "$bundle2/bundle.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["uncompressed_bytes"] = 1024
+json.dump(d, open(p, "w"))
+PY
+( cd "$bundle2" && find images -type f -print0 | xargs -0 sha256sum > PARTS.sha256 )
+( cd "$bundle2" && find . -type f ! -name MANIFEST.sha256 -print0 | xargs -0 sha256sum > MANIFEST.sha256 )
+
+install2_out="$(mktemp)"
+install2_status=0
+with_docker_stub bash "$bundle2/install.sh" --target "$(mktemp -d)" --yes > "$install2_out" 2>&1 \
+  || install2_status=$?
+assert_eq "$install2_status" "0" "install.sh exits 0 on a valid bundle with images to load"
+load_count="$(grep -c '^load' "$DOCKER_LOG" 2>/dev/null || true)"
+assert_eq "$load_count" "2" "docker load ran once per group (unsplit and split)"
+
+# --- clock preflight: exercise both the warning and the skip branches ---
+# A stub `timedatectl` prepended on PATH (same host-safe pattern as
+# with_docker_stub) drives the "not synchronised" warning without touching
+# the real clock.
+with_timedatectl_stub() {
+  local synced="$1"; shift
+  local td_dir; td_dir="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\necho %s\n' "$synced" > "$td_dir/timedatectl"
+  chmod +x "$td_dir/timedatectl"
+  PATH="$td_dir:$PATH" "$@"
+}
+
+clock_out="$(mktemp)"
+with_docker_stub with_timedatectl_stub no bash "$bundle2/install.sh" \
+  --target "$(mktemp -d)" --yes > "$clock_out" 2>&1 || true
+grep -q "NTP-synchronised" "$clock_out" \
+  || fail "no warning printed when timedatectl reports NTPSynchronized=no"
+pass "clock preflight warns when the clock is not NTP-synchronised"
+
+clock_out2="$(mktemp)"
+with_docker_stub with_timedatectl_stub yes bash "$bundle2/install.sh" \
+  --target "$(mktemp -d)" --yes > "$clock_out2" 2>&1 || true
+if grep -q "NTP-synchronised" "$clock_out2"; then
+  fail "a warning was printed even though timedatectl reports NTPSynchronized=yes"
+fi
+pass "clock preflight is silent when the clock is synchronised"
+
+# `command -v timedatectl` absent must skip the check, not fail the install.
+# Mirror every real PATH directory into one flat stub dir via symlinks,
+# EXCLUDING timedatectl specifically — this hides only that one binary
+# without disturbing anything else the script (or deploy.sh underneath it)
+# needs to resolve.
+without_timedatectl() {
+  local mirror; mirror="$(mktemp -d)"
+  local d f name
+  IFS=: read -ra dirs <<< "$PATH"
+  for d in "${dirs[@]}"; do
+    [[ -d "$d" ]] || continue
+    for f in "$d"/*; do
+      [[ -f "$f" && -x "$f" ]] || continue
+      name="$(basename "$f")"
+      [[ "$name" == timedatectl ]] && continue
+      [[ -e "$mirror/$name" ]] || ln -s "$f" "$mirror/$name" 2>/dev/null || true
+    done
+  done
+  PATH="$mirror" "$@"
+}
+
+clock_out3="$(mktemp)"
+clock3_status=0
+without_timedatectl with_docker_stub bash "$bundle2/install.sh" \
+  --target "$(mktemp -d)" --yes > "$clock_out3" 2>&1 || clock3_status=$?
+assert_eq "$clock3_status" "0" "install.sh still succeeds when timedatectl is entirely absent"
+if grep -q "NTP-synchronised" "$clock_out3"; then
+  fail "a clock warning was printed even though timedatectl does not exist"
+fi
+pass "clock preflight silently skips when timedatectl is absent"

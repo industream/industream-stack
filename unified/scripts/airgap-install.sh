@@ -36,8 +36,15 @@ preflight() {
   # Docker 29 stores images under /var/lib/containerd, NOT /var/lib/docker.
   # Checking only the latter is how a machine froze mid-install with 22GB
   # landing on a 20GB root.
+  #
+  # bundle.json is untrusted data (MANIFEST.sha256 is a checksum, not a
+  # signature) — validate uncompressed_bytes is a plain non-negative integer
+  # BEFORE any arithmetic use of it, so a crafted value dies cleanly here
+  # instead of ever being handed to bash arithmetic unchecked.
+  local raw_bytes; raw_bytes="$(json_get uncompressed_bytes 0)"
+  [[ "$raw_bytes" =~ ^[0-9]+$ ]] || die "bundle.json has a malformed uncompressed_bytes value"
   local need_kb dir
-  need_kb="$(( $(json_get uncompressed_bytes 0) / 1024 + 2097152 ))"
+  need_kb="$(( raw_bytes / 1024 + 2097152 ))"
   for dir in /var/lib/containerd /var/lib/docker; do
     [[ -d "$dir" ]] || continue
     local free_kb; free_kb="$(df -Pk "$dir" | awk 'NR==2{print $4}')"
@@ -62,8 +69,18 @@ load_images() {
   # bundle is never duplicated on a disk that may not have room for it.
   for base in $(ls "$BUNDLE/images" 2>/dev/null | sed 's/\.[0-9][0-9]$//' | sort -u); do
     echo "▶ loading $base"
-    cat "$BUNDLE/images/$base" "$BUNDLE/images/$base".[0-9][0-9] 2>/dev/null \
-      | zstd -dc | docker load
+    # An unsplit group has only "$base"; a split group has only "$base".NN
+    # (cmd_split removes the unsuffixed original). Feeding `cat` a path that
+    # is guaranteed not to exist either way makes it exit 1 even though it
+    # streamed everything real — which pipefail then turns into a script
+    # abort. Build the real file list first instead.
+    local files=() part
+    [[ -e "$BUNDLE/images/$base" ]] && files+=("$BUNDLE/images/$base")
+    for part in "$BUNDLE/images/$base".[0-9][0-9]; do
+      [[ -e "$part" ]] && files+=("$part")
+    done
+    (( ${#files[@]} > 0 )) || die "no readable part found for $base"
+    cat "${files[@]}" | zstd -dc | docker load
   done
 }
 
