@@ -212,6 +212,17 @@ save_images() {
 : "${GRAFANA_HARVEST_TIMEOUT:=120}"
 harvest_assets() {
   local dest="$1"
+  harvest_grafana_plugins "$dest"
+  harvest_cdn_packages "$dest"
+}
+
+# Split from harvest_cdn_packages (rather than left inline) so each half is
+# directly testable on its own — see `_harvest-cdn-packages` in the dispatch
+# below. Under the recording docker stub the Grafana half can never actually
+# succeed (nothing real is ever written to the bind mount), which would
+# otherwise make the CDN half's own docker invocations unreachable in a test.
+harvest_grafana_plugins() {
+  local dest="$1"
   # shellcheck disable=SC1091
   set -a; source "$HERE/versions.env"; set +a
 
@@ -289,18 +300,24 @@ harvest_assets() {
   [[ -n "$(ls -A "$dest/assets/grafana-plugins")" ]] \
     || die "no Grafana plugin was produced — Grafana will not boot offline"
   chmod 755 "$dest/assets/grafana-plugins"
+}
 
-  # --- CDN packages ----------------------------------------------------------
-  # cdn-server (Verdaccio) proxies npmjs and publishes on demand, so offline it
-  # stays empty and FlowMaker boxes lose their definitions. Copy the volumes of
-  # an instance that has ACTUALLY served them — this is the one asset that
-  # genuinely needs a remote, warmed instance, so --harvest-from applies here.
-  # A bind mount (`-v host:/container`) resolves on the DAEMON's filesystem,
-  # not the client's, so against a real remote --harvest-from it would silently
-  # write to the remote host and this script would see nothing. `docker cp`
-  # streams through the client instead, so it works the same way against the
-  # local daemon or a remote context: create a stopped container with the
-  # volume mounted, `cp` its contents out, then discard the container.
+# --- CDN packages --------------------------------------------------------
+# cdn-server (Verdaccio) proxies npmjs and publishes on demand, so offline it
+# stays empty and FlowMaker boxes lose their definitions. Copy the volumes of
+# an instance that has ACTUALLY served them — this is the one asset that
+# genuinely needs a remote, warmed instance, so --harvest-from applies here.
+# A bind mount (`-v host:/container`) resolves on the DAEMON's filesystem,
+# not the client's, so against a real remote --harvest-from it would silently
+# write to the remote host and this script would see nothing. `docker cp`
+# streams through the client instead, so it works the same way against the
+# local daemon or a remote context: create a stopped container with the
+# volume mounted, `cp` its contents out, then discard the container.
+harvest_cdn_packages() {
+  local dest="$1"
+  # shellcheck disable=SC1091
+  set -a; source "$HERE/versions.env"; set +a
+
   echo "▶ assets: cdn packages"
   local docker_ctx=(); [[ -n "$HARVEST_FROM" ]] && docker_ctx=(--context "$HARVEST_FROM")
   local v vol_prefix
@@ -328,10 +345,15 @@ harvest_assets() {
 
 cmd_verify()    { :; }   # Task 7 — same reasoning as cmd_split above.
 
-# Dispatch. `_split` is exposed so the splitting logic is directly testable.
+# Dispatch. `_split` and `_harvest-cdn-packages` are exposed so their logic is
+# directly testable without going through the whole of `prepare` — the latter
+# because the Grafana half can never succeed under a recording docker stub
+# (nothing is really written to its bind mount), which would otherwise make
+# the CDN half's own docker invocations unreachable in a stub-based test.
 case "${1:-}" in
-  prepare) shift; parse_args "$@"; cmd_prepare ;;
-  verify)  shift; cmd_verify "$@" ;;
-  _split)  shift; cmd_split "$@" ;;
-  *)       die "usage: airgap.sh prepare|verify <args>" ;;
+  prepare)              shift; parse_args "$@"; cmd_prepare ;;
+  verify)               shift; cmd_verify "$@" ;;
+  _split)               shift; cmd_split "$@" ;;
+  _harvest-cdn-packages) shift; dest="$1"; shift; parse_args "$@"; harvest_cdn_packages "$dest" ;;
+  *)                    die "usage: airgap.sh prepare|verify <args>" ;;
 esac
