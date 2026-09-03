@@ -91,7 +91,7 @@ load_images() {
 sync_tree() {
   mkdir -p "$TARGET/backups"
   if [[ -d "$TARGET/unified" ]]; then
-    local snap="$TARGET/backups/tree-$(date +%Y%m%d-%H%M%S).tar.gz"
+    local snap; snap="$TARGET/backups/tree-$(date +%Y%m%d-%H%M%S).tar.gz"
     echo "▶ snapshotting the current tree → $snap"
     tar czf "$snap" -C "$TARGET" --exclude=backups .
   fi
