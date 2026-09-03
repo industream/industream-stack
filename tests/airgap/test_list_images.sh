@@ -7,6 +7,7 @@ cd "$REPO_ROOT/unified"
 # branch, so deploy.sh's auto-select exits 1 at line 139 before any flag is read.
 BUNDLE_ARGS=(--bundle 1.0.1 --env test)
 
+echo "=== Testing swarm runtime ==="
 ce="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-ce --edition ce "${BUNDLE_ARGS[@]}" --list-images)"
 [[ -n "$ce" ]] || fail "CE list is empty"
 pass "CE list is non-empty"
@@ -38,3 +39,33 @@ assert_eq "$(sort <<<"$ce" | uniq -d | wc -l)" "0" "list has no duplicates"
 with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-check --edition ce "${BUNDLE_ARGS[@]}" --list-images >/dev/null
 if grep -q "stack deploy" "$DOCKER_LOG" 2>/dev/null; then fail "--list-images deployed"; fi
 pass "--list-images does not deploy"
+
+echo ""
+echo "=== Testing compose runtime ==="
+
+# Compose also produces valid lists
+compose_ce="$(with_docker_stub ./scripts/deploy.sh --runtime compose --project test-ce --edition ce "${BUNDLE_ARGS[@]}" --list-images)"
+[[ -n "$compose_ce" ]] || fail "Compose CE list is empty"
+pass "Compose CE list is non-empty"
+
+# Compose lists must be fully resolved
+if grep -q '\$' <<<"$compose_ce"; then fail "unresolved variable in compose image list"; fi
+pass "Compose list has no unresolved variables"
+
+# Compose EE is a strict superset (includes logto, etc)
+compose_ee="$(with_docker_stub ./scripts/deploy.sh --runtime compose --project test-ee --edition ee "${BUNDLE_ARGS[@]}" --list-images)"
+(( $(wc -l <<<"$compose_ee") > $(wc -l <<<"$compose_ce") )) || fail "Compose EE list is not larger than CE"
+pass "Compose EE list is larger than CE"
+assert_contains "$compose_ee" "logto" "Compose EE includes Logto"
+
+# Critical: --list-images EE must not trigger side effects (no secret file, no domain abort)
+secrets_dir="$REPO_ROOT/secrets/test"
+if [[ -f "$secrets_dir/grafana_oidc_client_secret" ]]; then
+  fail "--list-images --edition ee created a secret file (side effect!)"
+fi
+pass "Compose EE --list-images does not create secrets"
+
+# Compose must not deploy either
+with_docker_stub ./scripts/deploy.sh --runtime compose --project test-check --edition ce "${BUNDLE_ARGS[@]}" --list-images >/dev/null
+if grep -q "compose.*up" "$DOCKER_LOG" 2>/dev/null; then fail "Compose --list-images deployed"; fi
+pass "Compose --list-images does not deploy"

@@ -602,20 +602,20 @@ PY
 # ---- Dispatch ---------------------------------------------------------------
 if [[ "$RUNTIME" == compose ]]; then
   [[ -n "$PROJECT" ]] || { echo "✗ --project required for compose" >&2; exit 1; }
-  if [[ "$EDITION" == ee ]]; then check_compose_domains; ensure_grafana_oidc_secret; fi
-  # Source the env so we can check --list-images before deploying
-  # (compose dispatch uses --env-file for up -d, but we need the process env to
-  # resolve image references).
-  set -a; export ENV
-  source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
-  for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
-  [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
-  set +a
+  # Handle --list-images before any side effects (EE checks, deploy, etc)
   if [[ "$LIST_IMAGES" == true ]]; then
-    _li_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _li_files+=("$f"); done
-    resolve_image_list "${_li_files[@]}"
+    (
+      set -a; export ENV
+      source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+      for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+      [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+      set +a
+      _li_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _li_files+=("$f"); done
+      resolve_image_list "${_li_files[@]}"
+    )
     exit 0
   fi
+  if [[ "$EDITION" == ee ]]; then check_compose_domains; ensure_grafana_oidc_secret; fi
   # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
   # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
   # made in the Portainer UI are never silently lost. Soft-fails (exit 3) when
@@ -625,10 +625,32 @@ if [[ "$RUNTIME" == compose ]]; then
     ENV="$ENV" bash "$HERE/scripts/deploy-state.sh" snapshot || echo "⚠ deploy-state snapshot skipped/failed (non-fatal)"
   fi
   docker compose -p "$PROJECT" "${ENV_FILES[@]}" "${FILES[@]}" up -d
+  # Source the env so the seeders see INDUSTREAM_DOMAIN / OIDC_CLIENT_ID / admin creds
+  # (compose dispatch uses --env-file, which doesn't export into this process).
+  # Sourced UNCONDITIONALLY so seed_menu_apps runs for CE too.
+  set -a; export ENV
+  source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+  for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+  [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+  set +a
   seed_menu_apps                              # both editions: seed the Hub launchpad
   [[ "$EDITION" == ee ]] && seed_ee           # EE-only: Logto app/roles/user
 else
   [[ -n "$STACK" ]] || { echo "✗ --stack required for swarm" >&2; exit 1; }
+  # Handle --list-images before any side effects (EE checks, env sourcing, deploy, etc)
+  if [[ "$LIST_IMAGES" == true ]]; then
+    # `docker stack deploy` interpolates ${VAR} from the PROCESS env (not
+    # --env-file), and unlike `compose config` it handles ${ENV}-* network/secret
+    # keys. Source the single env sources into the env, then deploy with -c.
+    set -a; export ENV
+    source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+    for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+    [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+    set +a
+    _li_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _li_files+=("$f"); done
+    resolve_image_list "${_li_files[@]}"
+    exit 0
+  fi
   [[ "$EDITION" == ee ]] && ensure_grafana_oidc_secret
   # `docker stack deploy` interpolates ${VAR} from the PROCESS env (not
   # --env-file), and unlike `compose config` it handles ${ENV}-* network/secret
@@ -638,11 +660,6 @@ else
   for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
-  if [[ "$LIST_IMAGES" == true ]]; then
-    _li_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _li_files+=("$f"); done
-    resolve_image_list "${_li_files[@]}"
-    exit 0
-  fi
   # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
   # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
   # made in the Portainer UI are never silently lost. Soft-fails (exit 3) when
