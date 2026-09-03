@@ -183,9 +183,11 @@ shopt -u nullglob
 CUSTOM_FILES=("${_custom_neutral[@]}" "${_custom_runtime[@]}")
 for cf in "${CUSTOM_FILES[@]}"; do FILES+=(-f "$cf"); done
 
-echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV} / bundle=${BUNDLE_DIR##*/} / groups=[${GROUP_SET}]"
-echo "  files: ${FILES[*]//-f /}"
-[[ ${#CUSTOM_FILES[@]} -gt 0 ]] && echo "  custom overlays: ${CUSTOM_FILES[*]}"
+# Progress banner, not data — sent to stderr so `--list-images`'s stdout is
+# strictly the resolved image list (its designated single source of truth).
+echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV} / bundle=${BUNDLE_DIR##*/} / groups=[${GROUP_SET}]" >&2
+echo "  files: ${FILES[*]//-f /}" >&2
+[[ ${#CUSTOM_FILES[@]} -gt 0 ]] && echo "  custom overlays: ${CUSTOM_FILES[*]}" >&2
 
 # ---- Per-worker selection (OPTIONAL) ----------------------------------------
 # --workers "svcA,svcB,…" deploys ONLY those flow-box workers; empty = every

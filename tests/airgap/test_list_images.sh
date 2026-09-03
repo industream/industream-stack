@@ -12,6 +12,12 @@ ce="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-ce --edi
 [[ -n "$ce" ]] || fail "CE list is empty"
 pass "CE list is non-empty"
 
+# --list-images stdout must be strictly the image list — no progress banner or
+# other prose line. A real image reference never contains whitespace, so any
+# whitespace on a line means non-image text leaked onto stdout.
+if grep -q '[[:space:]]' <<<"$ce"; then fail "--list-images stdout contains non-image text (banner leaked to stdout)"; fi
+pass "stdout is image-only (no banner leakage)"
+
 # Every reference must be fully resolved: an unexpanded ${VAR} would silently
 # become an empty image at deploy time.
 if grep -q '\$' <<<"$ce"; then fail "unresolved variable in the image list"; fi
@@ -47,6 +53,10 @@ echo "=== Testing compose runtime ==="
 compose_ce="$(with_docker_stub ./scripts/deploy.sh --runtime compose --project test-ce --edition ce "${BUNDLE_ARGS[@]}" --list-images)"
 [[ -n "$compose_ce" ]] || fail "Compose CE list is empty"
 pass "Compose CE list is non-empty"
+
+# Same stdout-is-image-only check as the swarm runtime above.
+if grep -q '[[:space:]]' <<<"$compose_ce"; then fail "Compose --list-images stdout contains non-image text (banner leaked to stdout)"; fi
+pass "Compose stdout is image-only (no banner leakage)"
 
 # Compose lists must be fully resolved
 if grep -q '\$' <<<"$compose_ce"; then fail "unresolved variable in compose image list"; fi

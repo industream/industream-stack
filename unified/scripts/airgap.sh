@@ -79,11 +79,12 @@ cmd_prepare() {
   local raw_images
   raw_images="$( cd "$HERE" && ./scripts/deploy.sh --runtime "$RUNTIME" --edition "$EDITION" \
       --env "$ENV" --bundle "$BUNDLE" "${scope_args[@]}" "${groups_args[@]}" --list-images )"
-  # --list-images also emits deploy.sh's normal progress banner ("▶ EDITION / …",
-  # "files: -f …") to stdout ahead of the resolved list. A real image reference
-  # can never contain whitespace (invalid Docker image-ref syntax), so filtering
-  # on that is a robust way to drop the banner without re-deriving the list —
-  # resolve_image_list in deploy.sh stays the ONLY source of the images.
+  # deploy.sh's progress banner now goes to stderr, so this stdout capture
+  # should already be image-only. Kept as defence-in-depth: a real image
+  # reference can never contain whitespace (invalid Docker image-ref syntax),
+  # so filtering on that is a robust way to drop any stray non-image line
+  # without re-deriving the list — resolve_image_list in deploy.sh stays the
+  # ONLY source of the images.
   local images
   images="$(grep -v '[[:space:]]' <<<"$raw_images" || true)"
   [[ -n "$images" ]] || die "the image list is empty — check --edition/--groups"
