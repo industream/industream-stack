@@ -12,6 +12,7 @@ set -euo pipefail
 BUNDLE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="${TARGET:-$HOME/industream-platform}"
 ASSUME_YES=false
+NO_DEPLOY=false
 
 die() { echo "✗ $*" >&2; exit 1; }
 
@@ -84,11 +85,66 @@ load_images() {
   done
 }
 
+
+# Never `git reset --hard`, never a bare `cp -r`: both have already destroyed
+# untracked site state on these hosts. rsync with hard exclusions, after a
+# snapshot that makes the previous tree recoverable.
+sync_tree() {
+  mkdir -p "$TARGET/backups"
+  if [[ -d "$TARGET/unified" ]]; then
+    local snap="$TARGET/backups/tree-$(date +%Y%m%d-%H%M%S).tar.gz"
+    echo "▶ snapshotting the current tree → $snap"
+    tar czf "$snap" -C "$TARGET" --exclude=backups .
+  fi
+  echo "▶ syncing the tree"
+  rsync -a --delete \
+    --exclude='.env.*' \
+    --exclude='secrets/' \
+    --exclude='unified/custom/' \
+    --exclude='unified/instances/' \
+    --exclude='.deploy-state/' \
+    --exclude='backups/' \
+    "$BUNDLE/tree/" "$TARGET/"
+  # The checkout is knowingly detached from origin: offline it will never take
+  # another `git pull`, so record what it actually holds.
+  printf 'commit=%s\nbundle=%s\ninstalled=%s\n' \
+    "$(json_get commit)" "$(basename "$BUNDLE")" "$(date -Is)" > "$TARGET/AIRGAP_VERSION"
+}
+
+# Seeded on EVERY deploy, not only the first. GF_PLUGINS_PREINSTALL_SYNC is
+# boot-blocking, so a plugin version bump with no reachable registry would stop
+# Grafana from starting at all.
+# Volume names differ per runtime, and NOT the way the `<stack>_<volume>`
+# default would suggest: the swarm overlays pin an explicit
+# `name: ${ENV}-<volume>` (runtime/swarm/monitoring.yml, core.yml), so the
+# real volume is `prod-grafana-data`. Compose declares no name, so it gets the
+# `<project>_<volume>` default. Seeding the wrong name silently creates an
+# unused volume and leaves Grafana unable to boot.
+volume_name() {
+  if [[ "$(json_get runtime)" == swarm ]]; then echo "$(json_get env)-$1"
+  else echo "${PROJECT:-fm-$(json_get env)}_$1"; fi
+}
+
+seed_assets() {
+  seed_volume() {
+    local vol="$1" src="$2" sub="${3:-}"
+    [[ -d "$src" && -n "$(ls -A "$src")" ]] || return 0
+    docker volume create "$vol" >/dev/null
+    docker run --rm -v "$vol:/dest" -v "$src:/src:ro" alpine \
+      sh -c "mkdir -p /dest/$sub && cp -a /src/. /dest/$sub"
+  }
+  echo "▶ seeding runtime assets"
+  seed_volume "$(volume_name grafana-data)"       "$BUNDLE/assets/grafana-plugins"                 "plugins"
+  seed_volume "$(volume_name cdn-server-storage)" "$BUNDLE/assets/cdn-packages/cdn-server-storage"
+  seed_volume "$(volume_name cdn-cache-storage)"  "$BUNDLE/assets/cdn-packages/cdn-cache-storage"
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --target) TARGET="$2"; shift 2 ;;
-      --yes)    ASSUME_YES=true; shift ;;
+      --target)    TARGET="$2"; shift 2 ;;
+      --yes)       ASSUME_YES=true; shift ;;
+      --no-deploy) NO_DEPLOY=true; shift ;;
       *) die "unknown option: $1" ;;
     esac
   done
@@ -98,6 +154,8 @@ main() {
   parse_args "$@"
   preflight
   load_images
+  sync_tree
+  seed_assets
 }
 
 main "$@"
