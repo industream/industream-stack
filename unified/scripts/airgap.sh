@@ -242,12 +242,16 @@ harvest_assets() {
 
   # Grafana's own background app-updater keeps writing to the same mount after
   # our sync list is done; drop anything that is not one of ours so a plugin
-  # stopped mid-download never ships as a silent fragment.
-  local plugin_dir
-  while IFS= read -r -d '' plugin_dir; do
-    id="$(basename "$plugin_dir")"
-    grep -qx "$id" <<<"$plugin_ids" || rm -rf "${plugin_dir:?}"
-  done < <(find "$dest/assets/grafana-plugins" -mindepth 1 -maxdepth 1 -type d -print0)
+  # stopped mid-download never ships as a silent fragment. Every file in there
+  # is owned by the image's uid 472, not the host user, so the removal has to
+  # happen inside a container too, not with a host-side rm.
+  docker "${docker_ctx[@]}" run --rm \
+    -e "KEEP=$(tr '\n' ' ' <<<"$plugin_ids")" \
+    -v "$dest/assets/grafana-plugins:/plugins" \
+    alpine sh -c 'cd /plugins && for d in */; do
+        d="${d%/}"
+        case " $KEEP " in *" $d "*) ;; *) rm -rf -- "$d" ;; esac
+      done'
 
   [[ -n "$(ls -A "$dest/assets/grafana-plugins")" ]] \
     || die "no Grafana plugin was produced — Grafana will not boot offline"
