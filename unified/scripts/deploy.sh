@@ -28,7 +28,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
-RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false LIST_IMAGES=false BUNDLE=""
+RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false LIST_IMAGES=false AIRGAP=false BUNDLE=""
 FORGE_SPEC="" FORGE_INTERACTIVE=false   # --forge <exportKey>@<version> | --forge-interactive
 WORKERS_ENABLED=""   # CSV allowlist of flow-box worker services; empty = all
 TYPE="" ATTACH=false
@@ -52,6 +52,7 @@ while [[ $# -gt 0 ]]; do
     --type)      TYPE="$2"; shift 2 ;;
     --render)    RENDER=true; shift ;;
     --list-images) LIST_IMAGES=true; shift ;;
+    --airgap)    AIRGAP=true; shift ;;
     -h|--help)   sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -682,20 +683,24 @@ else
   # forever on that one image. On timeout we SIGTERM/-KILL the pull, retry, then
   # give up and leave the image to the stack deploy. Tune via PULL_TIMEOUT /
   # PULL_RETRIES env.
-  _pp_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _pp_files+=("$f"); done
-  export PULL_TIMEOUT="${PULL_TIMEOUT:-120}" PULL_RETRIES="${PULL_RETRIES:-2}"
-  echo "▶ pre-pulling images (≤4 in parallel, ${PULL_TIMEOUT}s/pull, avoids swarm's all-at-once wedge)…"
-  resolve_image_list "${_pp_files[@]}" | xargs -r -P 4 -n 1 sh -c '
-    img="$1"; n=0
-    while [ "$n" -lt "${PULL_RETRIES:-2}" ]; do
-      n=$((n + 1))
-      if timeout -k 10 "${PULL_TIMEOUT:-120}" docker pull "$img" >/dev/null 2>&1; then
-        echo "  ✓ $img"; exit 0
-      fi
-      [ "$n" -lt "${PULL_RETRIES:-2}" ] && echo "  … retry $img ($n/${PULL_RETRIES:-2}, prev hit ${PULL_TIMEOUT:-120}s)"
-    done
-    echo "  ⚠ $img (slow/wedged after ${PULL_RETRIES:-2}× — left for the stack deploy)"
-  ' _
+  if [[ "$AIRGAP" == true ]]; then
+    echo "▶ airgap: skipping the pre-pull; images must already be loaded (see airgap.sh)"
+  else
+    _pp_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _pp_files+=("$f"); done
+    export PULL_TIMEOUT="${PULL_TIMEOUT:-120}" PULL_RETRIES="${PULL_RETRIES:-2}"
+    echo "▶ pre-pulling images (≤4 in parallel, ${PULL_TIMEOUT}s/pull, avoids swarm's all-at-once wedge)…"
+    resolve_image_list "${_pp_files[@]}" | xargs -r -P 4 -n 1 sh -c '
+      img="$1"; n=0
+      while [ "$n" -lt "${PULL_RETRIES:-2}" ]; do
+        n=$((n + 1))
+        if timeout -k 10 "${PULL_TIMEOUT:-120}" docker pull "$img" >/dev/null 2>&1; then
+          echo "  ✓ $img"; exit 0
+        fi
+        [ "$n" -lt "${PULL_RETRIES:-2}" ] && echo "  … retry $img ($n/${PULL_RETRIES:-2}, prev hit ${PULL_TIMEOUT:-120}s)"
+      done
+      echo "  ⚠ $img (slow/wedged after ${PULL_RETRIES:-2}× — left for the stack deploy)"
+    ' _
+  fi
   C_FILES=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] && C_FILES+=(-c) || C_FILES+=("$f"); done
   # Submit the stack (detached) then poll convergence OURSELVES. `--detach=false`
   # re-verifies every service SERIALLY (stable-window per service) → minutes for a
@@ -703,7 +708,15 @@ else
   # restart resets the window. Polling `docker stack services` returns as soon as
   # all replicas are N/N for 2 consecutive checks — bounded by DEPLOY_TIMEOUT; on
   # timeout we name the stragglers instead of hanging (the stack stays deployed).
-  docker stack deploy --detach=true --with-registry-auth --prune "${C_FILES[@]}" "$STACK"
+  # `--resolve-image never` is REQUIRED offline: the default (`always`) contacts
+  # the registry for every tag→digest even when the image is already local.
+  DEPLOY_FLAGS=(--detach=true --prune)
+  if [[ "$AIRGAP" == true ]]; then
+    DEPLOY_FLAGS+=(--resolve-image never)
+  else
+    DEPLOY_FLAGS+=(--with-registry-auth)
+  fi
+  docker stack deploy "${DEPLOY_FLAGS[@]}" "${C_FILES[@]}" "$STACK"
   echo "▶ waiting for services to converge (≤${DEPLOY_TIMEOUT:-600}s)…"
   _deadline=$(( $(date +%s) + ${DEPLOY_TIMEOUT:-600} ))
   _stable=0
