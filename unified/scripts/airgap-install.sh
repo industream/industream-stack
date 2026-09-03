@@ -13,6 +13,11 @@ BUNDLE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="${TARGET:-$HOME/industream-platform}"
 ASSUME_YES=false
 NO_DEPLOY=false
+# Deploy-call overrides — empty means "take it from bundle.json". PROJECT is
+# also read by volume_name() (below) so an operator-supplied --project lands
+# on the SAME compose project the deploy itself uses; guessing two different
+# values here is exactly how a volume gets seeded under a name nothing reads.
+RUNTIME_OPT="" EDITION_OPT="" ENV_OPT="" GROUPS_OPT="" STACK_OPT="" PROJECT=""
 
 die() { echo "✗ $*" >&2; exit 1; }
 
@@ -25,10 +30,24 @@ d=json.load(open('$BUNDLE/bundle.json'))
 print(d.get('$1', '''${2:-}'''))"
 }
 
+# Bundle values as they will actually be used, i.e. an operator override if
+# one was given, else whatever the bundle was built with. Used by BOTH the
+# deploy call and the asset seeder below, so the two can never disagree.
+resolved_runtime() { [[ -n "$RUNTIME_OPT" ]] && echo "$RUNTIME_OPT" || json_get runtime; }
+resolved_edition() { [[ -n "$EDITION_OPT" ]] && echo "$EDITION_OPT" || json_get edition; }
+resolved_env()     { [[ -n "$ENV_OPT" ]]     && echo "$ENV_OPT"     || json_get env; }
+resolved_groups()  { [[ -n "$GROUPS_OPT" ]]  && echo "$GROUPS_OPT"  || json_get groups; }
+
+# Compose has no fixed volume-naming convention the way the swarm overlays do
+# (deploy.sh treats --project as an arbitrary value unrelated to --env) — this
+# is the ONE place that default gets decided, so volume_name() and run_deploy()
+# stay in agreement by construction rather than by two matching literals.
+compose_project() { echo "${PROJECT:-fm-$(resolved_env)}"; }
+
 preflight() {
   command -v docker >/dev/null || die "docker is not installed"
 
-  local runtime; runtime="$(json_get runtime)"
+  local runtime; runtime="$(resolved_runtime)"
   if [[ "$runtime" == swarm ]]; then
     [[ "$(docker info -f '{{.Swarm.LocalNodeState}}' 2>/dev/null)" == active ]] \
       || die "this node is not in an active swarm — run 'docker swarm init' first"
@@ -120,8 +139,8 @@ sync_tree() {
 # `<project>_<volume>` default. Seeding the wrong name silently creates an
 # unused volume and leaves Grafana unable to boot.
 volume_name() {
-  if [[ "$(json_get runtime)" == swarm ]]; then echo "$(json_get env)-$1"
-  else echo "${PROJECT:-fm-$(json_get env)}_$1"; fi
+  if [[ "$(resolved_runtime)" == swarm ]]; then echo "$(resolved_env)-$1"
+  else echo "$(compose_project)_$1"; fi
 }
 
 seed_assets() {
@@ -138,12 +157,47 @@ seed_assets() {
   seed_volume "$(volume_name cdn-cache-storage)"  "$BUNDLE/assets/cdn-packages/cdn-cache-storage"
 }
 
+# Closes the loop: replay the SAME deploy.sh that assembled the bundle's image
+# set (airgap.sh's --list-images / verify), so what gets deployed never drifts
+# from what was checked. --bundle is always taken from bundle.json and never
+# overridden here — it selects the release dir carrying the full-ref
+# ${X_IMAGE} vars (releases/bundle-platform-<ver>/), and the synced tree can
+# carry more than one such dir (e.g. a leftover Forge bundle), at which point
+# deploy.sh's auto-select refuses to guess and --bundle stops being optional.
+run_deploy() {
+  local runtime edition env_val groups bundle_ver
+  runtime="$(resolved_runtime)"
+  edition="$(resolved_edition)"
+  env_val="$(resolved_env)"
+  groups="$(resolved_groups)"
+  bundle_ver="$(json_get bundle)"
+  local args=(--runtime "$runtime" --edition "$edition" --env "$env_val" --airgap)
+  [[ -n "$bundle_ver" ]] && args+=(--bundle "$bundle_ver")
+  [[ -n "$groups" ]] && args+=(--groups "$groups")
+  # deploy.sh requires --stack for swarm and --project for compose; compose_project()
+  # is the SAME function volume_name() uses above, so the asset volumes and the
+  # deploy always land under the same project name.
+  if [[ "$runtime" == swarm ]]; then
+    args+=(--stack "${STACK_OPT:-$(json_get stack industream-prod)}")
+  else
+    args+=(--project "$(compose_project)")
+  fi
+  echo "▶ deploying (--airgap)"
+  ( cd "$TARGET/unified" && ./scripts/deploy.sh "${args[@]}" )
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --target)    TARGET="$2"; shift 2 ;;
       --yes)       ASSUME_YES=true; shift ;;
       --no-deploy) NO_DEPLOY=true; shift ;;
+      --runtime)   RUNTIME_OPT="$2"; shift 2 ;;
+      --edition)   EDITION_OPT="$2"; shift 2 ;;
+      --env)       ENV_OPT="$2"; shift 2 ;;
+      --groups)    GROUPS_OPT="$2"; shift 2 ;;
+      --stack)     STACK_OPT="$2"; shift 2 ;;
+      --project)   PROJECT="$2"; shift 2 ;;
       *) die "unknown option: $1" ;;
     esac
   done
@@ -155,6 +209,11 @@ main() {
   load_images
   sync_tree
   seed_assets
+  if [[ "$NO_DEPLOY" == true ]]; then
+    echo "▶ --no-deploy: tree synced and assets seeded, deploy skipped"
+  else
+    run_deploy
+  fi
 }
 
 main "$@"
