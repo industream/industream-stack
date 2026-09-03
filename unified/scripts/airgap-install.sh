@@ -115,8 +115,12 @@ sync_tree() {
     tar czf "$snap" -C "$TARGET" --exclude=backups .
   fi
   echo "▶ syncing the tree"
+  # Anchored to the transfer root: an unanchored '.env.*' matches at ANY depth,
+  # which also hid every releases/bundle-platform-*/.env.<group> file from the
+  # sync — deploy.sh then failed with "No such file or directory" globbing its
+  # own bundle dir, only surfacing once install.sh actually called it (Task 10).
   rsync -a --delete \
-    --exclude='.env.*' \
+    --exclude='/unified/.env.*' \
     --exclude='secrets/' \
     --exclude='unified/custom/' \
     --exclude='unified/instances/' \
