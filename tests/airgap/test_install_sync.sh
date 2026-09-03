@@ -20,18 +20,22 @@ echo '{}' > "$bundle/assets/grafana-plugins/industream-databridge-datasource/plu
 echo "pkg" > "$bundle/assets/cdn-packages/cdn-server-storage/some.tgz"
 echo "pkg" > "$bundle/assets/cdn-packages/cdn-cache-storage/some.tgz"
 
-# Pre-existing site state that MUST survive an update. All three have already
+# Pre-existing site state that MUST survive an update. All five have already
 # been clobbered on these hosts.
-mkdir -p "$target/unified/custom" "$target/secrets/prod" "$target/unified/instances"
+mkdir -p "$target/unified/custom" "$target/secrets/prod" "$target/unified/instances" "$target/.deploy-state"
 echo "SITE_SECRET=keepme"   > "$target/unified/.env.prod"
 echo "custom-overlay"       > "$target/unified/custom/site.yml"
 echo "s3cret"               > "$target/secrets/prod/hub_backend_admin_password"
+echo "instance-data"        > "$target/unified/instances/site.yml"
+echo "deploy-state-data"    > "$target/.deploy-state/state.json"
 
 with_docker_stub bash "$bundle/install.sh" --target "$target" --yes --no-deploy >/dev/null 2>&1 || true
 
 assert_eq "$(cat "$target/unified/.env.prod")" "SITE_SECRET=keepme" ".env.<env> survives the sync"
 assert_eq "$(cat "$target/unified/custom/site.yml")" "custom-overlay" "custom/ survives the sync"
 assert_eq "$(cat "$target/secrets/prod/hub_backend_admin_password")" "s3cret" "secrets/ survive the sync"
+assert_eq "$(cat "$target/unified/instances/site.yml")" "instance-data" "unified/instances/ survives the sync"
+assert_eq "$(cat "$target/.deploy-state/state.json")" "deploy-state-data" ".deploy-state/ survives the sync"
 [[ -f "$target/unified/scripts/deploy.sh" ]] || fail "the tree was not synced"
 pass "the tree was synced"
 [[ -f "$target/AIRGAP_VERSION" ]] || fail "AIRGAP_VERSION not written"
