@@ -38,3 +38,28 @@ PY
 assert_fails ./scripts/airgap.sh verify "$bundle" "a missing image fails verification"
 out2="$(./scripts/airgap.sh verify "$bundle" 2>&1 >/dev/null || true)"
 assert_contains "$out2" "$dropped" "the missing image is named in the replay failure"
+
+# bundle.json is unsigned data of unproven provenance — MANIFEST.sha256 is a
+# plain checksum, not a signature, and (as above) its own line is trivial to
+# refresh after editing bundle.json. A field value containing shell
+# metacharacters must never be evaluated as shell code while verify reads it.
+marker="/tmp/airgap-verify-injection-marker-$$"
+rm -f "$marker"
+python3 - "$bundle/bundle.json" "$marker" <<PY
+import json, sys
+p, marker = sys.argv[1], sys.argv[2]
+d = json.load(open(p))
+d["groups"] = 'x"; touch ' + marker + '; echo "'
+json.dump(d, open(p, "w"))
+PY
+( cd "$bundle" && sha256sum bundle.json | sed 's#  bundle.json#  ./bundle.json#' \
+    > /tmp/bundle_json.sha256.$$
+  grep -v ' \./bundle\.json$' MANIFEST.sha256 > MANIFEST.sha256.tmp.$$
+  cat /tmp/bundle_json.sha256.$$ >> MANIFEST.sha256.tmp.$$
+  mv MANIFEST.sha256.tmp.$$ MANIFEST.sha256
+  rm -f /tmp/bundle_json.sha256.$$ )
+
+./scripts/airgap.sh verify "$bundle" >/dev/null 2>&1 || true
+[[ ! -f "$marker" ]] || fail "a crafted bundle.json field executed shell code during verify"
+rm -f "$marker"
+pass "a crafted bundle.json field is never evaluated as shell code"

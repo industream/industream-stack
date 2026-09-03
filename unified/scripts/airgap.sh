@@ -356,10 +356,30 @@ cmd_verify() {
   echo "▶ image set"
   # Replay the resolution against the bundle's OWN tree, so a group added after
   # the build is caught here rather than as an empty image on site.
+  #
+  # bundle.json is unsigned data of unproven provenance — MANIFEST.sha256 is a
+  # plain checksum, not a signature, and anyone able to edit bundle.json can
+  # recompute its own manifest line just as easily. So its field VALUES must
+  # never become shell text: no eval, no string interpolation into a command
+  # line. Python emits them NUL-delimited to a file and `read -d ''` pulls
+  # each one out as an opaque value — passed to deploy.sh only as a quoted
+  # argv element below, never re-parsed by the shell.
   local edition runtime env groups bundle expected have
-  eval "$(python3 -c "
-import json;d=json.load(open('$b/bundle.json'))
-print(f'''edition={d[\"edition\"]}; runtime={d[\"runtime\"]}; env={d[\"env\"]}; bundle={d[\"bundle\"]}; groups=\"{d[\"groups\"]}\"''')")"
+  local fields_file; fields_file="$(mktemp)"
+  python3 -c "
+import json, sys
+d = json.load(open('$b/bundle.json'))
+for k in ('edition', 'runtime', 'env', 'bundle', 'groups'):
+    sys.stdout.write(str(d[k]) + chr(0))
+" > "$fields_file" || { rm -f "$fields_file"; die "bundle.json is malformed or missing a required field (edition/runtime/env/bundle/groups)"; }
+  {
+    IFS= read -r -d '' edition
+    IFS= read -r -d '' runtime
+    IFS= read -r -d '' env
+    IFS= read -r -d '' bundle
+    IFS= read -r -d '' groups
+  } < "$fields_file"
+  rm -f "$fields_file"
   # deploy_scope_args() reads the global $RUNTIME, same as group_names() and
   # images_for_group() during prepare — set it here so the replay uses the
   # bundle's own runtime, not whatever this process happened to start with.
