@@ -36,6 +36,9 @@ case "$1" in
   info)   echo "active" ;;
   image)  exit 1 ;;          # `image inspect` → absent, so callers pull
   volume) echo "vol" ;;
+  load)   cat >/dev/null ;;  # a real `docker load` reads its whole stdin —
+                              # not draining it here made `zstd`'s write take
+                              # SIGPIPE against a reader that already exited
 esac
 exit 0
 STUB

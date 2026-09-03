@@ -45,32 +45,8 @@ pass "no image was loaded after a failed verification"
 # one), so `cat` exited 1 even though it streamed everything real — and under
 # `pipefail`, that killed the script before any group finished. Build two
 # fixture groups (one whole, one split) to prove the load actually completes.
-#
-# lib.sh's `docker` stub never reads its stdin before exiting, which is fine
-# for every other test (nothing pipes real bytes into it) but here `docker
-# load` is fed a real decompressed stream: once the stub exits without
-# draining it, `zstd` gets SIGPIPE writing to a reader that already closed —
-# a test-only artifact of the stub, not a bug in install.sh (a real `docker
-# load` does read all of stdin). A local stub that also drains "load"'s
-# stdin avoids it without touching the shared lib.sh helper.
-with_docker_stub_draining() {
-  local stub_dir; stub_dir="$(mktemp -d)"
-  DOCKER_LOG="$(mktemp)"; export DOCKER_LOG
-  cat > "$stub_dir/docker" <<'STUB'
-#!/usr/bin/env bash
-echo "$*" >> "$DOCKER_LOG"
-case "$1" in
-  info)   echo "active" ;;
-  image)  exit 1 ;;
-  volume) echo "vol" ;;
-  load)   cat >/dev/null ;;
-esac
-exit 0
-STUB
-  chmod +x "$stub_dir/docker"
-  PATH="$stub_dir:$PATH" "$@"
-}
-
+# (lib.sh's docker stub now drains "load"'s stdin, matching a real `docker
+# load` — see with_docker_stub in lib.sh.)
 out2="$(mktemp -d)"
 prep2_out="$(mktemp)"
 with_docker_stub ./scripts/airgap.sh prepare --runtime swarm --edition ce \
@@ -96,7 +72,7 @@ PY
 
 install2_out="$(mktemp)"
 install2_status=0
-with_docker_stub_draining bash "$bundle2/install.sh" --target "$(mktemp -d)" --yes > "$install2_out" 2>&1 \
+with_docker_stub bash "$bundle2/install.sh" --target "$(mktemp -d)" --yes > "$install2_out" 2>&1 \
   || install2_status=$?
 assert_eq "$install2_status" "0" "install.sh exits 0 on a valid bundle with images to load"
 load_count="$(grep -c '^load' "$DOCKER_LOG" 2>/dev/null || true)"
@@ -115,14 +91,14 @@ with_timedatectl_stub() {
 }
 
 clock_out="$(mktemp)"
-with_docker_stub_draining with_timedatectl_stub no bash "$bundle2/install.sh" \
+with_docker_stub with_timedatectl_stub no bash "$bundle2/install.sh" \
   --target "$(mktemp -d)" --yes > "$clock_out" 2>&1 || true
 grep -q "NTP-synchronised" "$clock_out" \
   || fail "no warning printed when timedatectl reports NTPSynchronized=no"
 pass "clock preflight warns when the clock is not NTP-synchronised"
 
 clock_out2="$(mktemp)"
-with_docker_stub_draining with_timedatectl_stub yes bash "$bundle2/install.sh" \
+with_docker_stub with_timedatectl_stub yes bash "$bundle2/install.sh" \
   --target "$(mktemp -d)" --yes > "$clock_out2" 2>&1 || true
 if grep -q "NTP-synchronised" "$clock_out2"; then
   fail "a warning was printed even though timedatectl reports NTPSynchronized=yes"
@@ -152,7 +128,7 @@ without_timedatectl() {
 
 clock_out3="$(mktemp)"
 clock3_status=0
-without_timedatectl with_docker_stub_draining bash "$bundle2/install.sh" \
+without_timedatectl with_docker_stub bash "$bundle2/install.sh" \
   --target "$(mktemp -d)" --yes > "$clock_out3" 2>&1 || clock3_status=$?
 assert_eq "$clock3_status" "0" "install.sh still succeeds when timedatectl is entirely absent"
 if grep -q "NTP-synchronised" "$clock_out3"; then
