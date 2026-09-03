@@ -343,7 +343,44 @@ harvest_cdn_packages() {
   fi
 }
 
-cmd_verify()    { :; }   # Task 7 — same reasoning as cmd_split above.
+# verify is replayable on BOTH sides: before shipping, and on site before
+# touching Docker.
+cmd_verify() {
+  local b="${1:?usage: airgap.sh verify <bundle>}"
+  [[ -f "$b/bundle.json" ]] || die "not a bundle: $b"
+
+  echo "▶ checksums"
+  ( cd "$b" && sha256sum --quiet -c MANIFEST.sha256 ) || die "manifest mismatch"
+  [[ -f "$b/PARTS.sha256" ]] && { ( cd "$b" && sha256sum --quiet -c PARTS.sha256 ) || die "part mismatch"; }
+
+  echo "▶ image set"
+  # Replay the resolution against the bundle's OWN tree, so a group added after
+  # the build is caught here rather than as an empty image on site.
+  local edition runtime env groups bundle expected have
+  eval "$(python3 -c "
+import json;d=json.load(open('$b/bundle.json'))
+print(f'''edition={d[\"edition\"]}; runtime={d[\"runtime\"]}; env={d[\"env\"]}; bundle={d[\"bundle\"]}; groups=\"{d[\"groups\"]}\"''')")"
+  # deploy_scope_args() reads the global $RUNTIME, same as group_names() and
+  # images_for_group() during prepare — set it here so the replay uses the
+  # bundle's own runtime, not whatever this process happened to start with.
+  RUNTIME="$runtime"
+  local groups_args=(); [[ -n "$groups" ]] && groups_args=(--groups "$groups")
+  local scope_args; read -ra scope_args <<< "$(deploy_scope_args)"
+  # LC_ALL=C so this sort matches Python's codepoint-order sorted() below —
+  # comm silently misbehaves ("input is not in sorted order") if the two
+  # sides disagree on collation, which the locale-aware default sort does.
+  expected="$( cd "$b/tree/unified" && ./scripts/deploy.sh --runtime "$runtime" \
+      --edition "$edition" --env "$env" --bundle "$bundle" "${scope_args[@]}" "${groups_args[@]}" \
+      --list-images | LC_ALL=C sort )"
+  have="$(python3 -c "import json;print('\n'.join(sorted(json.load(open('$b/bundle.json'))['images'])))")"
+  # comm's own idea of "sorted" is locale-sensitive too, independent of how the
+  # inputs were sorted — under the default locale it disagrees with the C-order
+  # sort above and silently misbehaves, so force it to the same collation.
+  local missing; missing="$(LC_ALL=C comm -23 <(echo "$expected") <(echo "$have"))"
+  [[ -z "$missing" ]] || die "images required by the tree but absent from the bundle:
+$missing"
+  echo "✓ bundle verified ($(wc -l <<<"$have") images)"
+}
 
 # Dispatch. `_split` and `_harvest-cdn-packages` are exposed so their logic is
 # directly testable without going through the whole of `prepare` — the latter
