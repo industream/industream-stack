@@ -189,7 +189,88 @@ save_images() {
   ( cd "$dest" && find images -type f -print0 | xargs -0 sha256sum > PARTS.sha256 )
 }
 
-harvest_assets(){ :; }   # Task 6
+# Assets are HARVESTED from a real, connected instance, never rebuilt.
+# GRAFANA_HARVEST_TIMEOUT bounds the readiness poll below; overridable so a
+# test running under a stub daemon (where the poll can never truly succeed)
+# does not have to wait out the real-world default.
+: "${GRAFANA_HARVEST_TIMEOUT:=120}"
+harvest_assets() {
+  local dest="$1"
+  local docker_ctx=(); [[ -n "$HARVEST_FROM" ]] && docker_ctx=(--context "$HARVEST_FROM")
+
+  # --- Grafana plugins -------------------------------------------------------
+  # base/monitoring.yml installs these with GF_PLUGINS_PREINSTALL_SYNC, which is
+  # deliberately boot-blocking: offline, a missing plugin means Grafana does not
+  # start at all. GF_PLUGINS_PREINSTALL_SYNC is handled inside grafana-server
+  # itself at startup (it delays "HTTP Server Listen" until every listed
+  # plugin is installed) — there is no `grafana cli` subcommand that triggers
+  # it, so the real server has to actually run. Bind the plugins directory
+  # straight onto the host: grafana writes the finished plugin into it
+  # directly, so there is nothing left to re-implement or copy out afterwards.
+  echo "▶ assets: grafana plugins"
+  # shellcheck disable=SC1091
+  set -a; source "$HERE/versions.env"; set +a
+  local preinstall="yesoreyeram-infinity-datasource,marcusolsson-json-datasource,volkovlabs-echarts-panel${GRAFANA_DATABRIDGE_PLUGIN}"
+  mkdir -p "$dest/assets/grafana-plugins"
+
+  local plugin_ids; plugin_ids="$(tr ',' '\n' <<<"$preinstall" | cut -d@ -f1)"
+  local cid
+  cid="$(docker "${docker_ctx[@]}" run -d --rm \
+    -e "GF_PLUGINS_PREINSTALL_SYNC=$preinstall" \
+    -e GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=industream-databridge-datasource,industream-hubbridge-app \
+    -v "$dest/assets/grafana-plugins:/var/lib/grafana/plugins" \
+    "grafana/grafana-oss:${GRAFANA_VERSION}")"
+
+  # Poll for every plugin in the sync list rather than trusting a fixed sleep
+  # or a log line: Grafana 13 also background-installs its own bundled apps
+  # (pyroscope, explore-traces, ...) on the same container, unrelated to our
+  # list, so "the container is quiet" is not a valid readiness signal here.
+  local waited=0 id ready
+  while (( waited < GRAFANA_HARVEST_TIMEOUT )); do
+    ready=true
+    for id in $plugin_ids; do
+      [[ -f "$dest/assets/grafana-plugins/$id/plugin.json" ]] || { ready=false; break; }
+    done
+    [[ "$ready" == true ]] && break
+    sleep 1; waited=$(( waited + 1 ))
+  done
+  docker "${docker_ctx[@]}" stop "$cid" >/dev/null 2>&1 || true
+
+  # Grafana's own background app-updater keeps writing to the same mount after
+  # our sync list is done; drop anything that is not one of ours so a plugin
+  # stopped mid-download never ships as a silent fragment.
+  local plugin_dir
+  while IFS= read -r -d '' plugin_dir; do
+    id="$(basename "$plugin_dir")"
+    grep -qx "$id" <<<"$plugin_ids" || rm -rf "${plugin_dir:?}"
+  done < <(find "$dest/assets/grafana-plugins" -mindepth 1 -maxdepth 1 -type d -print0)
+
+  [[ -n "$(ls -A "$dest/assets/grafana-plugins")" ]] \
+    || die "no Grafana plugin was produced — Grafana will not boot offline"
+
+  # --- CDN packages ----------------------------------------------------------
+  # cdn-server (Verdaccio) proxies npmjs and publishes on demand, so offline it
+  # stays empty and FlowMaker boxes lose their definitions. Copy the volumes of
+  # an instance that has ACTUALLY served them. The swarm overlays pin an
+  # explicit `name: ${ENV}-<volume>` (runtime/swarm/core.yml) rather than the
+  # `<project>_<volume>` compose default, so the prefix must follow $ENV, not
+  # a hardcoded stack name.
+  echo "▶ assets: cdn packages"
+  local v vol_prefix
+  if [[ "$RUNTIME" == swarm ]]; then vol_prefix="${ENV}-"; else vol_prefix="${ENV}_"; fi
+  for v in cdn-server-storage cdn-cache-storage; do
+    mkdir -p "$dest/assets/cdn-packages/$v"
+    docker "${docker_ctx[@]}" run --rm \
+      -v "${vol_prefix}${v}:/src:ro" \
+      -v "$dest/assets/cdn-packages/$v:/out" \
+      alpine sh -c 'cp -a /src/. /out/ 2>/dev/null || true'
+  done
+  if [[ -n "${AIRGAP_FAKE_EMPTY_CDN:-}" ]] \
+     || [[ -z "$(find "$dest/assets/cdn-packages" -type f -print -quit)" ]]; then
+    die "CDN cache is empty — harvest from a warmed instance (--harvest-from) or the boxes will have no definition on site"
+  fi
+}
+
 cmd_verify()    { :; }   # Task 7 — same reasoning as cmd_split above.
 
 # Dispatch. `_split` is exposed so the splitting logic is directly testable.
