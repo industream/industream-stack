@@ -26,6 +26,15 @@ BUNDLE="1.0.1"
 
 die() { echo "✗ $*" >&2; exit 1; }
 
+# deploy.sh requires --stack (swarm) / --project (compose) unconditionally, even
+# for --list-images / --print-groups. airgap.sh never deploys, so the value only
+# has to satisfy that guard — shared here so cmd_prepare, group_names, and
+# images_for_group never re-derive it separately.
+deploy_scope_args() {
+  if [[ "$RUNTIME" == swarm ]]; then echo --stack airgap-list-images
+  else echo --project airgap-list-images; fi
+}
+
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -69,12 +78,7 @@ cmd_prepare() {
     | ( cd "$HERE" && xargs -0 -r -I{} cp --parents {} "$dest/tree/unified/" )
 
   local groups_args=(); [[ -n "$GROUP_SET" ]] && groups_args=(--groups "$GROUP_SET")
-  # deploy.sh requires --stack (swarm) / --project (compose) unconditionally —
-  # even for --list-images, which is checked before the flag is otherwise used.
-  # airgap.sh never deploys, so the value only has to satisfy that guard.
-  local scope_args=()
-  if [[ "$RUNTIME" == swarm ]]; then scope_args=(--stack airgap-list-images)
-  else scope_args=(--project airgap-list-images); fi
+  local scope_args; read -ra scope_args <<< "$(deploy_scope_args)"
   echo "▶ resolving the image set"
   local raw_images
   raw_images="$( cd "$HERE" && ./scripts/deploy.sh --runtime "$RUNTIME" --edition "$EDITION" \
@@ -121,11 +125,71 @@ json.dump({
 PY
 }
 
-save_images()   { :; }   # Task 5
+# Split a file that exceeds the cap into numbered parts and drop the original —
+# keeping it would double the bundle's size on the transport medium. Parts are
+# streamed back with `cat parts | zstd -dc | docker load`, so they are never
+# reassembled on the target's disk.
+cmd_split() {
+  local f="$1" cap="$2"
+  [[ "$cap" == 0 ]] && return 0
+  local bytes cap_bytes
+  bytes="$(stat -c%s "$f")"
+  cap_bytes="$(numfmt --from=iec "$cap")"
+  (( bytes <= cap_bytes )) && return 0
+  split -d -a 2 -b "$cap" "$f" "$f."
+  rm -f "$f"
+}
+
+# Grouping, like the list itself, comes from the deploy — never from a table.
+# render-bundles.sh already shipped a hand-maintained TABLE that silently
+# omitted six workers; this must not acquire a second one.
+group_names() {
+  if [[ -n "$GROUP_SET" ]]; then echo "$GROUP_SET"
+  else
+    local scope_args; read -ra scope_args <<< "$(deploy_scope_args)"
+    ( cd "$HERE" && ./scripts/deploy.sh --runtime "$RUNTIME" --edition "$EDITION" \
+        --env "$ENV" --bundle "$BUNDLE" "${scope_args[@]}" --print-groups )
+  fi
+}
+
+# The images of ONE group, intersected with the full set so that a group whose
+# images are all shared with another still yields a coherent tarball.
+images_for_group() {
+  local group="$1" all="$2"
+  local scope_args; read -ra scope_args <<< "$(deploy_scope_args)"
+  comm -12 \
+    <( cd "$HERE" && ./scripts/deploy.sh --runtime "$RUNTIME" --edition "$EDITION" \
+         --env "$ENV" --bundle "$BUNDLE" "${scope_args[@]}" --groups "$group" --list-images | sort -u ) \
+    <( sort -u <<<"$all" )
+}
+
+# One tarball per group. A single archive would deduplicate shared layers best
+# (`docker save` writes each layer once per invocation) but cannot be resumed;
+# per-group tarballs cost some duplication of the workers' shared base layers
+# and buy file-by-file recovery on a flaky transport.
+save_images() {
+  local dest="$1" images="$2" group img
+  for group in $(group_names); do
+    local set; set="$(images_for_group "$group" "$images")"
+    [[ -z "$set" ]] && continue
+    echo "▶ images: $group"
+    for img in $set; do
+      if docker image inspect "$img" >/dev/null 2>&1; then
+        echo "  local  $img"
+      else
+        echo "  pull   $img"
+        docker pull "$img" || die "cannot pull $img — build the bundle from a connected machine"
+      fi
+      UNCOMPRESSED_BYTES=$(( UNCOMPRESSED_BYTES + $(docker image inspect -f '{{.Size}}' "$img" 2>/dev/null || echo 0) ))
+    done
+    # shellcheck disable=SC2086
+    docker save $set | zstd -T0 -3 > "$dest/images/$group.tar.zst"
+    cmd_split "$dest/images/$group.tar.zst" "$MAX_PART_SIZE"
+  done
+  ( cd "$dest" && find images -type f -print0 | xargs -0 sha256sum > PARTS.sha256 )
+}
+
 harvest_assets(){ :; }   # Task 6
-cmd_split()     { :; }   # Task 5 — stubbed here so the dispatch below routes to a
-                         # defined function (shellcheck and any reviewer flag a
-                         # dispatch to a function no file defines).
 cmd_verify()    { :; }   # Task 7 — same reasoning as cmd_split above.
 
 # Dispatch. `_split` is exposed so the splitting logic is directly testable.

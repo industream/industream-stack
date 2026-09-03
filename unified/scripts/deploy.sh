@@ -28,7 +28,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
-RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false LIST_IMAGES=false AIRGAP=false BUNDLE=""
+RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false LIST_IMAGES=false PRINT_GROUPS=false AIRGAP=false BUNDLE=""
 FORGE_SPEC="" FORGE_INTERACTIVE=false   # --forge <exportKey>@<version> | --forge-interactive
 WORKERS_ENABLED=""   # CSV allowlist of flow-box worker services; empty = all
 TYPE="" ATTACH=false
@@ -52,6 +52,7 @@ while [[ $# -gt 0 ]]; do
     --type)      TYPE="$2"; shift 2 ;;
     --render)    RENDER=true; shift ;;
     --list-images) LIST_IMAGES=true; shift ;;
+    --print-groups) PRINT_GROUPS=true; shift ;;
     --airgap)    AIRGAP=true; shift ;;
     -h|--help)   sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -103,6 +104,11 @@ if [[ "$EDITION" != ee ]]; then
     fi
   done
 fi
+
+# --print-groups exits here, right after GROUP_SET is final and before any
+# --stack/--project/FORGE side effect — airgap.sh's group_names() needs the
+# resolved footprint without paying for any of that.
+if [[ "$PRINT_GROUPS" == true ]]; then echo "$GROUP_SET"; exit 0; fi
 
 # ---- FORGE: materialize a bundle from the Forge API (optional source) --------
 # --forge <exportKey>@<version> (non-interactive, CI-friendly) or
