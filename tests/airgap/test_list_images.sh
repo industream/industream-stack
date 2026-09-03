@@ -39,6 +39,15 @@ pass "--groups narrows the list"
 # No duplicates: a duplicate would be saved twice into the bundle.
 assert_eq "$(sort <<<"$ce" | uniq -d | wc -l)" "0" "list has no duplicates"
 
+# --print-groups: the resolved GROUP_SET (airgap.sh's group_names() source of
+# truth), never a second hand-maintained list.
+pg_default="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-pg --edition ce "${BUNDLE_ARGS[@]}" --print-groups)"
+assert_eq "$pg_default" "core flowmaker datacatalog workers data monitoring" "--print-groups prints the default CE group set"
+assert_eq "$(wc -l <<<"$pg_default")" "1" "--print-groups emits nothing else on stdout"
+
+pg_narrow="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-pg-narrow --edition ce "${BUNDLE_ARGS[@]}" --groups "core flowmaker" --print-groups)"
+assert_eq "$pg_narrow" "core flowmaker" "--groups narrows --print-groups"
+
 # The flag must not deploy anything (check from the last invocation's docker log).
 # The docker stub records all invocations to DOCKER_LOG during the with_docker_stub call.
 # We need to verify it again with a fresh stub to check for stack deploy.

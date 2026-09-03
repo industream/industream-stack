@@ -105,11 +105,6 @@ if [[ "$EDITION" != ee ]]; then
   done
 fi
 
-# --print-groups exits here, right after GROUP_SET is final and before any
-# --stack/--project/FORGE side effect — airgap.sh's group_names() needs the
-# resolved footprint without paying for any of that.
-if [[ "$PRINT_GROUPS" == true ]]; then echo "$GROUP_SET"; exit 0; fi
-
 # ---- FORGE: materialize a bundle from the Forge API (optional source) --------
 # --forge <exportKey>@<version> (non-interactive, CI-friendly) or
 # --forge-interactive (menu) download a release bundle's .env.* from Forge into
@@ -624,6 +619,8 @@ if [[ "$RUNTIME" == compose ]]; then
     )
     exit 0
   fi
+  # Same reasoning as --list-images above: print and exit before any side effect.
+  if [[ "$PRINT_GROUPS" == true ]]; then echo "$GROUP_SET"; exit 0; fi
   if [[ "$EDITION" == ee ]]; then check_compose_domains; ensure_grafana_oidc_secret; fi
   # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
   # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
@@ -660,6 +657,8 @@ else
     resolve_image_list "${_li_files[@]}"
     exit 0
   fi
+  # Same reasoning as --list-images above: print and exit before any side effect.
+  if [[ "$PRINT_GROUPS" == true ]]; then echo "$GROUP_SET"; exit 0; fi
   [[ "$EDITION" == ee ]] && ensure_grafana_oidc_secret
   # `docker stack deploy` interpolates ${VAR} from the PROCESS env (not
   # --env-file), and unlike `compose config` it handles ${ENV}-* network/secret
