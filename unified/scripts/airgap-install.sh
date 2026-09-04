@@ -112,7 +112,12 @@ sync_tree() {
   if [[ -d "$TARGET/unified" ]]; then
     local snap; snap="$TARGET/backups/tree-$(date +%Y%m%d-%H%M%S).tar.gz"
     echo "▶ snapshotting the current tree → $snap"
-    tar czf "$snap" -C "$TARGET" --exclude=backups .
+    # Anchored the same way as the rsync excludes below: an unanchored
+    # 'backups' pattern also matches tar member names at any depth (tar
+    # anchors with a leading '/' relative to the archive root, same idea as
+    # rsync), so it silently dropped scripts/backups/*.sh from the snapshot
+    # too — the recovery path is the last place to want that surprise.
+    tar czf "$snap" -C "$TARGET" --exclude=/backups .
   fi
   echo "▶ syncing the tree"
   # Every exclusion below is anchored with a leading '/'. Unanchored, rsync

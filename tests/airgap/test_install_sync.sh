@@ -38,6 +38,13 @@ echo "s3cret"               > "$target/secrets/prod/hub_backend_admin_password"
 echo "instance-data"        > "$target/unified/instances/site.yml"
 echo "deploy-state-data"    > "$target/.deploy-state/state.json"
 
+# Pre-existing scripts/backups/ tooling on the target, so this run's
+# pre-sync `tar` snapshot (taken because $target/unified already exists)
+# actually has something under that name to snapshot — proving the snapshot
+# itself doesn't drop it the same way the sync's rsync excludes used to.
+mkdir -p "$target/scripts/backups"
+echo "existing-backup-tool" > "$target/scripts/backups/existing-tool.sh"
+
 with_docker_stub bash "$bundle/install.sh" --target "$target" --yes --no-deploy >/dev/null 2>&1 || true
 
 assert_eq "$(cat "$target/unified/.env.prod")" "SITE_SECRET=keepme" ".env.<env> survives the sync"
@@ -53,6 +60,18 @@ assert_eq "$(cat "$target/scripts/backups/regression-marker.sh")" "backup-toolin
 pass "AIRGAP_VERSION written"
 [[ -n "$(ls "$target/backups" 2>/dev/null)" ]] || fail "no rollback snapshot was taken"
 pass "a rollback snapshot was taken"
+
+# The snapshot tar's own --exclude had the identical unanchored-pattern bug
+# as the rsync excludes above: an unanchored 'backups' also matches
+# scripts/backups/ at depth, so a restore from an incident would hand back
+# a tree with no backup tooling. Extract the tarball and prove the
+# pre-existing scripts/backups/ file rode along.
+snap="$(ls "$target"/backups/tree-*.tar.gz 2>/dev/null | head -1)"
+[[ -n "$snap" ]] || fail "no rollback snapshot tarball found"
+snap_extract="$(mktemp -d)"
+tar xzf "$snap" -C "$snap_extract"
+assert_eq "$(cat "$snap_extract/scripts/backups/existing-tool.sh")" "existing-backup-tool" \
+  "the rollback snapshot keeps scripts/backups/ tooling too, not just \$TARGET/backups/"
 
 # Assets must be seeded on EVERY run, not only the first: a bumped
 # GRAFANA_DATABRIDGE_PLUGIN would otherwise send Grafana looking for a version
