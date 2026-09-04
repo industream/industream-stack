@@ -70,9 +70,13 @@ PY
 ( cd "$bundle2" && find images -type f -print0 | xargs -0 sha256sum > PARTS.sha256 )
 ( cd "$bundle2" && find . -type f ! -name MANIFEST.sha256 -print0 | xargs -0 sha256sum > MANIFEST.sha256 )
 
+# DEPLOY_TIMEOUT bounds deploy.sh's own convergence-poll loop, now that
+# install.sh's success path reaches it (Task 10) — the stub `docker stack
+# services` reports no services, so without this every run below would spin
+# for the real 600s default before giving up (same fix as test_airgap_flag.sh).
 install2_out="$(mktemp)"
 install2_status=0
-with_docker_stub bash "$bundle2/install.sh" --target "$(mktemp -d)" --yes > "$install2_out" 2>&1 \
+DEPLOY_TIMEOUT=1 with_docker_stub bash "$bundle2/install.sh" --target "$(mktemp -d)" --yes > "$install2_out" 2>&1 \
   || install2_status=$?
 assert_eq "$install2_status" "0" "install.sh exits 0 on a valid bundle with images to load"
 load_count="$(grep -c '^load' "$DOCKER_LOG" 2>/dev/null || true)"
@@ -91,14 +95,14 @@ with_timedatectl_stub() {
 }
 
 clock_out="$(mktemp)"
-with_docker_stub with_timedatectl_stub no bash "$bundle2/install.sh" \
+DEPLOY_TIMEOUT=1 with_docker_stub with_timedatectl_stub no bash "$bundle2/install.sh" \
   --target "$(mktemp -d)" --yes > "$clock_out" 2>&1 || true
 grep -q "NTP-synchronised" "$clock_out" \
   || fail "no warning printed when timedatectl reports NTPSynchronized=no"
 pass "clock preflight warns when the clock is not NTP-synchronised"
 
 clock_out2="$(mktemp)"
-with_docker_stub with_timedatectl_stub yes bash "$bundle2/install.sh" \
+DEPLOY_TIMEOUT=1 with_docker_stub with_timedatectl_stub yes bash "$bundle2/install.sh" \
   --target "$(mktemp -d)" --yes > "$clock_out2" 2>&1 || true
 if grep -q "NTP-synchronised" "$clock_out2"; then
   fail "a warning was printed even though timedatectl reports NTPSynchronized=yes"
@@ -128,7 +132,7 @@ without_timedatectl() {
 
 clock_out3="$(mktemp)"
 clock3_status=0
-without_timedatectl with_docker_stub bash "$bundle2/install.sh" \
+DEPLOY_TIMEOUT=1 without_timedatectl with_docker_stub bash "$bundle2/install.sh" \
   --target "$(mktemp -d)" --yes > "$clock_out3" 2>&1 || clock3_status=$?
 assert_eq "$clock3_status" "0" "install.sh still succeeds when timedatectl is entirely absent"
 if grep -q "NTP-synchronised" "$clock_out3"; then
