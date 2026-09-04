@@ -226,6 +226,12 @@ This run writes the manifest, so the **next** update prunes normally; the
 gap is one update wide, not permanent. If a real stale file is a known
 concern on such a site, check the warning's output and remove it by hand.
 
+That case — an older site, installed before bundles existed, being brought
+up to a current bundle offline — has its own step-by-step with a verifiable
+signal at each step: [`airgap-update-legacy-site.md`](airgap-update-legacy-site.md).
+Follow it rather than this section when the site has no
+`AIRGAP_TREE_MANIFEST`.
+
 ---
 
 ## 5. Roll back
