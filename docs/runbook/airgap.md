@@ -252,10 +252,12 @@ on disk from the earlier install — nothing is re-fetched), and redeploys.
 
 ## Never do this
 
-- **Never run a teardown against this platform.** `deploy.sh`'s teardown
-  removes `caddy_data`, which holds the CA — deleting it invalidates the
-  certificate every workstation on site has already trusted. `install.sh`
-  deliberately exposes **no** flag that reaches it.
+- **Never run `scripts/uninstall.sh` against a customer site.** It is the
+  destructive path in this repo — it removes the stack, its secrets, **every
+  `${ENV}-*` volume (i.e. the databases)**, the network and the generated
+  files. It confirms at each step, but a confirmed mistake is still a
+  mistake. `deploy.sh` itself has no teardown flag, and `install.sh`
+  deliberately exposes **no** flag that reaches either.
 - **Never `git reset --hard` (or a bare `cp -r`) on the site checkout.**
   Both have already destroyed untracked site state on real installs. The
   only supported way to update the tree is `install.sh` itself, which syncs

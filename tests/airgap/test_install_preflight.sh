@@ -19,8 +19,11 @@ grep -q 'clock\|chrony\|timedatectl' "$REPO_ROOT/unified/scripts/airgap-install.
   || fail "no clock preflight"
 pass "clock preflight present"
 
-# install.sh must never offer a teardown: deploy.sh --down destroys caddy_data,
-# hence the CA, hence every workstation that trusted the certificate.
+# install.sh must never offer a teardown. The destructive path in this repo is
+# scripts/uninstall.sh, which removes the stack, its secrets, every ${ENV}-*
+# volume (the databases), the network and the generated files. Neither
+# deploy.sh nor install.sh has a --down flag today; this assertion is what
+# keeps it that way, so that no bundle shipped to a site can reach a teardown.
 if grep -q -- '--down' "$REPO_ROOT/unified/scripts/airgap-install.sh"; then
   fail "install.sh exposes --down"
 fi
