@@ -75,7 +75,22 @@ cmd_prepare() {
   local commit; commit="$(git -C "$REPO" rev-parse --short HEAD)"
   local name="industream-airgap-${commit}-${EDITION}-${RUNTIME}"
   local dest="$OUT/$name"
-  rm -rf "$dest"; mkdir -p "$dest/tree" "$dest/images" "$dest/assets" "$dest/os"
+
+  # A previous run may have left $dest containing Grafana's harvested plugins,
+  # which harvest_grafana_plugins writes as uid 472 (the image's uid, never the
+  # host user) inside directories that end up mode 755 — the host user has no
+  # write bit on those, so a host-side `rm -rf "$dest"` fails with Permission
+  # denied on the second `prepare` into the same --out. Wipe it from inside a
+  # disposable container instead, root over the mount, exactly like the
+  # 472-owned fragment cleanup in harvest_grafana_plugins below. $dest itself
+  # cannot be the mount source and also be the thing removed, so mount its
+  # parent ($OUT) and delete the child by name; that also means $dest simply
+  # not existing yet (first run) is a normal no-op, no existence check needed.
+  mkdir -p "$OUT"
+  # shellcheck disable=SC1091
+  set -a; source "$HERE/versions.env"; set +a
+  docker run --rm -v "$OUT:/out" "alpine:${ALPINE_VERSION}" rm -rf -- "/out/$name"
+  mkdir -p "$dest/tree" "$dest/images" "$dest/assets" "$dest/os"
 
   echo "▶ tree (git archive $commit)"
   git -C "$REPO" archive HEAD | tar -x -C "$dest/tree"
