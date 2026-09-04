@@ -235,6 +235,8 @@ Stated honestly, because a runbook that overclaims is worse than none:
 | Bundle build, verify, transport, image load | Exercised on a genuinely isolated VM (no default route, DNS dead) |
 | Fresh install of the full platform | Exercised — 37 services, 35 at 1/1 |
 | Tree sync preserving site state, manifest-diff pruning | Covered by `tests/airgap/test_install_sync.sh`, including the two data-loss regressions that were found the hard way |
-| The legacy-site update above, end to end on a real site | **Not yet exercised on a real customer site** — the first delivery is also its first real run |
+| **The legacy-site update above (steps 5–6)** | Exercised on the isolated VM against a genuine pre-airgap tree plus 10 files of site-local state: the warning printed, nothing was pruned, all 10 files verified byte-for-byte, and the manifest was written with 279 entries |
+| **The second update, with pruning active** | Exercised on the same site: `removed 1 path(s)` — the retired file and only it; the site's own file at an excluded path survived |
+| The procedure against a real customer site | **Not yet run.** The bench proves the mechanics; a customer site has state no bench invents. Do steps 3 and 6 for real. |
 | `check-signals.sh` | **Has never produced a verdict on any install** |
 | CDN packages actually served to a FlowMaker box | **Not verified** — "the packages are in the bundle" and "the boxes resolve" are two different claims |
