@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+cd "$REPO_ROOT/unified"
+out="$(mktemp -d)"; target="$(mktemp -d)"
+bundle="$(with_docker_stub ./scripts/airgap.sh prepare --runtime swarm --edition ce \
+  --out "$out" --skip-images --skip-assets | tail -1)"
+
+# Disk space is checked on /var/lib/containerd as well as /var/lib/docker:
+# Docker 29 stores images in the former (22GB vs 4KB measured), and checking
+# only the latter is how a machine froze mid-install.
+assert_contains "$(grep -c 'containerd' "$REPO_ROOT/unified/scripts/airgap-install.sh")" "" ""
+grep -q '/var/lib/containerd' "$REPO_ROOT/unified/scripts/airgap-install.sh" \
+  || fail "the disk preflight ignores /var/lib/containerd"
+pass "disk preflight covers containerd"
+
+# Clock drift breaks proxy TLS and Hub JWT with errors that never mention time.
+grep -q 'clock\|chrony\|timedatectl' "$REPO_ROOT/unified/scripts/airgap-install.sh" \
+  || fail "no clock preflight"
+pass "clock preflight present"
+
+# install.sh must never offer a teardown: deploy.sh --down destroys caddy_data,
+# hence the CA, hence every workstation that trusted the certificate.
+if grep -q -- '--down' "$REPO_ROOT/unified/scripts/airgap-install.sh"; then
+  fail "install.sh exposes --down"
+fi
+pass "install.sh exposes no --down"
+
+# A bundle that does not verify must stop before Docker is touched.
+# `with_docker_stub ... | tail -1` — or wrapping it in $(...) at all — would
+# run the stub setup (which exports $DOCKER_LOG) in a subshell, discarding the
+# export before this script could read the log back; capture to a file with
+# plain redirection instead, as test_prepare_images.sh does.
+echo tampered >> "$bundle/tree/unified/versions.env"
+install_out="$(mktemp)"
+with_docker_stub bash "$bundle/install.sh" --target "$target" --yes > "$install_out" 2>&1 || true
+out_log="$(cat "$install_out")"
+assert_contains "$out_log" "manifest mismatch" "install stops on a bad manifest"
+if grep -q "load" "$DOCKER_LOG" 2>/dev/null; then fail "install loaded images despite a bad manifest"; fi
+pass "no image was loaded after a failed verification"
+
+# --- success path: a valid bundle must actually load, both unsplit and split ---
+# `cat "$base" "$base".NN` always fed `cat` one path guaranteed not to exist
+# (the unsuffixed original for a split group; the ".NN" glob for an unsplit
+# one), so `cat` exited 1 even though it streamed everything real — and under
+# `pipefail`, that killed the script before any group finished. Build two
+# fixture groups (one whole, one split) to prove the load actually completes.
+# (lib.sh's docker stub now drains "load"'s stdin, matching a real `docker
+# load` — see with_docker_stub in lib.sh.)
+out2="$(mktemp -d)"
+prep2_out="$(mktemp)"
+with_docker_stub ./scripts/airgap.sh prepare --runtime swarm --edition ce \
+  --out "$out2" --skip-images --skip-assets > "$prep2_out"
+bundle2="$(tail -1 "$prep2_out")"
+
+fake_tar="$(mktemp)"; head -c 200000 /dev/urandom > "$fake_tar"
+zstd -q -3 -f -o "$bundle2/images/core.tar.zst" "$fake_tar"          # unsplit group
+zstd -q -3 -f -o "$fake_tar.zst" "$fake_tar"
+split -d -a 2 -b 60000 "$fake_tar.zst" "$bundle2/images/workers.tar.zst."
+rm -f "$bundle2/images/workers.tar.zst"                              # cmd_split removes the original
+rm -f "$fake_tar" "$fake_tar.zst"
+
+# bundle.json's uncompressed_bytes must stay small enough that the fixture
+# "passes" the disk preflight on any machine running this test.
+python3 - "$bundle2/bundle.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d["uncompressed_bytes"] = 1024
+json.dump(d, open(p, "w"))
+PY
+( cd "$bundle2" && find images -type f -print0 | xargs -0 sha256sum > PARTS.sha256 )
+( cd "$bundle2" && find . -type f ! -name MANIFEST.sha256 -print0 | xargs -0 sha256sum > MANIFEST.sha256 )
+
+# DEPLOY_TIMEOUT bounds deploy.sh's own convergence-poll loop, now that
+# install.sh's success path reaches it (Task 10) — the stub `docker stack
+# services` reports no services, so without this every run below would spin
+# for the real 600s default before giving up (same fix as test_airgap_flag.sh).
+install2_out="$(mktemp)"
+install2_status=0
+DEPLOY_TIMEOUT=1 with_docker_stub bash "$bundle2/install.sh" --target "$(mktemp -d)" --yes > "$install2_out" 2>&1 \
+  || install2_status=$?
+assert_eq "$install2_status" "0" "install.sh exits 0 on a valid bundle with images to load"
+load_count="$(grep -c '^load' "$DOCKER_LOG" 2>/dev/null || true)"
+# 3, not 2: airgap.sh prepare now always saves the pinned alpine tooling
+# image into its own images/tooling.tar.zst group (regardless of
+# --skip-images), alongside this fixture's two fabricated platform groups
+# (unsplit "core" and split "workers").
+assert_eq "$load_count" "3" "docker load ran once per group (unsplit, split, and the tooling image)"
+
+# --- clock preflight: exercise both the warning and the skip branches ---
+# A stub `timedatectl` prepended on PATH (same host-safe pattern as
+# with_docker_stub) drives the "not synchronised" warning without touching
+# the real clock.
+with_timedatectl_stub() {
+  local synced="$1"; shift
+  local td_dir; td_dir="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\necho %s\n' "$synced" > "$td_dir/timedatectl"
+  chmod +x "$td_dir/timedatectl"
+  PATH="$td_dir:$PATH" "$@"
+}
+
+clock_out="$(mktemp)"
+DEPLOY_TIMEOUT=1 with_docker_stub with_timedatectl_stub no bash "$bundle2/install.sh" \
+  --target "$(mktemp -d)" --yes > "$clock_out" 2>&1 || true
+grep -q "NTP-synchronised" "$clock_out" \
+  || fail "no warning printed when timedatectl reports NTPSynchronized=no"
+pass "clock preflight warns when the clock is not NTP-synchronised"
+
+clock_out2="$(mktemp)"
+DEPLOY_TIMEOUT=1 with_docker_stub with_timedatectl_stub yes bash "$bundle2/install.sh" \
+  --target "$(mktemp -d)" --yes > "$clock_out2" 2>&1 || true
+if grep -q "NTP-synchronised" "$clock_out2"; then
+  fail "a warning was printed even though timedatectl reports NTPSynchronized=yes"
+fi
+pass "clock preflight is silent when the clock is synchronised"
+
+# `command -v timedatectl` absent must skip the check, not fail the install.
+# Mirror every real PATH directory into one flat stub dir via symlinks,
+# EXCLUDING timedatectl specifically — this hides only that one binary
+# without disturbing anything else the script (or deploy.sh underneath it)
+# needs to resolve.
+without_timedatectl() {
+  local mirror; mirror="$(mktemp -d)"
+  local d f name
+  IFS=: read -ra dirs <<< "$PATH"
+  for d in "${dirs[@]}"; do
+    [[ -d "$d" ]] || continue
+    for f in "$d"/*; do
+      [[ -f "$f" && -x "$f" ]] || continue
+      name="$(basename "$f")"
+      [[ "$name" == timedatectl ]] && continue
+      [[ -e "$mirror/$name" ]] || ln -s "$f" "$mirror/$name" 2>/dev/null || true
+    done
+  done
+  PATH="$mirror" "$@"
+}
+
+clock_out3="$(mktemp)"
+clock3_status=0
+DEPLOY_TIMEOUT=1 without_timedatectl with_docker_stub bash "$bundle2/install.sh" \
+  --target "$(mktemp -d)" --yes > "$clock_out3" 2>&1 || clock3_status=$?
+assert_eq "$clock3_status" "0" "install.sh still succeeds when timedatectl is entirely absent"
+if grep -q "NTP-synchronised" "$clock_out3"; then
+  fail "a clock warning was printed even though timedatectl does not exist"
+fi
+pass "clock preflight silently skips when timedatectl is absent"
+
+# --- regression: seed_assets must use the PINNED tooling tag, never bare `alpine` ---
+# Scoped to the actual `docker run` line inside seed_volume, not a whole-file
+# grep: die()'s own message below deliberately explains the failure using the
+# bare word "alpine" in prose, which a whole-file guard would misfire on.
+run_line="$(grep 'docker run --rm -v "\$vol:/dest"' "$REPO_ROOT/unified/scripts/airgap-install.sh")"
+assert_contains "$run_line" 'alpine:${ALPINE_VERSION}' "seed_volume references the pinned alpine tag"
+if grep -qE '"\$src:/src:ro" alpine[[:space:]]' "$REPO_ROOT/unified/scripts/airgap-install.sh"; then
+  fail "seed_volume still uses a bare (unpinned) alpine reference"
+fi
+pass "no bare alpine reference in seed_volume"
+
+# --- regression: a bundle that predates shipping the tooling image must die
+# with a message that names the problem, not docker's opaque registry-lookup
+# error. Take an otherwise-valid bundle and strip out exactly the tooling
+# tarball, re-signing the manifests so the failure exercised is the tooling
+# check itself, not an unrelated checksum mismatch.
+old_bundle="$(with_docker_stub ./scripts/airgap.sh prepare --runtime swarm --edition ce \
+  --out "$(mktemp -d)" --skip-images --skip-assets | tail -1)"
+rm -f "$old_bundle/images/tooling.tar.zst"
+( cd "$old_bundle" && find images -type f -print0 | xargs -0 sha256sum > PARTS.sha256 )
+( cd "$old_bundle" && find . -type f ! -name MANIFEST.sha256 -print0 | xargs -0 sha256sum > MANIFEST.sha256 )
+old_out="$(mktemp)"
+with_docker_stub bash "$old_bundle/install.sh" --target "$(mktemp -d)" --yes --no-deploy \
+  > "$old_out" 2>&1 || true
+assert_contains "$(cat "$old_out")" "no tooling image shipped" \
+  "install.sh names the problem for a bundle that predates the tooling image fix"
