@@ -115,17 +115,22 @@ sync_tree() {
     tar czf "$snap" -C "$TARGET" --exclude=backups .
   fi
   echo "▶ syncing the tree"
-  # Anchored to the transfer root: an unanchored '.env.*' matches at ANY depth,
-  # which also hid every releases/bundle-platform-*/.env.<group> file from the
-  # sync — deploy.sh then failed with "No such file or directory" globbing its
-  # own bundle dir, only surfacing once install.sh actually called it (Task 10).
+  # Every exclusion below is anchored with a leading '/'. Unanchored, rsync
+  # matches the pattern as a suffix at ANY depth, not just at the transfer
+  # root — that bit twice already: an unanchored '.env.*' also hid every
+  # releases/bundle-platform-*/.env.<group> file, so deploy.sh failed
+  # globbing its own bundle dir (only surfacing once install.sh actually
+  # called it, Task 10); an unanchored 'backups/' also caught the
+  # git-tracked scripts/backups/*.sh tooling and silently dropped it from
+  # every install and update. '/backups/' below means only $TARGET/backups,
+  # the snapshot dir this function creates above.
   rsync -a --delete \
     --exclude='/unified/.env.*' \
-    --exclude='secrets/' \
-    --exclude='unified/custom/' \
-    --exclude='unified/instances/' \
-    --exclude='.deploy-state/' \
-    --exclude='backups/' \
+    --exclude='/secrets/' \
+    --exclude='/unified/custom/' \
+    --exclude='/unified/instances/' \
+    --exclude='/.deploy-state/' \
+    --exclude='/backups/' \
     "$BUNDLE/tree/" "$TARGET/"
   # The checkout is knowingly detached from origin: offline it will never take
   # another `git pull`, so record what it actually holds.

@@ -136,10 +136,10 @@ bundle was built.
    Budget roughly **50 GB free** for a full platform install.
 2. **Image load** — streamed straight into `docker load`, never reassembled
    to disk.
-3. **Tree sync** — `rsync` with hard exclusions for site-local state
-   (`.env.*`, `secrets/`, `unified/custom/`, `unified/instances/`,
-   `.deploy-state/`, `backups/`), preceded by a timestamped snapshot under
-   `backups/`.
+3. **Tree sync** — `rsync` with hard, root-anchored exclusions for site-local
+   state (`/unified/.env.*`, `/secrets/`, `/unified/custom/`,
+   `/unified/instances/`, `/.deploy-state/`, `/backups/`), preceded by a
+   timestamped snapshot under `backups/`.
 4. **Asset seeding** — Grafana plugins and CDN packages, into
    `${ENV}-<volume>` (swarm) or `<project>_<volume>` (compose).
 5. **Deploy** — `deploy.sh --airgap` with the runtime/edition/env/groups/

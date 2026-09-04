@@ -20,6 +20,15 @@ echo '{}' > "$bundle/assets/grafana-plugins/industream-databridge-datasource/plu
 echo "pkg" > "$bundle/assets/cdn-packages/cdn-server-storage/some.tgz"
 echo "pkg" > "$bundle/assets/cdn-packages/cdn-cache-storage/some.tgz"
 
+# The bundle's own content must ARRIVE, not just survive alongside site state.
+# scripts/backups/ is git-tracked tooling shipped in every bundle (git archive
+# puts it in $bundle/tree/scripts/backups/) and is unrelated to $TARGET/backups/,
+# the rollback-snapshot dir install.sh creates at the transfer root — an
+# unanchored '--exclude=backups/' pattern used to conflate the two and drop
+# this tooling from every install. A marker file here needs no MANIFEST.sha256
+# regeneration, same as the asset fixtures above.
+echo "backup-tooling-marker" > "$bundle/tree/scripts/backups/regression-marker.sh"
+
 # Pre-existing site state that MUST survive an update. All five have already
 # been clobbered on these hosts.
 mkdir -p "$target/unified/custom" "$target/secrets/prod" "$target/unified/instances" "$target/.deploy-state"
@@ -38,6 +47,8 @@ assert_eq "$(cat "$target/unified/instances/site.yml")" "instance-data" "unified
 assert_eq "$(cat "$target/.deploy-state/state.json")" "deploy-state-data" ".deploy-state/ survives the sync"
 [[ -f "$target/unified/scripts/deploy.sh" ]] || fail "the tree was not synced"
 pass "the tree was synced"
+assert_eq "$(cat "$target/scripts/backups/regression-marker.sh")" "backup-tooling-marker" \
+  "scripts/backups/ tooling reaches the target, not just the rollback snapshot dir"
 [[ -f "$target/AIRGAP_VERSION" ]] || fail "AIRGAP_VERSION not written"
 pass "AIRGAP_VERSION written"
 [[ -n "$(ls "$target/backups" 2>/dev/null)" ]] || fail "no rollback snapshot was taken"
