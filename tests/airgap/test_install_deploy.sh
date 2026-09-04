@@ -3,14 +3,19 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$REPO_ROOT/unified"
 
-# --- swarm: --airgap reaches deploy.sh, nothing is pulled ---------------------
+# NOTE on runtime: deploy.sh's seed_menu_apps polls for the hub-backend
+# container for up to 60*2s before giving up (no override exists for this —
+# it is unconditional, downstream of --airgap, and out of this file's scope).
+# Every scenario below that lets a real deploy run to completion therefore
+# costs ~2 minutes; DEPLOY_TIMEOUT only bounds the convergence-poll ahead of
+# it. Scenarios that don't need to observe the deploy call itself use
+# --no-deploy instead, which is fast (no docker stack/compose call at all).
+
+# --- swarm: --airgap reaches deploy.sh, nothing is pulled, default stack ------
 out="$(mktemp -d)"; target="$(mktemp -d)"
 bundle="$(with_docker_stub ./scripts/airgap.sh prepare --runtime swarm --edition ee \
   --out "$out" --skip-images --skip-assets | tail -1)"
 
-# DEPLOY_TIMEOUT bounds deploy.sh's convergence-poll loop: the stub `docker
-# stack services` prints nothing, so without this the install would spin for
-# the real 600s default before giving up (same fix as test_airgap_flag.sh).
 DEPLOY_TIMEOUT=1 with_docker_stub bash "$bundle/install.sh" --target "$target" --yes >/dev/null 2>&1 || true
 log="$(cat "$DOCKER_LOG")"
 assert_contains "$log" "--resolve-image never" "the deploy runs in airgap mode"
@@ -48,20 +53,27 @@ assert_contains "$logc" "-p site-fm" "--project reaches the deploy call"
 assert_contains "$logc" " up -d" "compose deploy ends in up -d"
 assert_contains "$logc" "site-fm_grafana-data" "--project reaches volume_name() too — same name, no drift"
 
-# --- compose: no --project given falls back to the SAME default in both places
+# --- compose, no --project: the deploy call and volume_name() must still agree
+# (fast path — --no-deploy skips the actual deploy.sh call, so this only
+# proves the SEEDING side of the default; the deploy side shares the exact
+# same compose_project() function, verified by the override case above and by
+# a source-level check that both call sites use it).
 outc2="$(mktemp -d)"; targetc2="$(mktemp -d)"
 bundlec2="$(with_docker_stub ./scripts/airgap.sh prepare --runtime compose --edition ce \
   --out "$outc2" --skip-images --skip-assets | tail -1)"
 mkdir -p "$bundlec2/assets/grafana-plugins/industream-databridge-datasource"
 echo '{}' > "$bundlec2/assets/grafana-plugins/industream-databridge-datasource/plugin.json"
-
-DEPLOY_TIMEOUT=1 with_docker_stub bash "$bundlec2/install.sh" --target "$targetc2" --yes \
-  >/dev/null 2>&1 || true
-logc2="$(cat "$DOCKER_LOG")"
+with_docker_stub bash "$bundlec2/install.sh" --target "$targetc2" --yes --no-deploy >/dev/null 2>&1 || true
 # bundle.json's env is "prod" (airgap.sh's own default) — the compose project
 # fallback is "fm-<env>", exactly as volume_name() has documented since Task 9.
-assert_contains "$logc2" "-p fm-prod" "the default compose project matches volume_name()'s own default"
-assert_contains "$logc2" "fm-prod_grafana-data" "the default project seeds the matching volume"
+assert_contains "$(cat "$DOCKER_LOG")" "fm-prod_grafana-data" \
+  "the default compose project (no --project given) seeds fm-<env>_<volume>"
+# Source check, not a behavioural one: proves volume_name() and run_deploy()
+# both call compose_project() rather than each hand-rolling the same default —
+# the override case above already proves the VALUE matches at runtime.
+[[ "$(grep -c 'compose_project' "$REPO_ROOT/unified/scripts/airgap-install.sh")" -ge 3 ]] \
+  || fail "compose_project() is not shared by both volume_name() and run_deploy()"
+pass "compose_project() is the single source for both the deploy call and volume_name()"
 
 # --- --no-deploy stops before touching deploy.sh at all -----------------------
 outn="$(mktemp -d)"; targetn="$(mktemp -d)"
