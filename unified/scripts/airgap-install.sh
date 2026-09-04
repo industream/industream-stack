@@ -107,9 +107,24 @@ load_images() {
 # Never `git reset --hard`, never a bare `cp -r`: both have already destroyed
 # untracked site state on these hosts. rsync with hard exclusions, after a
 # snapshot that makes the previous tree recoverable.
+#
+# Deletion is no longer "wipe everything the bundle doesn't ship, minus a
+# hand-maintained exclude list" — that blocklist already deleted a real
+# site's TLS certs once (unified/base/certs/ was simply missing from it) and
+# every unlisted path is the same latent bug. Deletion is now allowlist-based
+# instead: prune_stale_tree_paths() below removes only paths a PREVIOUS
+# bundle actually delivered and this one no longer ships (tracked via
+# AIRGAP_TREE_MANIFEST on the target), so a path nobody thought to exclude is
+# structurally safe — it was never a bundle path, so it can never be a
+# deletion candidate. The exclude list stays as defence in depth on the copy
+# side (never overwrite site-local state even if a bundle somehow shipped a
+# same-named path); it is no longer the only thing standing between an
+# update and data loss.
 sync_tree() {
   mkdir -p "$TARGET/backups"
+  local is_update=false
   if [[ -d "$TARGET/unified" ]]; then
+    is_update=true
     local snap; snap="$TARGET/backups/tree-$(date +%Y%m%d-%H%M%S).tar.gz"
     echo "▶ snapshotting the current tree → $snap"
     # tar's exclude anchoring is NOT the same idea as rsync's: with
@@ -145,7 +160,13 @@ sync_tree() {
   # regenerating the cert also invalidates the CA every workstation on site
   # already trusted — the same class of harm the missing teardown flag
   # deliberately avoids.
-  rsync -a --delete \
+  #
+  # No `--delete` here on purpose — see the comment above this function.
+  # Copying only ever adds/updates paths this bundle ships; it never removes
+  # anything, so a forgotten exclude entry can no longer cost a site its
+  # certs. Stale-path removal happens explicitly below, from the manifest
+  # diff, once the copy has landed.
+  rsync -a \
     --exclude='/unified/.env.*' \
     --exclude='/secrets/' \
     --exclude='/unified/custom/' \
@@ -154,10 +175,70 @@ sync_tree() {
     --exclude='/.deploy-state/' \
     --exclude='/backups/' \
     "$BUNDLE/tree/" "$TARGET/"
+
+  prune_stale_tree_paths "$is_update"
+
   # The checkout is knowingly detached from origin: offline it will never take
   # another `git pull`, so record what it actually holds.
   printf 'commit=%s\nbundle=%s\ninstalled=%s\n' \
     "$(json_get commit)" "$(basename "$BUNDLE")" "$(date -Is)" > "$TARGET/AIRGAP_VERSION"
+}
+
+# Removes exactly the tree paths a PREVIOUS bundle delivered and this one no
+# longer ships, then records this bundle's own set for the next update.
+#
+# AIRGAP_TREE_MANIFEST lives at the TARGET root (like AIRGAP_VERSION), never
+# under unified/ or any other path a bundle's tree could ship — rsync above
+# has no `--delete` and only ever writes paths present in $BUNDLE/tree, so a
+# file living outside that tree is never touched by the copy, and this
+# bookkeeping file survives by construction, not merely by being excluded.
+#
+# Format: NUL-delimited relative paths (one bundle can easily ship a path
+# with a space in it), so this file is not meant for a plain `cat` — use
+# `tr '\0' '\n' < AIRGAP_TREE_MANIFEST` to read it.
+prune_stale_tree_paths() {
+  local is_update="$1"
+  local manifest; manifest="$TARGET/AIRGAP_TREE_MANIFEST"
+
+  local current_list; current_list="$(mktemp)"
+  ( cd "$BUNDLE/tree" && find . -type f -printf '%P\0' ) > "$current_list"
+
+  local -A current_set=()
+  local relpath
+  while IFS= read -r -d '' relpath; do
+    current_set["$relpath"]=1
+  done < "$current_list"
+
+  if [[ -f "$manifest" ]]; then
+    echo "▶ pruning tree paths this bundle no longer ships"
+    local removed=0
+    while IFS= read -r -d '' relpath; do
+      if [[ -z "${current_set[$relpath]+x}" && -e "$TARGET/$relpath" ]]; then
+        rm -f -- "$TARGET/$relpath"
+        removed=$((removed + 1))
+      fi
+    done < "$manifest"
+    echo "  removed $removed path(s) no longer shipped by this bundle"
+  elif [[ "$is_update" == true ]]; then
+    # A pre-existing tree with no manifest: a site that was last updated
+    # before this mechanism existed. There is no safe way to know which of
+    # its files a bundle put there versus a site put there, so the only safe
+    # move is to delete nothing this run — never guess at a customer site.
+    # Say so loudly rather than silently leaving stale files behind forever:
+    # this run's manifest (written below) lets the NEXT update prune
+    # correctly, so this gap is one update wide, not permanent.
+    echo "⚠ no $manifest found on an existing target — this site predates" \
+      "manifest-based pruning. Skipping stale-file removal this run: a path" \
+      "a previous, pre-mechanism bundle left behind (e.g. a retired group" \
+      "overlay) may still linger and be picked up by deploy.sh's config" \
+      "globs. The manifest recorded by this run will let the next update" \
+      "prune correctly."
+  fi
+
+  local next_manifest; next_manifest="$manifest.new"
+  sort -z "$current_list" > "$next_manifest"
+  mv -- "$next_manifest" "$manifest"
+  rm -f -- "$current_list"
 }
 
 # Seeded on EVERY deploy, not only the first. GF_PLUGINS_PREINSTALL_SYNC is

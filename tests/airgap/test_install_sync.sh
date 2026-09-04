@@ -29,6 +29,13 @@ echo "pkg" > "$bundle/assets/cdn-packages/cdn-cache-storage/some.tgz"
 # regeneration, same as the asset fixtures above.
 echo "backup-tooling-marker" > "$bundle/tree/scripts/backups/regression-marker.sh"
 
+# A tree path this bundle (the "old" version) ships but a later bundle will
+# NOT ship — e.g. a group overlay retired between releases. Setup for the
+# stale-prune regression below: added directly to the bundle's tree, same as
+# the marker file above, so it needs no MANIFEST.sha256 regeneration either.
+mkdir -p "$bundle/tree/unified/base"
+echo "legacy-overlay" > "$bundle/tree/unified/base/legacy-group.yml"
+
 # Pre-existing site state that MUST survive an update. All five have already
 # been clobbered on these hosts.
 mkdir -p "$target/unified/custom" "$target/secrets/prod" "$target/unified/instances" "$target/.deploy-state"
@@ -37,6 +44,18 @@ echo "custom-overlay"       > "$target/unified/custom/site.yml"
 echo "s3cret"               > "$target/secrets/prod/hub_backend_admin_password"
 echo "instance-data"        > "$target/unified/instances/site.yml"
 echo "deploy-state-data"    > "$target/.deploy-state/state.json"
+
+# A site-local file at a path NOBODY ever put on the exclude list — unlike
+# the paths above, which are all named in sync_tree's --exclude flags. Under
+# the old blocklist design (rsync --delete plus a hand-maintained exclude
+# list) this file sits on the target, is absent from the bundle's tree, and
+# matches no exclude pattern, so --delete removes it — exactly the class of
+# bug that deleted unified/base/certs/ on a real site before certs/ was
+# added to the list. Under the allowlist design this file was never shipped
+# by any bundle, so it can never be a stale-prune candidate either: it is
+# structurally safe rather than safe-by-having-been-remembered.
+mkdir -p "$target/unified/base"
+echo "operator-local-config" > "$target/unified/base/some-operator-file.conf"
 
 # Site-local TLS material: gitignored (`certs/` in .gitignore), so `git
 # archive` never puts it in the bundle's tree, and runtime/swarm/monitoring.yml
@@ -67,12 +86,18 @@ assert_eq "$(cat "$target/unified/base/certs/site.example.crt")" "FAKE-CERT-CONT
   "unified/base/certs/ (site TLS material) survives the sync"
 assert_eq "$(cat "$target/unified/base/certs/site.example.key")" "FAKE-KEY-CONTENT" \
   "unified/base/certs/ key file survives the sync"
+assert_eq "$(cat "$target/unified/base/some-operator-file.conf")" "operator-local-config" \
+  "a site-local file at a path nobody excludes survives an update (this is the assertion the cert-loss bug would have failed)"
+assert_eq "$(cat "$target/unified/base/legacy-group.yml")" "legacy-overlay" \
+  "a bundle-shipped file arrives on install (setup for the stale-prune regression below)"
 [[ -f "$target/unified/scripts/deploy.sh" ]] || fail "the tree was not synced"
 pass "the tree was synced"
 assert_eq "$(cat "$target/scripts/backups/regression-marker.sh")" "backup-tooling-marker" \
   "scripts/backups/ tooling reaches the target, not just the rollback snapshot dir"
 [[ -f "$target/AIRGAP_VERSION" ]] || fail "AIRGAP_VERSION not written"
 pass "AIRGAP_VERSION written"
+[[ -f "$target/AIRGAP_TREE_MANIFEST" ]] || fail "AIRGAP_TREE_MANIFEST not written"
+pass "AIRGAP_TREE_MANIFEST written"
 [[ -n "$(ls "$target/backups" 2>/dev/null)" ]] || fail "no rollback snapshot was taken"
 pass "a rollback snapshot was taken"
 
@@ -110,6 +135,15 @@ pass "the rollback snapshot excludes \$TARGET/backups itself"
 # measured reliable across repeated runs during development of this test).
 head -c 20000000 /dev/urandom > "$target/top-level-filler.bin"
 
+# Simulate the next bundle in the series dropping the group overlay it used
+# to ship (e.g. a group retired between releases). AIRGAP_TREE_MANIFEST from
+# the first run above still lists it, so this second install is the real
+# test of allowlist-based pruning: the file must be removed, even though
+# nothing on the exclude list ever named it — leaving it would mean
+# deploy.sh's `-f base/*.yml` glob keeps picking up a config that no longer
+# corresponds to any deployed group.
+rm -f "$bundle/tree/unified/base/legacy-group.yml"
+
 second_run_log="$(mktemp)"
 set +e
 with_docker_stub bash "$bundle/install.sh" --target "$target" --yes --no-deploy >"$second_run_log" 2>&1
@@ -118,6 +152,22 @@ set -e
 [[ "$second_run_status" -eq 0 ]] \
   || fail "a second install into the same target must exit 0 (got $second_run_status): $(cat "$second_run_log")"
 pass "a second install into the same target succeeds"
+
+# The file the first bundle shipped and the second no longer does must be
+# gone — the manifest diff (previous set minus current set) is what now
+# stands in for rsync --delete's blanket removal.
+[[ ! -e "$target/unified/base/legacy-group.yml" ]] \
+  || fail "a file the previous bundle shipped and this one no longer ships must be pruned from the target"
+pass "a file dropped between successive bundles is pruned from the target"
+
+# The unexcluded site-local file must still be untouched on this SECOND run
+# too, now that AIRGAP_TREE_MANIFEST actually exists and the real
+# allowlist-diff logic ran (the first run above only proved the "no manifest
+# yet" safety fallback). It was never in any bundle's manifest, so it is
+# never a candidate for removal, proving the property structurally rather
+# than by the transitional skip.
+assert_eq "$(cat "$target/unified/base/some-operator-file.conf")" "operator-local-config" \
+  "the unexcluded site-local file also survives a second update, once real manifest-diff pruning is active"
 
 # Assets must be seeded on EVERY run, not only the first: a bumped
 # GRAFANA_DATABRIDGE_PLUGIN would otherwise send Grafana looking for a version

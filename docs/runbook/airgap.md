@@ -178,10 +178,17 @@ bundle was built.
    Budget roughly **50 GB free** for a full platform install.
 2. **Image load** — streamed straight into `docker load`, never reassembled
    to disk.
-3. **Tree sync** — `rsync` with hard, root-anchored exclusions for site-local
-   state (`/unified/.env.*`, `/secrets/`, `/unified/custom/`,
+3. **Tree sync** — `rsync` (no `--delete`) copies the bundle's tree onto the
+   target, then `install.sh` removes only the tree paths a **previous**
+   bundle delivered and this one no longer ships — tracked in
+   `$TARGET/AIRGAP_TREE_MANIFEST` (see below). Root-anchored exclusions
+   (`/unified/.env.*`, `/secrets/`, `/unified/custom/`,
    `/unified/instances/`, `/unified/base/certs/`, `/.deploy-state/`,
-   `/backups/`), preceded by a timestamped snapshot under `backups/`.
+   `/backups/`) are kept as defence in depth on the copy itself, but a path
+   nobody thought to exclude can no longer be deleted just for being
+   unlisted — it was never a bundle path, so it is never a stale-prune
+   candidate either. A timestamped snapshot under `backups/` is taken first,
+   as before.
 4. **Asset seeding** — Grafana plugins and CDN packages, into
    `${ENV}-<volume>` (swarm) or `<project>_<volume>` (compose).
 5. **Deploy** — `deploy.sh --airgap` with the runtime/edition/env/groups/
@@ -207,7 +214,17 @@ bash install.sh --target /opt/industream-platform --stack industream-prod
 The sync step snapshots the current tree under `backups/` before touching
 anything, and preserves every path listed above — `.env.<env>`, `secrets/`,
 `custom/` overlays, `instances/`, `base/certs/` (site TLS material), and
-`.deploy-state/` all survive.
+`.deploy-state/` all survive. Any other site-local file, at any path,
+survives too: only paths a previous bundle actually shipped and this one
+drops (e.g. a retired group overlay) get removed.
+
+**First update after adopting this mechanism:** if `$TARGET/AIRGAP_TREE_MANIFEST`
+does not exist yet (a site last updated before this feature), `install.sh`
+prints a warning and removes nothing that run — there is no safe way to
+tell a bundle-delivered file from a site-created one without the manifest.
+This run writes the manifest, so the **next** update prunes normally; the
+gap is one update wide, not permanent. If a real stale file is a known
+concern on such a site, check the warning's output and remove it by hand.
 
 ---
 
@@ -235,8 +252,9 @@ on disk from the earlier install — nothing is re-fetched), and redeploys.
   deliberately exposes **no** flag that reaches it.
 - **Never `git reset --hard` (or a bare `cp -r`) on the site checkout.**
   Both have already destroyed untracked site state on real installs. The
-  only supported way to update the tree is `install.sh` itself, which uses
-  `rsync` with explicit exclusions and takes a snapshot first.
+  only supported way to update the tree is `install.sh` itself, which syncs
+  via `rsync` plus a manifest-tracked prune (never a blanket `--delete`) and
+  takes a snapshot first.
 
 ---
 
@@ -261,6 +279,14 @@ installed=<ISO-8601 timestamp>
 
 Read this file first when diagnosing a site — never assume the checkout's
 git metadata means anything.
+
+Alongside it, `$TARGET/AIRGAP_TREE_MANIFEST` records the set of tree paths
+the currently-installed bundle delivered. It is installer bookkeeping, not
+an operator-facing file (NUL-delimited — use `tr '\0' '\n'` to read it), and
+it is what the **next** update diffs against to decide what to prune. Like
+`AIRGAP_VERSION`, it lives at the target root, never under `unified/` or any
+other path a bundle's tree could ship, so the sync (which no longer runs
+`--delete`) never touches it.
 
 ---
 
