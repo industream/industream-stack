@@ -40,6 +40,11 @@ echo "legacy-overlay" > "$bundle/tree/unified/base/legacy-group.yml"
 # been clobbered on these hosts.
 mkdir -p "$target/unified/custom" "$target/secrets/prod" "$target/unified/instances" "$target/.deploy-state"
 echo "SITE_SECRET=keepme"   > "$target/unified/.env.prod"
+# The same class of file, but at a path the BUNDLE's tree also carries:
+# unified/.env.test is git-tracked, so `git archive` puts it in every bundle
+# even though sync_tree excludes it from the copy. That overlap is what the
+# second-run assertion below turns into a regression.
+echo "SITE_TEST_ENV=keepme"  > "$target/unified/.env.test"
 echo "custom-overlay"       > "$target/unified/custom/site.yml"
 echo "s3cret"               > "$target/secrets/prod/hub_backend_admin_password"
 echo "instance-data"        > "$target/unified/instances/site.yml"
@@ -145,16 +150,23 @@ head -c 20000000 /dev/urandom > "$target/top-level-filler.bin"
 rm -f "$bundle/tree/unified/base/legacy-group.yml"
 
 # The trap one level below the allowlist: a bundle's tree DOES carry paths the
-# rsync excludes — `prepare` resolves unified/.env.<env> into it, and a real
-# bundle also carries unified/custom/README.md and unified/instances/.gitignore.
-# Recording those in the manifest as "delivered" would make the very next
-# bundle that stops shipping one (built for a different --env, say) delete the
-# SITE's file at that path — the same data loss, one level down. Dropping
-# .env.prod from this second bundle is exactly that scenario; the site's own
-# .env.prod, asserted below, must not move.
-[[ -e "$bundle/tree/unified/.env.prod" ]] \
-  || fail "fixture assumption broken: the bundle's tree should carry unified/.env.prod (an rsync-excluded path)"
-rm -f "$bundle/tree/unified/.env.prod"
+# rsync excludes. unified/.env.test is git-tracked, so `git archive` ships it
+# in every bundle; a real bundle also carries unified/custom/README.md and
+# unified/instances/.gitignore. Recording those in the manifest as "delivered"
+# would make the very next bundle that stops shipping one delete the SITE's
+# file at that path — the same data loss, one level down, and an environment
+# file is exactly the kind of file at stake. Dropping it from this second
+# bundle is that scenario; the site's own copy, asserted below, must not move.
+[[ -e "$bundle/tree/unified/.env.test" ]] \
+  || fail "fixture assumption broken: the bundle's tree should carry unified/.env.test (an rsync-excluded path)"
+#
+# This one came from `git archive`, so unlike the fabricated files above it is
+# listed in MANIFEST.sha256 — drop its line too, exactly as a bundle built
+# without the file would have. Leaving it would fail install.sh's verification
+# step instead of exercising the sync.
+rm -f "$bundle/tree/unified/.env.test"
+grep -v ' \./tree/unified/\.env\.test$' "$bundle/MANIFEST.sha256" > "$bundle/MANIFEST.sha256.tmp"
+mv "$bundle/MANIFEST.sha256.tmp" "$bundle/MANIFEST.sha256"
 
 second_run_log="$(mktemp)"
 set +e
@@ -183,8 +195,8 @@ assert_eq "$(cat "$target/unified/base/some-operator-file.conf")" "operator-loca
 
 # An rsync-excluded path the previous bundle carried but never copied must not
 # be a prune candidate: the file on the target is the SITE's, not the bundle's.
-assert_eq "$(cat "$target/unified/.env.prod")" "SITE_SECRET=keepme" \
-  "the site's .env survives a bundle that stops shipping that env's file (excluded paths are never prune candidates)"
+assert_eq "$(cat "$target/unified/.env.test")" "SITE_TEST_ENV=keepme" \
+  "the site's environment file survives a bundle that stops shipping that path (an excluded path is never a prune candidate)"
 
 # Assets must be seeded on EVERY run, not only the first: a bumped
 # GRAFANA_DATABRIDGE_PLUGIN would otherwise send Grafana looking for a version
