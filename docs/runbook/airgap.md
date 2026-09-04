@@ -74,11 +74,18 @@ instance's compose project name differs from `--env` — compose has no fixed
 volume-naming convention the way the swarm overlays do, so a mismatch here
 silently harvests from (or reports empty against) the wrong volumes.
 
-> **Honest gap:** the "CDN copy succeeds and yields real packages" path has
-> never actually been exercised in this project's tests — no warmed instance
-> was available to test against. Only the "finds nothing → abort" path is
-> proven. Treat the harvest step itself as unverified until it has been run
-> once against a real warmed instance and its output inspected.
+> **Verified once, on 2026-09-04.** The "CDN copy succeeds and yields real
+> packages" path — long the least-tested step here — has now been exercised
+> against a genuinely warmed Verdaccio volume: 6.4 MB of real npm packages
+> (`@codemirror`, `@lezer`, `argparse`, `js-yaml`, …) landed in the bundle,
+> alongside all four Grafana plugins. The "finds nothing → abort" guard was
+> confirmed too: a run against an unwarmed volume stopped the build rather
+> than shipping an empty cache.
+>
+> What that does **not** prove: the harvested packages have not yet been
+> served to a FlowMaker box on a running air-gapped site. Until someone loads
+> a box from a site installed this way, treat "the packages are present" and
+> "the boxes resolve" as two different claims.
 
 ### Grafana plugin version bumps
 
@@ -110,6 +117,41 @@ directory; `install.sh` resolves everything relative to its own location.
 ---
 
 ## 3. Install on a fresh site
+
+### First, create the platform secrets — the install stops dead without them
+
+`deploy.sh` requires the `${ENV}_*` swarm secrets to already exist. On a site
+that has never been deployed they do not, and `install.sh` gets all the way
+through verification, image load, tree sync and asset seeding before failing
+at the deploy step with:
+
+```
+service industream-hub-backend: secret not found: <env>_hub_jwt_signing_key
+```
+
+Observed on a real air-gapped install. The generator ships inside the bundle,
+so this is done offline, once, before the first `install.sh`:
+
+```bash
+cd /opt/industream-platform          # the --target you are about to use
+./scripts/setup/create-secrets.sh --env prod
+```
+
+Two things to know:
+
+- It accepts **only** `prod`, `dev` or `staging`. An arbitrary `--env` value
+  is rejected outright — so if you plan to pass `--env` to `install.sh`, it
+  has to be one of those three.
+- It is idempotent and never rewrites an existing secret, so re-running it
+  before an update is safe. Updates to an already-deployed site need nothing
+  here; this is a first-install step only.
+
+If the target directory does not exist yet, run `install.sh --no-deploy`
+first: it syncs the tree (which is what puts `create-secrets.sh` on the
+machine) and seeds the assets without attempting the deploy. Then create the
+secrets, then run `install.sh` for real.
+
+### The install itself
 
 ```bash
 cd /media/usb/industream-airgap-<commit>-ee-swarm
