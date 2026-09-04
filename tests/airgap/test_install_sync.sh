@@ -73,6 +73,37 @@ tar xzf "$snap" -C "$snap_extract"
 assert_eq "$(cat "$snap_extract/scripts/backups/existing-tool.sh")" "existing-backup-tool" \
   "the rollback snapshot keeps scripts/backups/ tooling too, not just \$TARGET/backups/"
 
+# The other half of that same bug: an exclude that matches nothing not only
+# fails to protect scripts/backups/, it also fails to exclude $TARGET/backups
+# itself, so the snapshot tarball ends up containing the very directory it is
+# being written into (and GNU tar aborts archiving a file that grows mid-read).
+[[ ! -d "$snap_extract/backups" ]] || fail "the rollback snapshot must not contain \$TARGET/backups itself"
+pass "the rollback snapshot excludes \$TARGET/backups itself"
+
+# The regression with real teeth: the first run above created $target/backups,
+# so a SECOND install/update into the same target is the case that actually
+# broke — a dead tar --exclude archives $target/backups into itself and GNU
+# tar aborts with "file changed as we read it", which install.sh (set -euo
+# pipefail) turns into a hard failure of the whole install.
+#
+# GNU tar only hits that check reliably once there is enough tree content for
+# the growing snapshot file's write to overlap the read of it — on the tiny
+# tree this fixture builds by itself, the read can finish before the window
+# opens. A production tree is easily big enough on its own; here 20MB of
+# filler at the transfer root reproduces the same window on demand (this is
+# a timing effect of the dead exclude, not a property of the filler content;
+# measured reliable across repeated runs during development of this test).
+head -c 20000000 /dev/urandom > "$target/top-level-filler.bin"
+
+second_run_log="$(mktemp)"
+set +e
+with_docker_stub bash "$bundle/install.sh" --target "$target" --yes --no-deploy >"$second_run_log" 2>&1
+second_run_status=$?
+set -e
+[[ "$second_run_status" -eq 0 ]] \
+  || fail "a second install into the same target must exit 0 (got $second_run_status): $(cat "$second_run_log")"
+pass "a second install into the same target succeeds"
+
 # Assets must be seeded on EVERY run, not only the first: a bumped
 # GRAFANA_DATABRIDGE_PLUGIN would otherwise send Grafana looking for a version
 # it cannot reach, and the preinstall is boot-blocking.
