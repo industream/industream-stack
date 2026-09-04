@@ -90,6 +90,38 @@ ls unified/.env.* 2>/dev/null
 what turns step 6 from a hope into a check. Copy them somewhere off the
 machine too.
 
+### The reverse proxy is not in the bundle — check it is there
+
+On swarm the platform routes through **Traefik**, deployed once as a separate
+shared stack (`scripts/deploy-traefik.sh`, stack name `traefik-shared`) and
+reached over an **external** network the platform's compose files declare by
+an exact name:
+
+```yaml
+traefik-public:
+  external: true
+  name: traefik-shared_traefik-public
+```
+
+The bundle ships no Traefik image and the update never touches the proxy or
+its certificates — which is good, and also means nothing in `install.sh`
+preflights any of this. If the network is missing or named differently,
+`docker stack deploy` fails at the very last step, after everything else has
+already been done.
+
+```bash
+docker network ls | grep traefik-shared_traefik-public
+docker stack services traefik-shared
+docker image ls | grep -i traefik
+```
+
+→ **verify:** the network exists under that exact name, the stack has running
+services, and the image is present locally. The third one matters offline: if
+that container ever has to be recreated on site, the image cannot be pulled.
+
+(Compose sites run Caddy outside the platform project in the same way; the
+same three checks apply, against the Caddy container.)
+
 ---
 
 ## On site
@@ -215,9 +247,10 @@ expected — investigate before deploying.
   are meaningless. `AIRGAP_VERSION` is the only record of what the site runs.
 - **Never `git reset --hard`, never a bare `cp -r`** on the site tree. Both
   have already destroyed untracked site state on real installs.
-- **Never run a teardown.** It removes `caddy_data`, which holds the CA —
-  deleting it invalidates the certificate every workstation on site already
-  trusts. `install.sh` deliberately exposes no flag that reaches it.
+- **Never run `scripts/uninstall.sh`.** It removes the stack, its secrets,
+  every `${ENV}-*` volume — the databases — the network and the generated
+  files. It asks for confirmation at each step; that is not the same as
+  being safe. `install.sh` exposes no flag that reaches it.
 - **Keep the previous bundle on site.** Rollback *is* replaying the previous
   bundle's `install.sh`; delete the directory and you have no rollback.
 - **A Grafana plugin version bump makes the update mandatory, not optional.**

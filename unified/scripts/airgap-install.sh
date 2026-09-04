@@ -5,8 +5,17 @@
 # Same script for a first install and for an update; the only difference is
 # what is already on the machine. Run it from inside the unpacked bundle.
 #
-# There is deliberately NO teardown option: deploy.sh's teardown flag removes
-# caddy_data, hence the CA, hence every workstation that trusted the cert.
+# There is deliberately NO teardown option. The destructive path in this repo
+# is scripts/uninstall.sh, which removes the stack, its secrets, EVERY
+# ${ENV}-* volume (i.e. the databases), the network and the generated files.
+# It confirms at each step, but nothing here should be able to reach it.
+#
+# The reverse proxy is NOT in that blast radius and is not in the bundle
+# either: swarm sites run Traefik as a separate shared stack behind the
+# external network traefik-shared_traefik-public, compose sites run Caddy
+# outside the platform project. An update therefore never touches the proxy
+# or the CA it issues from — but that also means the proxy must already be
+# running, and its image already local, before install.sh deploys anything.
 # =============================================================================
 set -euo pipefail
 BUNDLE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
