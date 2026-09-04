@@ -64,10 +64,52 @@ these VMs, not something this task performs):
 
 ---
 
+## Attaching the bench VM to `ho8-airgap`
+
+Whoever builds or re-homes the VM (see above — not this task) still needs
+the mechanical steps to reach the destination state described there. These
+are the commands; adjust the domain name and guest interface/distribution
+to whatever the VM actually is:
+
+```bash
+# On the workstation: attach a NIC on ho8-airgap to the VM (add --live too
+# if the VM is already running and the change should take effect now).
+virsh -c qemu:///system attach-interface --domain <vm-name> \
+  --type network --source ho8-airgap --model virtio --config
+
+# Boot/reboot the VM, then find the new interface's name inside the guest
+# (e.g. `ip link`) — it won't be configured yet, since ho8-airgap has no DHCP.
+```
+
+Inside the guest, set the static address (Debian/Ubuntu with netplan shown;
+adjust for the guest's actual distribution and interface name):
+
+```bash
+cat <<NETPLAN | sudo tee /etc/netplan/99-airgap.yaml
+network:
+  version: 2
+  ethernets:
+    <iface>:
+      addresses: [10.20.154.30/24]
+NETPLAN
+sudo netplan apply
+ip route   # must show NO default route — a leftover NAT route makes the VM
+           # falsely appear "airgapped" while still able to reach the internet
+```
+
+Getting the bundle onto the VM — over `virbr-ho8` (`10.20.154.1`), which
+works precisely because it's the host-to-guest path, not a route to the
+internet:
+
+```bash
+scp -r /media/usb/industream-airgap-<commit>-ee-swarm user@10.20.154.30:~/
+```
+
+---
+
 ## Scenario 1: cold install
 
-On the blank bench VM, with a bundle copied over (scp, or a mounted image —
-anything that doesn't require internet):
+On the blank bench VM, with the bundle copied over as above:
 
 ```bash
 cd ~/industream-airgap-<commit>-ee-swarm
@@ -81,11 +123,20 @@ available there):
 tests/airgap/bench/check-signals.sh bench.<domain> industream-prod
 ```
 
+`check-signals.sh` retries each check for up to `CHECK_TIMEOUT` seconds
+(default 90, every `CHECK_INTERVAL` seconds, default 5) before reporting a
+failure — `install.sh` returning doesn't mean Grafana, DataCatalog, and the
+proxy in front of them have finished starting or that their routes have
+propagated, and a platform that's merely still converging must not read as
+a bundle defect. Raise the timeout on a slower machine:
+`CHECK_TIMEOUT=180 tests/airgap/bench/check-signals.sh ...`.
+
 Expected: every signal ✓ (see "Getting a bearer token" below — two of the
-six need one). **Any ✗ is a bundle defect.** Fix it in `airgap.sh` or
-`airgap-install.sh`, rebuild the bundle, copy it over again, and re-run.
-**Never fix it by hand on the VM** — a hand-fixed VM proves nothing about
-the bundle; the next real customer install would still ship broken.
+six need one). **Any ✗ still showing after the retry budget is a bundle
+defect.** Fix it in `airgap.sh` or `airgap-install.sh`, rebuild the bundle,
+copy it over again, and re-run. **Never fix it by hand on the VM** — a
+hand-fixed VM proves nothing about the bundle; the next real customer
+install would still ship broken.
 
 ---
 
@@ -195,6 +246,10 @@ this surfaced far from its actual cause.**
 - **Not executed, separately:** the CDN-harvest-succeeds path (see the
   section above) — this needs a warmed source regardless of which VM
   ends up hosting the bench.
+- **Not run:** `shellcheck` — not installed on this workstation.
+  `check-signals.sh` was read by eye and dry-run against stubs instead; run
+  `shellcheck tests/airgap/bench/check-signals.sh` before the bench is
+  actually exercised for real, on a machine that has it.
 
 ## Recording results
 
