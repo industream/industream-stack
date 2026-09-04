@@ -180,8 +180,8 @@ bundle was built.
    to disk.
 3. **Tree sync** — `rsync` with hard, root-anchored exclusions for site-local
    state (`/unified/.env.*`, `/secrets/`, `/unified/custom/`,
-   `/unified/instances/`, `/.deploy-state/`, `/backups/`), preceded by a
-   timestamped snapshot under `backups/`.
+   `/unified/instances/`, `/unified/base/certs/`, `/.deploy-state/`,
+   `/backups/`), preceded by a timestamped snapshot under `backups/`.
 4. **Asset seeding** — Grafana plugins and CDN packages, into
    `${ENV}-<volume>` (swarm) or `<project>_<volume>` (compose).
 5. **Deploy** — `deploy.sh --airgap` with the runtime/edition/env/groups/
@@ -206,7 +206,8 @@ bash install.sh --target /opt/industream-platform --stack industream-prod
 
 The sync step snapshots the current tree under `backups/` before touching
 anything, and preserves every path listed above — `.env.<env>`, `secrets/`,
-`custom/` overlays, `instances/`, and `.deploy-state/` all survive.
+`custom/` overlays, `instances/`, `base/certs/` (site TLS material), and
+`.deploy-state/` all survive.
 
 ---
 

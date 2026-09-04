@@ -135,11 +135,22 @@ sync_tree() {
   # git-tracked scripts/backups/*.sh tooling and silently dropped it from
   # every install and update. '/backups/' below means only $TARGET/backups,
   # the snapshot dir this function creates above.
+  #
+  # '/unified/base/certs/' is site-local TLS material (gitignored, so `git
+  # archive` never puts it in the bundle's tree) — omitting it wiped the
+  # directory on every update on a real air-gapped site. runtime/swarm/
+  # monitoring.yml bind-mounts base/certs/${INDUSTREAM_DOMAIN}.crt into
+  # Grafana's extra-CAs, so losing it takes Grafana down outright ("bind
+  # source path does not exist"). With TLS_MODE=selfsigned (the default)
+  # regenerating the cert also invalidates the CA every workstation on site
+  # already trusted — the same class of harm the missing teardown flag
+  # deliberately avoids.
   rsync -a --delete \
     --exclude='/unified/.env.*' \
     --exclude='/secrets/' \
     --exclude='/unified/custom/' \
     --exclude='/unified/instances/' \
+    --exclude='/unified/base/certs/' \
     --exclude='/.deploy-state/' \
     --exclude='/backups/' \
     "$BUNDLE/tree/" "$TARGET/"

@@ -38,6 +38,17 @@ echo "s3cret"               > "$target/secrets/prod/hub_backend_admin_password"
 echo "instance-data"        > "$target/unified/instances/site.yml"
 echo "deploy-state-data"    > "$target/.deploy-state/state.json"
 
+# Site-local TLS material: gitignored (`certs/` in .gitignore), so `git
+# archive` never puts it in the bundle's tree, and runtime/swarm/monitoring.yml
+# bind-mounts base/certs/${INDUSTREAM_DOMAIN}.crt straight into Grafana — a
+# real air-gapped site lost this directory entirely on update, and Grafana
+# then refused to start ("bind source path does not exist"). Real key/cert
+# content, not a placeholder, so a byte-for-byte compare actually proves
+# something.
+mkdir -p "$target/unified/base/certs"
+echo "FAKE-CERT-CONTENT" > "$target/unified/base/certs/site.example.crt"
+echo "FAKE-KEY-CONTENT"  > "$target/unified/base/certs/site.example.key"
+
 # Pre-existing scripts/backups/ tooling on the target, so this run's
 # pre-sync `tar` snapshot (taken because $target/unified already exists)
 # actually has something under that name to snapshot — proving the snapshot
@@ -52,6 +63,10 @@ assert_eq "$(cat "$target/unified/custom/site.yml")" "custom-overlay" "custom/ s
 assert_eq "$(cat "$target/secrets/prod/hub_backend_admin_password")" "s3cret" "secrets/ survive the sync"
 assert_eq "$(cat "$target/unified/instances/site.yml")" "instance-data" "unified/instances/ survives the sync"
 assert_eq "$(cat "$target/.deploy-state/state.json")" "deploy-state-data" ".deploy-state/ survives the sync"
+assert_eq "$(cat "$target/unified/base/certs/site.example.crt")" "FAKE-CERT-CONTENT" \
+  "unified/base/certs/ (site TLS material) survives the sync"
+assert_eq "$(cat "$target/unified/base/certs/site.example.key")" "FAKE-KEY-CONTENT" \
+  "unified/base/certs/ key file survives the sync"
 [[ -f "$target/unified/scripts/deploy.sh" ]] || fail "the tree was not synced"
 pass "the tree was synced"
 assert_eq "$(cat "$target/scripts/backups/regression-marker.sh")" "backup-tooling-marker" \
