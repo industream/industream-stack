@@ -80,7 +80,11 @@ DEPLOY_TIMEOUT=1 with_docker_stub bash "$bundle2/install.sh" --target "$(mktemp 
   || install2_status=$?
 assert_eq "$install2_status" "0" "install.sh exits 0 on a valid bundle with images to load"
 load_count="$(grep -c '^load' "$DOCKER_LOG" 2>/dev/null || true)"
-assert_eq "$load_count" "2" "docker load ran once per group (unsplit and split)"
+# 3, not 2: airgap.sh prepare now always saves the pinned alpine tooling
+# image into its own images/tooling.tar.zst group (regardless of
+# --skip-images), alongside this fixture's two fabricated platform groups
+# (unsplit "core" and split "workers").
+assert_eq "$load_count" "3" "docker load ran once per group (unsplit, split, and the tooling image)"
 
 # --- clock preflight: exercise both the warning and the skip branches ---
 # A stub `timedatectl` prepended on PATH (same host-safe pattern as
@@ -139,3 +143,30 @@ if grep -q "NTP-synchronised" "$clock_out3"; then
   fail "a clock warning was printed even though timedatectl does not exist"
 fi
 pass "clock preflight silently skips when timedatectl is absent"
+
+# --- regression: seed_assets must use the PINNED tooling tag, never bare `alpine` ---
+# Scoped to the actual `docker run` line inside seed_volume, not a whole-file
+# grep: die()'s own message below deliberately explains the failure using the
+# bare word "alpine" in prose, which a whole-file guard would misfire on.
+run_line="$(grep 'docker run --rm -v "\$vol:/dest"' "$REPO_ROOT/unified/scripts/airgap-install.sh")"
+assert_contains "$run_line" 'alpine:${ALPINE_VERSION}' "seed_volume references the pinned alpine tag"
+if grep -qE '"\$src:/src:ro" alpine[[:space:]]' "$REPO_ROOT/unified/scripts/airgap-install.sh"; then
+  fail "seed_volume still uses a bare (unpinned) alpine reference"
+fi
+pass "no bare alpine reference in seed_volume"
+
+# --- regression: a bundle that predates shipping the tooling image must die
+# with a message that names the problem, not docker's opaque registry-lookup
+# error. Take an otherwise-valid bundle and strip out exactly the tooling
+# tarball, re-signing the manifests so the failure exercised is the tooling
+# check itself, not an unrelated checksum mismatch.
+old_bundle="$(with_docker_stub ./scripts/airgap.sh prepare --runtime swarm --edition ce \
+  --out "$(mktemp -d)" --skip-images --skip-assets | tail -1)"
+rm -f "$old_bundle/images/tooling.tar.zst"
+( cd "$old_bundle" && find images -type f -print0 | xargs -0 sha256sum > PARTS.sha256 )
+( cd "$old_bundle" && find . -type f ! -name MANIFEST.sha256 -print0 | xargs -0 sha256sum > MANIFEST.sha256 )
+old_out="$(mktemp)"
+with_docker_stub bash "$old_bundle/install.sh" --target "$(mktemp -d)" --yes --no-deploy \
+  > "$old_out" 2>&1 || true
+assert_contains "$(cat "$old_out")" "no tooling image shipped" \
+  "install.sh names the problem for a bundle that predates the tooling image fix"

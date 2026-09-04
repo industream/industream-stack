@@ -119,6 +119,16 @@ cmd_prepare() {
   [[ -n "$images" ]] || die "the image list is empty — check --edition/--groups"
 
   [[ "$SKIP_IMAGES" == true ]] || save_images "$dest" "$images"
+  # The helper image install.sh needs for seed_assets (alpine:${ALPINE_VERSION})
+  # is NOT a platform image (it never comes from deploy.sh --list-images) and
+  # must never be folded into $images — that would break the "image set
+  # always comes from deploy.sh, never a second list" invariant this file's
+  # header documents.
+  # Saved unconditionally, regardless of --skip-images: that flag exists so
+  # tests can skip pulling the (large) platform set, but seed_assets always
+  # needs this one tiny image, on every bundle.
+  save_tooling_image "$dest"
+  ( cd "$dest" && find images -type f -print0 | xargs -0 sha256sum > PARTS.sha256 )
   [[ "$SKIP_ASSETS" == true ]] || harvest_assets "$dest"
 
   # Recorded for audit alongside the other harvest inputs — only meaningful
@@ -127,7 +137,7 @@ cmd_prepare() {
   local harvest_project=""
   [[ "$SKIP_ASSETS" == true || "$RUNTIME" != compose ]] || harvest_project="${HARVEST_PROJECT:-$ENV}"
 
-  write_bundle_json "$dest" "$commit" "$images" "$harvest_project"
+  write_bundle_json "$dest" "$commit" "$images" "$harvest_project" "$TOOLING_IMAGE"
   ( cd "$dest" && find . -type f ! -name MANIFEST.sha256 -print0 \
       | xargs -0 sha256sum > MANIFEST.sha256 )
   cp "$HERE/scripts/airgap-install.sh" "$dest/install.sh" 2>/dev/null || true
@@ -140,18 +150,26 @@ cmd_prepare() {
 # UNCOMPRESSED_BYTES is accumulated by save_images and recorded in bundle.json;
 # install.sh sizes its disk preflight from it.
 UNCOMPRESSED_BYTES=0
+# TOOLING_IMAGE is set by save_tooling_image and recorded in bundle.json
+# separately from the platform "images" list — see write_bundle_json.
+TOOLING_IMAGE=""
 
 write_bundle_json() {
-  local dest="$1" commit="$2" images="$3" harvest_project="$4"
-  python3 - "$dest" "$commit" "$EDITION" "$RUNTIME" "$ENV" "$GROUP_SET" "$UNCOMPRESSED_BYTES" "$BUNDLE" "$harvest_project" <<PY
+  local dest="$1" commit="$2" images="$3" harvest_project="$4" tooling_image="$5"
+  python3 - "$dest" "$commit" "$EDITION" "$RUNTIME" "$ENV" "$GROUP_SET" "$UNCOMPRESSED_BYTES" "$BUNDLE" "$harvest_project" "$tooling_image" <<PY
 import json, sys, datetime
-dest, commit, edition, runtime, env, groups, uncompressed, bundle, harvest_project = sys.argv[1:10]
+dest, commit, edition, runtime, env, groups, uncompressed, bundle, harvest_project, tooling_image = sys.argv[1:11]
 images = """$images""".split()
 json.dump({
     "commit": commit, "edition": edition, "runtime": runtime, "env": env,
     "groups": groups, "bundle": bundle, "harvest_project": harvest_project or None,
     "created": datetime.datetime.now().isoformat(timespec="seconds"),
     "uncompressed_bytes": int(uncompressed), "images": images,
+    # Recorded separately from "images" on purpose — this is a tooling
+    # helper (used by install.sh's seed_assets), never a platform image, and
+    # must never be mixed into the list cmd_verify replays against
+    # deploy.sh --list-images.
+    "tooling_images": [tooling_image] if tooling_image else [],
 }, open(dest + "/bundle.json", "w"), indent=2)
 PY
 }
@@ -217,7 +235,30 @@ save_images() {
     docker save $set | zstd -T0 -3 > "$dest/images/$group.tar.zst"
     cmd_split "$dest/images/$group.tar.zst" "$MAX_PART_SIZE"
   done
-  ( cd "$dest" && find images -type f -print0 | xargs -0 sha256sum > PARTS.sha256 )
+}
+
+# Saves the pinned helper image (alpine:${ALPINE_VERSION}) install.sh's
+# seed_assets runs disposable containers from. Its own tarball
+# ("tooling.tar.zst"), separate from the per-group platform tarballs above:
+# install.sh's load_images loads every file under images/ generically (by
+# iterating the directory), so this rides along automatically without any
+# change there — but it must stay out of the platform image set (see
+# save_tooling_image's caller in cmd_prepare).
+save_tooling_image() {
+  local dest="$1"
+  # shellcheck disable=SC1091
+  set -a; source "$HERE/versions.env"; set +a
+  TOOLING_IMAGE="alpine:${ALPINE_VERSION}"
+  echo "▶ tooling image: $TOOLING_IMAGE"
+  if docker image inspect "$TOOLING_IMAGE" >/dev/null 2>&1; then
+    echo "  local  $TOOLING_IMAGE"
+  else
+    echo "  pull   $TOOLING_IMAGE"
+    docker pull "$TOOLING_IMAGE" || die "cannot pull $TOOLING_IMAGE — build the bundle from a connected machine"
+  fi
+  UNCOMPRESSED_BYTES=$(( UNCOMPRESSED_BYTES + $(docker image inspect -f '{{.Size}}' "$TOOLING_IMAGE" 2>/dev/null || echo 0) ))
+  docker save "$TOOLING_IMAGE" | zstd -T0 -3 > "$dest/images/tooling.tar.zst"
+  cmd_split "$dest/images/tooling.tar.zst" "$MAX_PART_SIZE"
 }
 
 # Assets are HARVESTED from a real, connected instance, never rebuilt.

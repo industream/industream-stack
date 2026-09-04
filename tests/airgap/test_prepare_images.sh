@@ -39,4 +39,18 @@ pass "the original is removed after splitting"
 small="$out/small.bin"; head -c 1000 /dev/urandom > "$small"
 ./scripts/airgap.sh _split "$small" 1M
 [[ -f "$small" && ! -f "$small.00" ]] || fail "a small file was split anyway"
+
+# Regression: the bundle must carry its OWN pinned tooling (helper) image —
+# install.sh's seed_assets runs disposable containers from it, and a
+# genuinely airgapped target cannot resolve a bare `alpine:latest` from a
+# registry it has no route to. Saved separately from the platform "images"
+# list (never a second source for THAT list — see airgap.sh's header
+# comment), so check it under its own bundle.json key.
+# shellcheck disable=SC1091
+set -a; source "$REPO_ROOT/unified/versions.env"; set +a
+assert_contains "$(cat "$bundle/bundle.json")" "\"alpine:${ALPINE_VERSION}\"" \
+  "bundle.json records the pinned tooling image"
+[[ -e "$bundle/images/tooling.tar.zst" ]] \
+  || fail "the bundle does not carry images/tooling.tar.zst"
+pass "the bundle carries its own pinned tooling image"
 pass "files under the cap are left intact"

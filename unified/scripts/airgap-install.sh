@@ -157,12 +157,38 @@ volume_name() {
   else echo "$(compose_project)_$1"; fi
 }
 
+# The disposable containers below need a helper image. It must be the exact
+# tag airgap.sh prepare saved into images/tooling.tar.zst (never a bare
+# `alpine`, which docker would resolve as `alpine:latest` and try to pull
+# from a registry this machine cannot reach) — read from the bundle's OWN
+# tree copy of unified/versions.env, the single source of truth, rather than
+# a second literal here that could drift from the producer's.
+tooling_image_shipped() {
+  [[ -e "$BUNDLE/images/tooling.tar.zst" ]] && return 0
+  local part
+  for part in "$BUNDLE/images/tooling.tar.zst".[0-9][0-9]; do
+    [[ -e "$part" ]] && return 0
+  done
+  return 1
+}
+
 seed_assets() {
+  # Fail here, before any volume is created, with a message that names the
+  # problem — not with docker's opaque registry-lookup error further down. A
+  # bundle built before this fix never saved a helper image at all, so a bare
+  # `docker image inspect`/`run alpine` would otherwise be the first thing to
+  # notice, offline, with no useful context.
+  tooling_image_shipped \
+    || die "no tooling image shipped in this bundle (images/tooling.tar.zst missing) — it predates airgap.sh saving its own alpine helper; rebuild the bundle with a fixed airgap.sh prepare"
+
+  # shellcheck disable=SC1091
+  set -a; source "$BUNDLE/tree/unified/versions.env"; set +a
+
   seed_volume() {
     local vol="$1" src="$2" sub="${3:-}"
     [[ -d "$src" && -n "$(ls -A "$src")" ]] || return 0
     docker volume create "$vol" >/dev/null
-    docker run --rm -v "$vol:/dest" -v "$src:/src:ro" alpine \
+    docker run --rm -v "$vol:/dest" -v "$src:/src:ro" "alpine:${ALPINE_VERSION}" \
       sh -c "mkdir -p /dest/$sub && cp -a /src/. /dest/$sub"
   }
   echo "▶ seeding runtime assets"
