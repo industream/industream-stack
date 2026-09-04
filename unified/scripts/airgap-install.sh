@@ -104,6 +104,45 @@ load_images() {
   done
 }
 
+# Site-local paths the bundle's tree never overwrites, and — just as
+# important — never deletes. ONE list, consumed by both the rsync copy and
+# the manifest that drives pruning: if the two ever disagreed, a path rsync
+# skipped would still be recorded as "delivered by this bundle", and the next
+# update would delete the site's own file at that path. That is not
+# hypothetical — a real bundle tree carries `unified/.env.<env>`,
+# `unified/custom/README.md` and `unified/instances/.gitignore`, all excluded
+# from the copy, so a bundle built for a different --env would have taken the
+# site's live .env file with it.
+#
+# Every pattern is anchored with a leading '/' (relative to the transfer
+# root) and is either a directory prefix ending in '/' or a glob matching one
+# path. path_is_excluded() below implements exactly those two shapes — keep
+# new entries to them, or teach it the new shape at the same time.
+readonly TREE_EXCLUDES=(
+  '/unified/.env.*'
+  '/secrets/'
+  '/unified/custom/'
+  '/unified/instances/'
+  '/unified/base/certs/'
+  '/.deploy-state/'
+  '/backups/'
+)
+
+# True when $1 (a path relative to the tree root, no leading slash) is covered
+# by TREE_EXCLUDES, i.e. rsync did not copy it and pruning must not touch it.
+path_is_excluded() {
+  local candidate="/$1" pattern
+  for pattern in "${TREE_EXCLUDES[@]}"; do
+    if [[ "$pattern" == */ ]]; then
+      [[ "$candidate" == "$pattern"* ]] && return 0
+    else
+      # shellcheck disable=SC2053  # glob match is the point, not equality
+      [[ "$candidate" == $pattern ]] && return 0
+    fi
+  done
+  return 1
+}
+
 # Never `git reset --hard`, never a bare `cp -r`: both have already destroyed
 # untracked site state on these hosts. rsync with hard exclusions, after a
 # snapshot that makes the previous tree recoverable.
@@ -141,15 +180,15 @@ sync_tree() {
     tar czf "$snap" -C "$TARGET" --anchored --exclude=./backups .
   fi
   echo "▶ syncing the tree"
-  # Every exclusion below is anchored with a leading '/'. Unanchored, rsync
+  # Every TREE_EXCLUDES entry is anchored with a leading '/'. Unanchored, rsync
   # matches the pattern as a suffix at ANY depth, not just at the transfer
   # root — that bit twice already: an unanchored '.env.*' also hid every
   # releases/bundle-platform-*/.env.<group> file, so deploy.sh failed
   # globbing its own bundle dir (only surfacing once install.sh actually
   # called it, Task 10); an unanchored 'backups/' also caught the
   # git-tracked scripts/backups/*.sh tooling and silently dropped it from
-  # every install and update. '/backups/' below means only $TARGET/backups,
-  # the snapshot dir this function creates above.
+  # every install and update. '/backups/' means only $TARGET/backups, the
+  # snapshot dir this function creates above.
   #
   # '/unified/base/certs/' is site-local TLS material (gitignored, so `git
   # archive` never puts it in the bundle's tree) — omitting it wiped the
@@ -166,15 +205,9 @@ sync_tree() {
   # anything, so a forgotten exclude entry can no longer cost a site its
   # certs. Stale-path removal happens explicitly below, from the manifest
   # diff, once the copy has landed.
-  rsync -a \
-    --exclude='/unified/.env.*' \
-    --exclude='/secrets/' \
-    --exclude='/unified/custom/' \
-    --exclude='/unified/instances/' \
-    --exclude='/unified/base/certs/' \
-    --exclude='/.deploy-state/' \
-    --exclude='/backups/' \
-    "$BUNDLE/tree/" "$TARGET/"
+  local rsync_excludes=() pattern
+  for pattern in "${TREE_EXCLUDES[@]}"; do rsync_excludes+=("--exclude=$pattern"); done
+  rsync -a "${rsync_excludes[@]}" "$BUNDLE/tree/" "$TARGET/"
 
   prune_stale_tree_paths "$is_update"
 
@@ -200,19 +233,30 @@ prune_stale_tree_paths() {
   local is_update="$1"
   local manifest; manifest="$TARGET/AIRGAP_TREE_MANIFEST"
 
+  # The manifest records what the copy DELIVERED, not what the bundle
+  # contains: an excluded path (a real bundle ships unified/.env.<env> among
+  # others) was never written to the target, so recording it would make the
+  # next update delete the site's own file at that path — reinstating, one
+  # level down, the exact data loss this mechanism removes.
   local current_list; current_list="$(mktemp)"
-  ( cd "$BUNDLE/tree" && find . -type f -printf '%P\0' ) > "$current_list"
-
   local -A current_set=()
   local relpath
   while IFS= read -r -d '' relpath; do
+    path_is_excluded "$relpath" && continue
     current_set["$relpath"]=1
-  done < "$current_list"
+    printf '%s\0' "$relpath" >> "$current_list"
+  done < <( cd "$BUNDLE/tree" && find . -type f -printf '%P\0' )
 
   if [[ -f "$manifest" ]]; then
     echo "▶ pruning tree paths this bundle no longer ships"
     local removed=0
     while IFS= read -r -d '' relpath; do
+      # Also skip anything the CURRENT exclude list protects: if a path became
+      # site-local between two bundles (an entry added to TREE_EXCLUDES), the
+      # older manifest still lists it and it is absent from current_set —
+      # without this, growing the exclude list would itself delete the state
+      # it was added to protect.
+      path_is_excluded "$relpath" && continue
       if [[ -z "${current_set[$relpath]+x}" && -e "$TARGET/$relpath" ]]; then
         rm -f -- "$TARGET/$relpath"
         removed=$((removed + 1))
