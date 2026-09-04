@@ -218,3 +218,21 @@ installed=<ISO-8601 timestamp>
 
 Read this file first when diagnosing a site — never assume the checkout's
 git metadata means anything.
+
+---
+
+## Bench
+
+`tests/airgap/bench/` holds the isolated-VM bench: a bare-VM cold-install
+scenario and an update scenario, run on the `ho8-airgap` libvirt network
+(genuinely no internet — no NAT, no DHCP) with `tests/airgap/bench/check-signals.sh`
+verifying observable signals afterward (replica counts, Grafana's datasource
+list, a served CDN package, the Hub's launchpad tiles, DataCatalog's auth
+behavior). See that directory's `README.md` for exact VM requirements and the
+current, honest status of what has and hasn't been run — as of 2026-09-04,
+no VM on this workstation is sized and network-placed to run it yet.
+
+Once the bench has actually run, append the measured numbers here — bundle
+size, uncompressed size, install duration, disk consumed on
+`/var/lib/containerd` — since these are what size a customer's VM. Not
+recorded yet: no execution has happened to measure them.
