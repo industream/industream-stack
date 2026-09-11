@@ -723,6 +723,12 @@ else
   else
     DEPLOY_FLAGS+=(--with-registry-auth)
   fi
+  # BEFORE the deploy, not after: a service whose volume it cannot read never
+  # converges, so anything running after the convergence wait is too late.
+  _vo_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _vo_files+=("$f"); done
+  ENV="$ENV" bash "$HERE/../scripts/setup/fix-volume-ownership.sh" --env "$ENV" "${_vo_files[@]}" \
+    || echo "⚠ volume-ownership check skipped/failed (non-fatal)"
+
   docker stack deploy "${DEPLOY_FLAGS[@]}" "${C_FILES[@]}" "$STACK"
   echo "▶ waiting for services to converge (≤${DEPLOY_TIMEOUT:-600}s)…"
   _deadline=$(( $(date +%s) + ${DEPLOY_TIMEOUT:-600} ))
