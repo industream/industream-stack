@@ -131,7 +131,10 @@ services:
         - traefik.http.routers.${ENV}-prometheus.middlewares=redirect-to-https@file
         - traefik.http.services.${ENV}-prometheus.loadbalancer.server.port=9090
       resources:
-        limits:       { cpus: '1.0', memory: 768M }
+        # Raised from 768M: SIGKILLed (exit 137) in a restart loop on a host
+        # with 11G free, so the ceiling was its own cgroup, not the machine.
+        # Grows with series count and retention — a busier site needs more.
+        limits:       { cpus: '1.0', memory: 1536M }
         reservations: { cpus: '0.08', memory: 256M }
       restart_policy: { condition: any, delay: 5s, max_attempts: 0, window: 120s }
 
