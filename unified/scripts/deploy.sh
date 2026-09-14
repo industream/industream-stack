@@ -630,6 +630,14 @@ if [[ "$RUNTIME" == compose ]]; then
   if [[ -d "$HERE/../.deploy-state/.git" ]]; then
     ENV="$ENV" bash "$HERE/scripts/deploy-state.sh" snapshot || echo "⚠ deploy-state snapshot skipped/failed (non-fatal)"
   fi
+  # Same reasoning as the swarm branch: a service that cannot read its volume
+  # never starts, so this has to happen before `up -d`. --project is required
+  # here — compose volumes carry no name: and exist as <project>_<volume>.
+  _vo_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _vo_files+=("$f"); done
+  ENV="$ENV" bash "$HERE/../scripts/setup/fix-volume-ownership.sh" \
+    --env "$ENV" --project "$PROJECT" "${_vo_files[@]}" \
+    || echo "⚠ volume-ownership check skipped/failed (non-fatal)"
+
   docker compose -p "$PROJECT" "${ENV_FILES[@]}" "${FILES[@]}" up -d
   # Source the env so the seeders see INDUSTREAM_DOMAIN / OIDC_CLIENT_ID / admin creds
   # (compose dispatch uses --env-file, which doesn't export into this process).

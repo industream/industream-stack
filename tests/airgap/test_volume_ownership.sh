@@ -126,4 +126,41 @@ SOME_IMAGE="example/app:1.0" PATH="$stub_dir:$PATH" \
 assert_eq "$(grep -c . "$CHOWN_LOG" || true)" "0" \
   "an image running as root never triggers a chown"
 
+# Compose declares volumes WITHOUT a `name:` — the project name prefixes them at
+# runtime (`<project>_<volume>`), unlike the swarm overlays which pin
+# `name: ${ENV}-<volume>`. Skipping unpinned volumes meant the whole fix silently
+# covered swarm only, and a compose site taking the same core upgrade would break
+# identically with nothing in the logs to explain it.
+cat > "$fixture/compose.yml" <<'YAML'
+services:
+  needs-fixing:
+    image: ${SOME_IMAGE}
+    volumes:
+      - data-vol:/data
+volumes:
+  data-vol:
+YAML
+
+: > "$CHOWN_LOG"
+cat > "$stub_dir/docker" <<'STUB'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "image inspect") echo "1000" ;;
+  "volume inspect")
+    # only the project-prefixed name exists, as compose creates it
+    [[ "$3" == "fm-prod_data-vol" ]] && { echo "[{}]"; exit 0; }
+    exit 1 ;;
+  "run --rm")
+    if [[ "$*" == *chown* ]]; then echo "$*" >> "$CHOWN_LOG"; else echo "0:0"; fi ;;
+esac
+exit 0
+STUB
+chmod +x "$stub_dir/docker"
+
+SOME_IMAGE="example/app:1.0" PATH="$stub_dir:$PATH" \
+  bash "$SCRIPT" --env prod --project fm-prod "$fixture/compose.yml" >/dev/null 2>&1 \
+  || fail "the script must handle a compose file whose volumes carry no name:"
+assert_contains "$(cat "$CHOWN_LOG")" "fm-prod_data-vol" \
+  "a compose volume is found under its project-prefixed name"
+
 rm -rf "$fixture" "$stub_dir"
