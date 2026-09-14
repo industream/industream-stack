@@ -13,6 +13,7 @@
 set -euo pipefail
 
 ENV_NAME="${ENV:-prod}"
+PROJECT=""
 DRY_RUN=false
 FILES=()
 
@@ -27,14 +28,17 @@ Usage: fix-volume-ownership.sh [--env <env>] [--dry-run] <compose-file>...
 Reads the compose files, resolves each service's image and named volumes, and
 chowns any volume whose owner does not match the image's declared user.
 
-  --env <env>   value for ${ENV} when expanding volume names (default: prod)
-  --dry-run     report what would change, change nothing
+  --env <env>       value for ${ENV} when expanding volume names (default: prod)
+  --project <name>  compose project, used to resolve volumes declared without a
+                    name: (compose prefixes them <project>_<volume>)
+  --dry-run         report what would change, change nothing
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env)     ENV_NAME="${2:?--env needs a value}"; shift 2 ;;
+    --project) PROJECT="${2:?--project needs a value}"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     -h|--help) usage; exit 0 ;;
     -*)        usage >&2; die "unknown option: $1" ;;
@@ -81,12 +85,10 @@ for svc, spec in services.items():
                 continue
         if not src:
             continue
-        # `name:` in the volumes block pins the real volume name; without it
-        # the runtime prefixes the project or stack, which this script cannot
-        # know, so such volumes are skipped rather than guessed at.
-        real = expand((volumes.get(src) or {}).get("name", ""))
-        if not real:
-            continue
+        # `name:` pins the real volume name (the swarm overlays do this).
+        # Compose does not: it prefixes the project at runtime, so emit the bare
+        # key and let the caller try <project>_<key> as well.
+        real = expand((volumes.get(src) or {}).get("name", "")) or src
         print(f"{svc}\t{image}\t{real}")
 PY
 )" || die "could not read the compose files"
@@ -108,7 +110,15 @@ image_uid() {
 fixed=0 checked=0
 while IFS=$'\t' read -r svc image vol; do
   [[ -z "$vol" ]] && continue
-  docker volume inspect "$vol" >/dev/null 2>&1 || continue   # fresh install
+  # A compose volume exists under <project>_<name>; a swarm one under the pinned
+  # name. Try the literal first, then the project prefix.
+  if ! docker volume inspect "$vol" >/dev/null 2>&1; then
+    if [[ -n "$PROJECT" ]] && docker volume inspect "${PROJECT}_${vol}" >/dev/null 2>&1; then
+      vol="${PROJECT}_${vol}"
+    else
+      continue   # fresh install, or a volume this runtime names differently
+    fi
+  fi
   checked=$((checked + 1))
 
   uid="$(image_uid "$image")" || { echo "  ⚠ $svc: cannot read the user of $image — skipped" >&2; continue; }
