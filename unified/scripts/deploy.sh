@@ -145,7 +145,23 @@ fi
 
 # ---- ENV: the single sources, in order (later wins) -------------------------
 ENV_FILES=(--env-file registries.env --env-file versions.env --env-file auth.env --env-file "runtime.${RUNTIME}.env")
-for bf in "$BUNDLE_DIR"/.env.*; do ENV_FILES+=(--env-file "$bf"); done
+# Only `.env.<group>` is a group env file. A stray `.env.core.bak` / `.orig` /
+# `.swp` / `~` matches the glob too, sorts AFTER the real file, and — the chain
+# being last-one-wins — silently replaces the versions being deployed.
+# `return 0`: a trailing `[[ ]] && printf` would make the function exit 1 on the
+# last rejected name and take `set -e` with it.
+bundle_env_files() {
+  local bf
+  for bf in "$BUNDLE_DIR"/.env.*; do
+    if [[ "${bf##*/}" =~ ^\.env\.[a-z0-9-]+$ ]]; then
+      printf '%s\n' "$bf"
+    else
+      echo "  ⚠ ignoring ${bf##*/}: not a group env file" >&2
+    fi
+  done
+  return 0
+}
+while read -r bf; do ENV_FILES+=(--env-file "$bf"); done < <(bundle_env_files)
 [[ -f ".env.${ENV}" ]] && ENV_FILES+=(--env-file ".env.${ENV}")
 
 # ---- FILES: neutral base + per-runtime overlays (group-selectable) ----------
@@ -258,7 +274,7 @@ peek_env() {
   (
     set -a
     source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
-    for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+    while read -r bf; do source "$bf"; done < <(bundle_env_files)
     [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
     set +a
     printf '%s' "${!1-}"
@@ -626,7 +642,7 @@ if [[ "$RUNTIME" == compose ]]; then
     (
       set -a; export ENV
       source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
-      for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+      while read -r bf; do source "$bf"; done < <(bundle_env_files)
       [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
       set +a
       _li_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _li_files+=("$f"); done
@@ -659,7 +675,7 @@ if [[ "$RUNTIME" == compose ]]; then
   # Sourced UNCONDITIONALLY so seed_menu_apps runs for CE too.
   set -a; export ENV
   source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
-  for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+  while read -r bf; do source "$bf"; done < <(bundle_env_files)
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
   seed_menu_apps                              # both editions: seed the Hub launchpad
@@ -673,7 +689,7 @@ else
     # keys. Source the single env sources into the env, then deploy with -c.
     set -a; export ENV
     source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
-    for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+    while read -r bf; do source "$bf"; done < <(bundle_env_files)
     [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
     set +a
     _li_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _li_files+=("$f"); done
@@ -688,7 +704,7 @@ else
   # keys. Source the single env sources into the env, then deploy with -c.
   set -a; export ENV
   source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
-  for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+  while read -r bf; do source "$bf"; done < <(bundle_env_files)
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
   # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
