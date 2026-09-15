@@ -752,6 +752,15 @@ else
   ENV="$ENV" bash "$HERE/../scripts/setup/fix-volume-ownership.sh" --env "$ENV" "${_vo_files[@]}" \
     || echo "⚠ volume-ownership check skipped/failed (non-fatal)"
 
+  # Airgap only: a service first deployed online carries a registry digest that
+  # `stack deploy` does not rewrite when its image version has not changed, and
+  # that --resolve-image never can never re-resolve. Online deploys keep their
+  # digests — there, pinning is a feature.
+  if [[ "$AIRGAP" == true ]]; then
+    bash "$HERE/../scripts/setup/unpin-image-digests.sh" "$STACK" \
+      || echo "⚠ digest unpinning skipped/failed (non-fatal)"
+  fi
+
   docker stack deploy "${DEPLOY_FLAGS[@]}" "${C_FILES[@]}" "$STACK"
   echo "▶ waiting for services to converge (≤${DEPLOY_TIMEOUT:-600}s)…"
   _deadline=$(( $(date +%s) + ${DEPLOY_TIMEOUT:-600} ))
