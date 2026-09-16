@@ -375,7 +375,17 @@ list_unstable_services() {
 seed_menu_apps() {
   local hub_cid i domain scope
   echo ""
-  echo "▶ Hub menu apps seeder (launchpad tiles)…"
+  # Every tile is built as https://<subdomain>.<domain>/, so this one value
+  # decides whether the launchpad works at all. *.localhost does resolve on a dev
+  # box, so the fallback stays — but the domain is named on the banner, before
+  # anything can return early. An unqualified "✓ Hub menu apps seeded" is what
+  # let a site run with a Hub whose every link pointed at *.localhost.
+  domain="${INDUSTREAM_DOMAIN:-localhost}"
+  echo "▶ Hub menu apps seeder (launchpad tiles) — domain: ${domain}"
+  if [[ -z "${INDUSTREAM_DOMAIN:-}" ]]; then
+    echo "  ⚠ INDUSTREAM_DOMAIN is not set — every tile will point at *.localhost" >&2
+    echo "    Set it in unified/.env.${ENV}, then re-deploy to correct the tiles." >&2
+  fi
   # Two-phase readiness, ORDERED to dodge a chicken-and-egg:
   #   1. wait for the hub-backend CONTAINER to exist (deploy returns early), then
   #   2. fix /app/data perms, THEN wait for /apps to answer 200.
@@ -406,11 +416,10 @@ seed_menu_apps() {
   [[ "$apps_ready" != true ]] && { echo "  ⚠ hub-backend /apps not ready — skipping menu-apps seeding (non-fatal)" >&2; return 0; }
 
   # Run the seeder from the REPO (always present, preferred over the image copy).
-  domain="${INDUSTREAM_DOMAIN:-localhost}"
   local scope_args=(--domain "$domain" --runtime "$RUNTIME" --groups "$GROUP_SET")
   [[ "$RUNTIME" == swarm ]] && scope_args+=(--stack "$STACK") || scope_args+=(--project "$PROJECT")
   if HUB_BACKEND_SERVICE=industream-hub-backend bash "$HERE/../scripts/setup/seed-menu-apps-stack.sh" "${scope_args[@]}" >/dev/null 2>&1; then
-    echo "  ✓ Hub menu apps seeded"
+    echo "  ✓ Hub menu apps seeded (domain: ${domain})"
   else
     echo "  ⚠ menu-apps seeding failed (non-fatal)"
   fi

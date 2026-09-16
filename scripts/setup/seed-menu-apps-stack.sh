@@ -128,7 +128,14 @@ echo ""
 # -----------------------------------------------------------------------------
 # Build payload then POST (201) / PUT (200) for upsert semantics. Uses wget
 # inside the container — alpine ships it, curl is not always present.
+#
+# A rejected tile only ever reached stderr, which the caller discards, and the
+# script still exited 0 — so a run where every tile failed was indistinguishable
+# from one that worked. FAILED is counted here and turned into the exit status
+# at the end.
 # -----------------------------------------------------------------------------
+FAILED=0
+
 upsert() {
   local id="$1" payload="$2"
   local post_status put_status
@@ -144,9 +151,11 @@ upsert() {
       return
     fi
     echo "  ! $id: POST=409, PUT=$put_status" >&2
+    FAILED=$((FAILED + 1))
     return
   fi
   echo "  ! $id failed: POST=$post_status" >&2
+  FAILED=$((FAILED + 1))
 }
 
 for entry in "${APPS[@]}"; do
@@ -185,4 +194,8 @@ for entry in "${APPS[@]}"; do
 done
 
 echo ""
+if [ "$FAILED" -gt 0 ]; then
+  echo "✗ ${FAILED} tile(s) rejected — the launchpad is incomplete." >&2
+  exit 1
+fi
 echo "✓ Done. Menu apps live at https://${DOMAIN}/ (refresh the Hub UI to see them)."
