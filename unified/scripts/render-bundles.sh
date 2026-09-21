@@ -84,6 +84,11 @@ RACEWAY_UI_IMAGE|ironstream/raceway/ui|enterprise|RACEWAY_UI_VERSION|ironstream
 RACEWAY_WORKER_IMAGE|ironstream/raceway/worker|enterprise|RACEWAY_WORKER_VERSION|ironstream
 # --- data-simulator (enterprise demo feed, opt-in EE-only group) ---
 DATA_SIMULATOR_IMAGE|ironstream/data-simulator|enterprise|DATA_SIMULATOR_VERSION|data-simulator
+# --- flowmaker premium (EE-only): AI assistant + its EE ConfigHub backend ---
+# base/ee.yml swaps the community ConfigHub to the enterprise build (it carries
+# the assistant chat socket the ai-agent connects to) and adds flowmaker-ai-agent.
+CONFIGHUB_IMAGE_EE|flowmaker.core/flowmaker-enterprise-confighub-v2|enterprise|FLOWMAKER_CORE_VERSION|flowmaker
+AI_AGENT_IMAGE|flowmaker.core/flowmaker-ai-agent|enterprise|AI_AGENT_VERSION|flowmaker
 '
 
 emit() {  # $1=bundle file suffix

@@ -62,6 +62,14 @@ services:
     deploy:
       restart_policy: { condition: any, delay: 5s, window: 120s }
 
+  # AI assistant: platform-only (no ingress), restarts until the operator adds
+  # OPENAI_API_KEY. Volume declared below.
+  flowmaker-ai-agent:
+    networks:
+      - platform
+    deploy:
+      restart_policy: { condition: any, delay: 5s, window: 120s }
+
 secrets:
   logto_db_url:
     name: ${ENV}_logto_db_url
@@ -75,6 +83,7 @@ secrets:
 
 volumes:
   logto-postgres-data: { name: "${ENV}-logto-postgres-data" }
+  flowmaker-ai-agent-data: { name: "${ENV}-flowmaker-ai-agent-data" }
 
 networks:
   traefik-public:

@@ -222,3 +222,35 @@ services:
   grafana-wrapper:
     environment:
       - INDUSTREAM_OIDC_ORIGIN=https://auth.${INDUSTREAM_DOMAIN}
+
+  # ---- FlowMaker ConfigHub → enterprise build (Assistant chat backend) --------
+  # The community ConfigHub (base/flowmaker.yml, ${CONFIGHUB_IMAGE}) has no
+  # Assistant chat socket, so the FlowMaker UI shows the Assistant as
+  # "enterprise version". EE swaps it to the enterprise ConfigHub — same
+  # FLOWMAKER_CORE_VERSION, same LMDB store/volume — which exposes the socket the
+  # ai-agent connects to. Image-only override; env/volume/deploy inherited from
+  # base/flowmaker.yml + the runtime overlay.
+  flowmaker-confighub:
+    image: ${CONFIGHUB_IMAGE_EE}
+
+  # ---- FlowMaker AI assistant (chat agent) ------------------------------------
+  # Connects OUT to the enterprise ConfigHub chat socket (NO published port) and
+  # drives DataCatalog through an in-process MCP server (spawned via npx from the
+  # CDN registry). Uses the OpenRouter gateway; the API key is operator-supplied
+  # and intentionally NOT committed:
+  #   docker service update --env-add OPENAI_API_KEY=<key> <stack>_flowmaker-ai-agent
+  # Neutral (image+env+volume). nets/deploy live in the runtime overlay, which
+  # must also declare the flowmaker-ai-agent-data volume.
+  flowmaker-ai-agent:
+    image: ${AI_AGENT_IMAGE}
+    environment:
+      - FM_CONFIGHUB_URL=http://flowmaker-confighub:4000
+      - FM_DATACATALOG_URL=http://datacatalog-api:8003
+      - FM_CDN_REGISTRY_URL=http://cdn-server:4873
+      - AI_AGENT_DATA_DIR=/data
+      # - OPENAI_API_KEY=          # operator-supplied (OpenRouter/OpenAI); never committed
+      # - AI_AGENT_MODEL=          # optional; defaults to the agent's built-in default
+    volumes:
+      - flowmaker-ai-agent-data:/data
+    depends_on:
+      - flowmaker-confighub
