@@ -37,8 +37,8 @@ new containers.
   reserves an optional `os/` directory that a separate ISO build can fill; no
   code for it here.
 - A local Docker registry. See *Image delivery* below.
-- Differential bundles. The format carries the metadata to add `--from` and
-  `--against` later; the first implementation always ships everything.
+- ~~Differential bundles.~~ Added 2026-09-22 as `--against`, see
+  *4. Differential bundles* below.
 - Multi-node swarm. `load.sh` can simply be replayed on each node; the three
   real targets (Bernegger `tmgissrv`, the HO8 VM, `.55`) are single-node.
 
@@ -140,6 +140,35 @@ Sibling of `forge-bundle.sh`, same selection flags as `deploy.sh`.
 `--list-images` against the tree inside the bundle** and compares it to the
 manifest. That catches a group added between build and departure.
 
+### 4. Differential bundles (`--against`)
+
+A site update rarely changes more than a few images, yet a full bundle
+re-ships every one of them (3.7 to 11 GB per site). `--against <ref>` cuts a
+bundle to what the site lacks:
+
+- `<ref>` is what the site already holds: a previous bundle directory (or its
+  `bundle.json`), meaning the images that bundle installed; or a plain list
+  of references exported **on the site** with
+  `docker image ls --format '{{.Repository}}:{{.Tag}}'`. The exported list is
+  the better reference — it reflects what is loaded, not what was shipped.
+- `airgap.sh diff --against <ref>` prints the delta and its size before
+  anything is written, so the operator knows what the stick will carry.
+- `airgap.sh prepare --against <ref>` saves only the delta (still per group),
+  and `bundle.json` records `shipped_images` (the slice that travelled) and
+  `against` (`{ref, images}`: the reference and how many of this deploy's
+  images it already held). `images` **stays the full list**: `verify` and
+  `install.sh` reason about the deploy, never about the slice.
+- A `--skip-images` bundle is the degenerate case: scripts only, empty
+  `shipped_images`, no reference.
+
+`install.sh` closes the loop with a presence check between `load_images` and
+`sync_tree`: every reference in `images` must resolve with
+`docker image inspect`, or the install stops **before the tree or the stack
+is touched**, naming the missing images and the reference the bundle was cut
+against. Without it, a mismatched differential (or script-only) bundle would
+update the stack first and fail afterwards, task by task, with "No such
+image" — the exact failure this check exists to make impossible.
+
 ## Bundle format
 
 ```
@@ -154,7 +183,7 @@ industream-airgap-<version>-<edition>-<runtime>/
 │   ├── grafana-plugins/       # 4 plugins, pre-extracted
 │   └── cdn-packages/          # Verdaccio storage + esm cache
 ├── os/                        # reserved, empty
-├── bundle.json
+├── bundle.json                # images (full), shipped_images, against, …
 ├── MANIFEST.sha256
 ├── PARTS.sha256
 └── install.sh

@@ -113,6 +113,30 @@ load_images() {
   done
 }
 
+# Every image the deploy needs must be loaded before the tree moves. A
+# script-only (--skip-images) or differential (--against) bundle applied to a
+# site whose inventory does not match would otherwise update the stack first
+# and only fail afterwards, task by task, with "No such image".
+check_images_present() {
+  echo "▶ checking the images the deploy needs are loaded"
+  local missing=() img
+  while IFS= read -r img; do
+    [[ -n "$img" ]] || continue
+    docker image inspect "$img" >/dev/null 2>&1 || missing+=("$img")
+  done < <(python3 -c "import json;print('\n'.join(json.load(open('$BUNDLE/bundle.json'))['images']))")
+  (( ${#missing[@]} == 0 )) && return 0
+
+  local ref; ref="$(python3 -c "
+import json
+print((json.load(open('$BUNDLE/bundle.json')).get('against') or {}).get('ref', ''))")"
+  local why="this bundle ships no image for them (built with --skip-images?)"
+  [[ -z "$ref" ]] || why="this bundle was cut against '$ref' and the site does not match that reference"
+  die "${#missing[@]} image(s) the deploy needs are not loaded on this machine — nothing was changed.
+$why. Ship a full bundle, or one built with --against this site's inventory
+(docker image ls --format '{{.Repository}}:{{.Tag}}'):
+$(printf '  %s\n' "${missing[@]}")"
+}
+
 # Site-local paths the bundle's tree never overwrites, and — just as
 # important — never deletes. ONE list, consumed by both the rsync copy and
 # the manifest that drives pruning: if the two ever disagreed, a path rsync
@@ -414,6 +438,7 @@ main() {
   parse_args "$@"
   preflight
   load_images
+  check_images_present
   sync_tree
   seed_assets
   if [[ "$NO_DEPLOY" == true ]]; then

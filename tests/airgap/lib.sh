@@ -34,7 +34,17 @@ with_docker_stub() {
 echo "$*" >> "$DOCKER_LOG"
 case "$1" in
   info)   echo "active" ;;
-  image)  exit 1 ;;          # `image inspect` → absent, so callers pull
+  image)                     # `image inspect`: present by default (install-side
+                              # tests need every bundle image "loaded"); a test
+                              # that needs pulls sets DOCKER_STUB_IMAGES_ABSENT=1,
+                              # one that needs a precise inventory points
+                              # DOCKER_STUB_IMAGES at a file of present refs.
+    if [[ -n "${DOCKER_STUB_IMAGES:-}" ]]; then
+      grep -qxF -- "${@: -1}" "$DOCKER_STUB_IMAGES" || exit 1
+    elif [[ -n "${DOCKER_STUB_IMAGES_ABSENT:-}" ]]; then
+      exit 1
+    fi
+    echo 0 ;;
   volume) echo "vol" ;;
   load)   cat >/dev/null ;;  # a real `docker load` reads its whole stdin —
                               # not draining it here made `zstd`'s write take
