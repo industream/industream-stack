@@ -9,6 +9,7 @@ out="$(mktemp -d)"
 # this script could read the log back — so capture stdout to a file instead
 # and take the last line ourselves.
 prepare_out="$(mktemp)"
+export DOCKER_STUB_IMAGES_ABSENT=1
 with_docker_stub ./scripts/airgap.sh prepare --runtime swarm --edition ce \
   --out "$out" --skip-assets > "$prepare_out"
 bundle="$(tail -1 "$prepare_out")"

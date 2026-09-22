@@ -3,7 +3,13 @@
 # airgap.sh — build and verify an offline bundle for a site with no internet.
 # =============================================================================
 #   ./airgap.sh prepare --runtime swarm --edition ee --out /media/usb
+#   ./airgap.sh diff    --runtime swarm --edition ee --against <ref>   # what a site lacks
+#   ./airgap.sh prepare --runtime swarm --edition ee --against <ref> --out /media/usb
 #   ./airgap.sh verify  /media/usb/industream-airgap-<commit>-ee-swarm
+#
+# <ref> is what the site already holds: a previous bundle (its bundle.json) or
+# a plain list of image references exported on site with
+#   docker image ls --format '{{.Repository}}:{{.Tag}}'
 #
 # Design: docs/specs/2026-09-03-airgap-bundle-design.md
 # The image set ALWAYS comes from `deploy.sh --list-images` — never a second
@@ -29,6 +35,7 @@ MAX_PART_SIZE="3800M" SKIP_IMAGES=false SKIP_ASSETS=false
 # extra flags.
 BUNDLE="1.0.1"
 FORGE_SPEC="" FORGE_INTERACTIVE=false
+AGAINST=""
 
 die() { echo "✗ $*" >&2; exit 1; }
 
@@ -60,6 +67,7 @@ parse_args() {
       --forge)          FORGE_SPEC="$2"; shift 2 ;;
       --forge-interactive) FORGE_INTERACTIVE=true; shift ;;
       --skip-images)    SKIP_IMAGES=true; shift ;;
+      --against)        AGAINST="$2"; shift 2 ;;
       --skip-assets)    SKIP_ASSETS=true; shift ;;
       *) die "unknown option: $1" ;;
     esac
@@ -90,8 +98,71 @@ resolve_forge_bundle() {
   echo "▶ Forge bundle: $BUNDLE"
 }
 
+# The image set for the selected scope, from deploy.sh and nothing else. Its
+# progress banner goes to stderr, so stdout should already be image-only; a
+# real image reference can never contain whitespace, so dropping any line
+# that does is a robust defence that never re-derives the list.
+resolve_image_set() {
+  local groups_args=(); [[ -n "$GROUP_SET" ]] && groups_args=(--groups "$GROUP_SET")
+  local scope_args; read -ra scope_args <<< "$(deploy_scope_args)"
+  local raw
+  raw="$( cd "$HERE" && ./scripts/deploy.sh --runtime "$RUNTIME" --edition "$EDITION" \
+      --env "$ENV" --bundle "$BUNDLE" "${scope_args[@]}" "${groups_args[@]}" --list-images )"
+  grep -v '[[:space:]]' <<<"$raw" || true
+}
+
+# What the site already holds (--against): a bundle directory or its
+# bundle.json, meaning the images that bundle installed; or a plain file with
+# one image reference per line, as `docker image ls --format
+# '{{.Repository}}:{{.Tag}}'` prints it on site. Blank lines and '#' comments
+# are ignored. Only ever compared, never interpolated into a command.
+reference_images() {
+  local ref="$AGAINST"
+  [[ -d "$ref" ]] && ref="$ref/bundle.json"
+  [[ -r "$ref" ]] || die "--against: cannot read '$AGAINST'"
+  if [[ "$(basename "$ref")" == bundle.json ]]; then
+    python3 -c "import json,sys;print('\n'.join(json.load(open(sys.argv[1]))['images']))" "$ref" \
+      || die "--against: '$ref' is not a bundle.json carrying an image list"
+  else
+    grep -v '^[[:space:]]*\(#\|$\)' "$ref" || true
+  fi
+}
+
+# The lines of $1 the reference does not hold. The reference is read into a
+# variable first: a `die` inside a process substitution only ends that
+# subshell, and comm would carry on against an empty list. LC_ALL=C on both
+# sides: comm silently misbehaves when its inputs and its own collation
+# disagree.
+delta_images() {
+  local ref; ref="$(reference_images)" || exit 1
+  LC_ALL=C comm -23 <(LC_ALL=C sort -u <<<"$1") <(LC_ALL=C sort -u <<<"$ref")
+}
+
+cmd_diff() {
+  [[ "$RUNTIME" == swarm || "$RUNTIME" == compose ]] || die "--runtime swarm|compose required"
+  [[ -n "$AGAINST" ]] || die "diff requires --against <bundle|bundle.json|image list>"
+  resolve_forge_bundle
+  local images; images="$(resolve_image_set)"
+  [[ -n "$images" ]] || die "the image list is empty — check --edition/--groups"
+  local delta; delta="$(delta_images "$images")"
+  local total to_ship=0 bytes=0 img size
+  total="$(wc -l <<<"$images")"
+  while IFS= read -r img; do
+    [[ -n "$img" ]] || continue
+    to_ship=$((to_ship + 1))
+    if size="$(docker image inspect -f '{{.Size}}' "$img" 2>/dev/null)"; then
+      bytes=$((bytes + size)); echo "+ $img  ($(numfmt --to=iec "$size"))"
+    else
+      echo "+ $img  (not local, size unknown)"
+    fi
+  done <<<"$delta"
+  echo "▶ $to_ship image(s) to ship, $((total - to_ship)) already present (reference: $(basename "$AGAINST"))"
+  (( bytes == 0 )) || echo "  uncompressed, the local ones: $(numfmt --to=iec "$bytes")"
+}
+
 cmd_prepare() {
   [[ "$RUNTIME" == swarm || "$RUNTIME" == compose ]] || die "--runtime swarm|compose required"
+  [[ -z "$AGAINST" || "$SKIP_IMAGES" == false ]] || die "--against and --skip-images contradict each other"
 
   # What ships must be what was tested. A tracked file modified locally means
   # the archive below would not match the code under test — and an untracked
@@ -141,23 +212,23 @@ cmd_prepare() {
   ( cd "$HERE" && find releases \( -name '.env.*' -o -name FORGE_SOURCE \) -type f -print0 ) \
     | ( cd "$HERE" && xargs -0 -r -I{} cp --parents {} "$dest/tree/unified/" )
 
-  local groups_args=(); [[ -n "$GROUP_SET" ]] && groups_args=(--groups "$GROUP_SET")
-  local scope_args; read -ra scope_args <<< "$(deploy_scope_args)"
   echo "▶ resolving the image set"
-  local raw_images
-  raw_images="$( cd "$HERE" && ./scripts/deploy.sh --runtime "$RUNTIME" --edition "$EDITION" \
-      --env "$ENV" --bundle "$BUNDLE" "${scope_args[@]}" "${groups_args[@]}" --list-images )"
-  # deploy.sh's progress banner now goes to stderr, so this stdout capture
-  # should already be image-only. Kept as defence-in-depth: a real image
-  # reference can never contain whitespace (invalid Docker image-ref syntax),
-  # so filtering on that is a robust way to drop any stray non-image line
-  # without re-deriving the list — resolve_image_list in deploy.sh stays the
-  # ONLY source of the images.
-  local images
-  images="$(grep -v '[[:space:]]' <<<"$raw_images" || true)"
+  local images; images="$(resolve_image_set)"
   [[ -n "$images" ]] || die "the image list is empty — check --edition/--groups"
 
-  [[ "$SKIP_IMAGES" == true ]] || save_images "$dest" "$images"
+  # "images" stays the FULL set whatever travels: verify and install.sh reason
+  # about the deploy, never about the slice on the stick. "shipped" is that
+  # slice — everything, or with --against only what the reference lacks.
+  local shipped="" against_present=""
+  if [[ "$SKIP_IMAGES" == false ]]; then
+    shipped="$images"
+    if [[ -n "$AGAINST" ]]; then
+      shipped="$(delta_images "$images")"
+      against_present=$(( $(wc -l <<<"$images") - $(grep -c . <<<"$shipped" || true) ))
+      echo "▶ differential: $(grep -c . <<<"$shipped" || true) image(s) absent from $(basename "$AGAINST"), $against_present already there"
+    fi
+    save_images "$dest" "$shipped"
+  fi
   # The helper image install.sh needs for seed_assets (alpine:${ALPINE_VERSION})
   # is NOT a platform image (it never comes from deploy.sh --list-images) and
   # must never be folded into $images — that would break the "image set
@@ -176,7 +247,8 @@ cmd_prepare() {
   local harvest_project=""
   [[ "$SKIP_ASSETS" == true || "$RUNTIME" != compose ]] || harvest_project="${HARVEST_PROJECT:-$ENV}"
 
-  write_bundle_json "$dest" "$commit" "$images" "$harvest_project" "$TOOLING_IMAGE"
+  write_bundle_json "$dest" "$commit" "$images" "$harvest_project" "$TOOLING_IMAGE" \
+    "$shipped" "${AGAINST:+$(basename "$AGAINST")}" "$against_present"
   ( cd "$dest" && find . -type f ! -name MANIFEST.sha256 -print0 \
       | xargs -0 sha256sum > MANIFEST.sha256 )
   cp "$HERE/scripts/airgap-install.sh" "$dest/install.sh" 2>/dev/null || true
@@ -209,14 +281,16 @@ forge_identity() {
 # code or in comments. Both mistakes were made here and cost a green suite.
 write_bundle_json() {
   local dest="$1" commit="$2" images="$3" harvest_project="$4" tooling_image="$5"
+  local shipped="$6" against_ref="$7" against_present="$8"
   local forge_key="" forge_version=""
   # `read` exits non-zero on empty input and on a line with no trailing
   # newline — both normal here, and fatal under `set -e` without the guard.
   IFS=$'\t' read -r forge_key forge_version < <(forge_identity) || true
-  python3 - "$dest" "$commit" "$EDITION" "$RUNTIME" "$ENV" "$GROUP_SET" "$UNCOMPRESSED_BYTES" "$BUNDLE" "$harvest_project" "$tooling_image" "$forge_key" "$forge_version" <<PY
+  python3 - "$dest" "$commit" "$EDITION" "$RUNTIME" "$ENV" "$GROUP_SET" "$UNCOMPRESSED_BYTES" "$BUNDLE" "$harvest_project" "$tooling_image" "$forge_key" "$forge_version" "$against_ref" "$against_present" <<PY
 import json, sys, datetime
-dest, commit, edition, runtime, env, groups, uncompressed, bundle, harvest_project, tooling_image, forge_key, forge_version = sys.argv[1:13]
+dest, commit, edition, runtime, env, groups, uncompressed, bundle, harvest_project, tooling_image, forge_key, forge_version, against_ref, against_present = sys.argv[1:15]
 images = """$images""".split()
+shipped = """$shipped""".split()
 json.dump({
     "commit": commit, "edition": edition, "runtime": runtime, "env": env,
     "groups": groups, "bundle": bundle, "harvest_project": harvest_project or None,
@@ -225,6 +299,11 @@ json.dump({
     "forge": {"exportKey": forge_key, "version": forge_version} if forge_key else None,
     "created": datetime.datetime.now().isoformat(timespec="seconds"),
     "uncompressed_bytes": int(uncompressed), "images": images,
+    # The slice that actually travels in images/ (empty with --skip-images).
+    # "against" names the reference a differential bundle was cut against and
+    # how many of this deploy's images that reference already held.
+    "shipped_images": shipped,
+    "against": {"ref": against_ref, "images": int(against_present)} if against_ref else None,
     # Recorded separately from "images" on purpose — this is a tooling
     # helper (used by install.sh's seed_assets), never a platform image, and
     # must never be mixed into the list cmd_verify replays against
@@ -515,6 +594,11 @@ for k in ('edition', 'runtime', 'env', 'bundle', 'groups'):
   local missing; missing="$(LC_ALL=C comm -23 <(echo "$expected") <(echo "$have"))"
   [[ -z "$missing" ]] || die "images required by the tree but absent from the bundle:
 $missing"
+  python3 -c "
+import json, sys
+d = json.load(open('$b/bundle.json'))
+sys.exit(1 if set(d.get('shipped_images', [])) - set(d['images']) else 0)
+" || die "bundle.json ships images outside its own image list"
   echo "✓ bundle verified ($(wc -l <<<"$have") images)"
 }
 
@@ -525,8 +609,9 @@ $missing"
 # the CDN half's own docker invocations unreachable in a stub-based test.
 case "${1:-}" in
   prepare)              shift; parse_args "$@"; cmd_prepare ;;
+  diff)                 shift; parse_args "$@"; cmd_diff ;;
   verify)               shift; cmd_verify "$@" ;;
   _split)               shift; cmd_split "$@" ;;
   _harvest-cdn-packages) shift; dest="$1"; shift; parse_args "$@"; harvest_cdn_packages "$dest" ;;
-  *)                    die "usage: airgap.sh prepare|verify <args>" ;;
+  *)                    die "usage: airgap.sh prepare|diff|verify <args>" ;;
 esac
