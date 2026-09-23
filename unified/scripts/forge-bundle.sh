@@ -241,7 +241,7 @@ cmd_check() {
   # NOT broken for lacking them — you deploy it with a narrowed group set. So
   # `required` is computed ONLY from the base/*.yml deploy.sh would actually
   # assemble for --edition/--groups (same mapping as deploy.sh), not all of base/.
-  local target="" edition="ce"
+  local target="" edition="ce" pullable=false
   local groups="core flowmaker datacatalog workers data monitoring"   # deploy.sh default
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -249,11 +249,12 @@ cmd_check() {
       --edition=*) edition="${1#--edition=}"; shift ;;
       --groups)    groups="$2"; shift 2 ;;
       --groups=*)  groups="${1#--groups=}"; shift ;;
+      --pullable)  pullable=true; shift ;;
       -*)          log_error "unknown option: $1"; return 1 ;;
       *)           if [[ -z "$target" ]]; then target="$1"; else log_error "unexpected arg: $1"; return 1; fi; shift ;;
     esac
   done
-  [[ -z "$target" ]] && { log_error "usage: forge-bundle.sh check <bundle-key|bundle-dir> [--edition ce|ee] [--groups \"core flowmaker …\"]"; return 1; }
+  [[ -z "$target" ]] && { log_error "usage: forge-bundle.sh check <bundle-key|bundle-dir> [--edition ce|ee] [--groups \"core flowmaker …\"] [--pullable]"; return 1; }
   [[ "$edition" == ce || "$edition" == ee ]] || { log_error "--edition must be ce|ee"; return 1; }
 
   # Accept a full path, a bundle-platform-<key> name, or a bare key.
@@ -298,6 +299,49 @@ cmd_check() {
     return 2
   fi
   log_success "all required image vars are present — bundle is deployable for [edition=${edition}, groups: ${groups}]"
+
+  # An `if`, not `[[ … ]] && …`: this is the function's last command, and the
+  # && form would return 1 whenever --pullable was not passed.
+  if [[ "$pullable" == true ]]; then
+    check_refs_resolve "$required" "${bfiles[@]}"
+  fi
+}
+
+# A present variable is not a reachable image. A bundle can name a tag that was
+# built but never replicated to a registry the build machine can read — it then
+# passes the check above and dies at `prepare`'s docker pull, or on site.
+#
+# Only the variables the scoped base actually requires are resolved. A bundle
+# carries every group's env file, so resolving all of them would fail a Bernegger
+# bundle over IronStream images nobody is deploying.
+#
+# Each lookup is bounded: an unreachable registry makes `docker manifest inspect`
+# hang far longer than a check anyone will wait for — a full bundle against one
+# such registry took over a minute per reference.
+check_refs_resolve() {
+  local required_vars="$1"; shift
+  local -a refs=()
+  mapfile -t refs < <(grep -hoE '^[A-Z0-9_]+_IMAGE=\S+' "$@" \
+    | grep -F -f <(printf '%s\n' "$required_vars" | sed 's/$/=/') \
+    | cut -d= -f2- | sort -u)
+  (( ${#refs[@]} > 0 )) || { log_warn "no image references to resolve"; return 0; }
+
+  # In parallel: a registry that needs an auth handshake per reference makes a
+  # sequential pass take minutes on a full bundle, and a check nobody waits for
+  # is a check nobody runs.
+  echo "▶ resolving ${#refs[@]} image reference(s) against their registries" >&2
+  local -a unresolved=()
+  # shellcheck disable=SC2016  # single quotes are the point: $1 is the inner bash's
+  mapfile -t unresolved < <(printf '%s\n' "${refs[@]}" \
+    | xargs -r -P 8 -I{} bash -c 'timeout 20 docker manifest inspect "$1" >/dev/null 2>&1 || printf "%s\n" "$1"' _ {} \
+    | sort)
+
+  if (( ${#unresolved[@]} > 0 )); then
+    log_error "NOT resolvable from this machine (built but never replicated, or not logged in):"
+    printf '    - %s\n' "${unresolved[@]}" >&2
+    return 2
+  fi
+  log_success "every image reference resolves"
 }
 
 # ---- interactive selection (menu) → fetch → print key -----------------------

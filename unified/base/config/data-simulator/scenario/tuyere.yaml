@@ -1,0 +1,49 @@
+# IOList §1 — Furnace design
+# Every field is per-tuyere, so we use the `eachTuyere` range generator to produce `TuyereNo` tags.
+section: Tuyere
+topic_prefix: ironstream/tuyere
+
+default_tags: {}
+
+value_generators:
+  eachTuyere:
+    range:
+      from: 1
+      to: 30
+
+streams:
+  - name: diameter
+    topic: Diameter
+    interval_s: 3600.0
+    tags:
+      TuyereNo: { value_generator: eachTuyere }
+    baseline: 130
+    drift_per_tick: 0.5
+    min: 80
+    max: 180
+
+  # Boolean-like signal for `furnaceDesign.tuyeres.activeCount` — IOList
+  # defines activeCount as the count of tuyeres where `Active`, so we publish
+  # an `Active` field per tuyere. Always 1 here (every tuyere is in operation).
+  - name: active
+    topic: Active
+    interval_s: 60.0
+    tags:
+      TuyereNo: { value_generator: eachTuyere }
+    baseline: 1
+    drift_per_tick: 0
+    min: 1
+    max: 1
+
+  # Whether the tuyere is supervised by the Raceway model — distinct from
+  # `Active` (physical operation). `Monitored` drives whether we compute
+  # and display per-tuyere metrics. Always 1 here (every tuyere is monitored).
+  - name: monitored
+    topic: Monitored
+    interval_s: 86400.0
+    tags:
+      TuyereNo: { value_generator: eachTuyere }
+    baseline: 1
+    drift_per_tick: 0
+    min: 1
+    max: 1

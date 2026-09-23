@@ -1,0 +1,90 @@
+# IOList §7 — Gas injection
+section: Injection
+topic_prefix: ironstream/injection/gas-1
+
+default_tags:
+  Id: 1
+  Type: Gas
+
+value_generators:
+  eachTuyere:
+    range:
+      from: 1
+      to: 30
+
+streams:
+  - name: temperature
+    topic: Temperature
+    interval_s: 1.0
+    baseline: 80
+    drift_per_tick: 0.3
+    min: 20
+    max: 200
+
+  - name: flowRate
+    topic: FlowRate
+    interval_s: 1.0
+    tags:
+      TuyereNo: { value_generator: eachTuyere }
+    baseline: 30
+    drift_per_tick: 0.3
+    min: 0
+    max: 70
+
+  - name: lhv
+    topic: Lhv
+    interval_s: 600.0
+    baseline: 40000
+    drift_per_tick: 200
+    min: 25000
+    max: 55000
+
+  # Gas injection mass-balance is typically methane-heavy in dev rigs.
+  # Adjust the per-element baselines if you stub in a different feedstock.
+  - name: chemicalProps.C
+    topic: C
+    interval_s: 600.0
+    baseline: 75
+    drift_per_tick: 0.5
+    min: 0
+    max: 100
+
+  - name: chemicalProps.H
+    topic: H
+    interval_s: 600.0
+    baseline: 25
+    drift_per_tick: 0.5
+    min: 0
+    max: 100
+
+  - name: chemicalProps.O
+    topic: O
+    interval_s: 600.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: chemicalProps.N
+    topic: N
+    interval_s: 600.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: chemicalProps.S
+    topic: S
+    interval_s: 600.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 2
+
+  - name: chemicalProps.humidity
+    topic: Humidity
+    interval_s: 600.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 2

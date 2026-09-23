@@ -1,0 +1,139 @@
+# IOList §8 — By-product injection
+section: Injection
+topic_prefix: ironstream/injection/byproduct-3
+
+default_tags:
+  Id: 3
+  Type: ByProduct
+
+value_generators:
+  eachTuyere:
+    range:
+      from: 1
+      to: 30
+
+streams:
+  - name: temperature
+    topic: Temperature
+    interval_s: 1.0
+    baseline: 80
+    drift_per_tick: 0.3
+    min: 20
+    max: 200
+
+  - name: flowRate
+    topic: FlowRate
+    interval_s: 1.0
+    tags:
+      TuyereNo: { value_generator: eachTuyere }
+    baseline: 3
+    drift_per_tick: 0.05
+    min: 0
+    max: 10
+
+  # Realistic by-products (recycled sludges, slag fines) split as a few
+  # oxides + carbonates; everything else stays at 0 to honour the IOList
+  # contract without being noisy. Tweak when integrating a real by-product.
+  - name: chemicalProps.C
+    topic: C
+    interval_s: 600.0
+    baseline: 5
+    drift_per_tick: 0.1
+    min: 0
+    max: 100
+
+  - name: chemicalProps.CaOH2
+    topic: CaOH2
+    interval_s: 600.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: chemicalProps.FeOH2
+    topic: FeOH2
+    interval_s: 600.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: chemicalProps.FeO
+    topic: FeO
+    interval_s: 600.0
+    baseline: 20
+    drift_per_tick: 0.2
+    min: 0
+    max: 100
+
+  - name: chemicalProps.Fe3O4
+    topic: Fe3O4
+    interval_s: 600.0
+    baseline: 15
+    drift_per_tick: 0.2
+    min: 0
+    max: 100
+
+  - name: chemicalProps.Fe2O3
+    topic: Fe2O3
+    interval_s: 600.0
+    baseline: 40
+    drift_per_tick: 0.3
+    min: 0
+    max: 100
+
+  - name: chemicalProps.CaCO3
+    topic: CaCO3
+    interval_s: 600.0
+    baseline: 5
+    drift_per_tick: 0.1
+    min: 0
+    max: 100
+
+  - name: chemicalProps.CaMg_CO3_2
+    topic: CaMg_CO3_2
+    interval_s: 600.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: chemicalProps.FeCO3
+    topic: FeCO3
+    interval_s: 600.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: chemicalProps.K2CO3
+    topic: K2CO3
+    interval_s: 600.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: chemicalProps.MgCO3
+    topic: MgCO3
+    interval_s: 600.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: chemicalProps.Na2CO3
+    topic: Na2CO3
+    interval_s: 600.0
+    baseline: 0
+    drift_per_tick: 0
+    min: 0
+    max: 100
+
+  - name: chemicalProps.humidity
+    topic: Humidity
+    interval_s: 600.0
+    baseline: 5
+    drift_per_tick: 0.1
+    min: 0
+    max: 100

@@ -1,0 +1,25 @@
+apiVersion: industream.com/v1
+kind: Worker
+metadata:
+  name: worker-pattern-recognition
+  version: 0.1.0-pc-dev
+  author: Industream
+  description: Pattern recognition FlowMaker box on the unified pattern-core (MASS) engine
+spec:
+  image:
+    file: image.tar.gz
+  resources:
+    limits:
+      cpus: "1.0"
+      memory: 1G
+  environment:
+    FM_ROUTER_TRANSPORT_ADDRESS: tcp://*:5560
+    FM_RUNTIME_HTTP_ADDRESS: http://flowmaker-scheduler:3120
+    FM_WORKER_ID: worker-pattern-recognition001
+    FM_WORKER_LOG_SOCKET_IO_ENDPOINT: http://flowmaker-logging:3000
+    FM_WORKER_TRANSPORT_ADV_ADDRESS: tcp://worker-pattern-recognition:5560
+    FM_WORKER_APP_CONFIG: /usr/app/config/
+    FM_DATACATALOG_URL: http://datacatalog-api:8003
+    FM_CDN_REGISTRY_URL: http://cdn-server:4873
+    FM_PATTERN_PRESET: similar
+  replicas: 1

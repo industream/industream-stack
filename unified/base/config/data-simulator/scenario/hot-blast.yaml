@@ -1,0 +1,58 @@
+section: HotBlast
+topic_prefix: ironstream/hotblast
+
+# Influx tags applied to every stream of this section. Empty for HotBlast
+# (IOList §3 declares no tags), populated for sections like Injection or
+# Tuyere where every stream carries the same identifiers (e.g. Id, Type,
+# TuyereNo). A per-stream `tags:` block (in any entry below) overrides these.
+default_tags: {}
+
+value_generators:
+  eachTuyere:
+    range:
+      from: 1
+      to: 30
+
+streams:
+  - name: temperature
+    topic: Temperature
+    interval_s: 1.0
+    baseline: 1200
+    drift_per_tick: 0.5
+    min: 850
+    max: 1350
+
+  - name: pressure
+    topic: Pressure
+    interval_s: 1.0
+    baseline: 4.5
+    drift_per_tick: 0.02
+    min: 3
+    max: 6
+
+  - name: dryNaturalFlowRate
+    topic: DryNaturalFlowRate
+    interval_s: 1.0
+    tags:
+      TuyereNo: { value_generator: eachTuyere }
+    baseline: 250
+    drift_per_tick: 2
+    min: 50
+    max: 450
+
+  - name: totalHumidity
+    topic: TotalHumidity
+    interval_s: 1.0
+    baseline: 25
+    drift_per_tick: 0.3
+    min: 5
+    max: 80
+
+  - name: o2EnrichmentFlowRate
+    topic: O2EnrichmentFlowRate
+    interval_s: 1.0
+    baseline: 15
+    drift_per_tick: 0.5
+    min: 0
+    max: 80
+

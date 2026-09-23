@@ -41,6 +41,33 @@ services:
         - traefik.http.routers.${ENV}-industream-hub-uploads-secure.tls=true
         - traefik.http.routers.${ENV}-industream-hub-uploads-secure.service=${ENV}-industream-hub-backend
         - traefik.http.routers.${ENV}-industream-hub-uploads-secure.middlewares=security-headers@file
+        # Dedicated API hostname, NO prefix strip — same name compose already uses
+        # (runtime/compose/core.yml: `caddy: hub-api.${FM_DOMAIN}`), so the two
+        # runtimes finally agree.
+        #
+        # Why it is needed at all: behind /api/uifusion, Traefik strips the prefix,
+        # so the backend never knows it exists and the OpenAPI document it serves
+        # declares none. Swagger's "Try it out" then posts to https://<domain>/languages
+        # instead of /api/uifusion/languages — the SPA's nginx answers 405. No Traefik
+        # setting fixes that; only a path-faithful route does. Swagger therefore works
+        # at https://hub-api.${INDUSTREAM_DOMAIN}/openapi/.
+        #
+        # ADDITIVE: /api/uifusion stays exactly as it is. The SPA keeps calling it
+        # same-origin (HUB_BACKEND_URL in base/core.yml), which is what keeps the auth
+        # cookies and the SharedWorker bridge working — do NOT move the SPA here.
+        #
+        # Left UNAUTHENTICATED on purpose (Cyril, 2026-08-17): these installations sit
+        # behind a firewall and are usually air-gapped after commissioning. Business
+        # endpoints still require a JWT (verified: /apps → 401); only the documentation
+        # is open. Put an auth middleware here if that ever stops being true.
+        - traefik.http.routers.${ENV}-industream-hub-api-secure.entrypoints=websecure
+        - traefik.http.routers.${ENV}-industream-hub-api-secure.rule=Host(`hub-api.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-industream-hub-api-secure.tls=true
+        - traefik.http.routers.${ENV}-industream-hub-api-secure.service=${ENV}-industream-hub-backend
+        - traefik.http.routers.${ENV}-industream-hub-api-secure.middlewares=security-headers@file
+        - traefik.http.routers.${ENV}-industream-hub-api.entrypoints=web
+        - traefik.http.routers.${ENV}-industream-hub-api.rule=Host(`hub-api.${INDUSTREAM_DOMAIN}`)
+        - traefik.http.routers.${ENV}-industream-hub-api.middlewares=redirect-to-https@file
       resources:
         # 256M (was 64M): the Node hub-backend OOM-killed (exit 137) at 64M with the
         # EE `api-enterprise` image; the CE image was also very tight. Found at VM gate.

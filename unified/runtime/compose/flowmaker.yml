@@ -69,7 +69,7 @@ services:
     restart: unless-stopped
     labels:
       caddy: frontend.${FM_DOMAIN}
-      caddy.reverse_proxy: "{{upstreams 80}}"
+      caddy.reverse_proxy: "{{upstreams 8080}}"
       caddy.tls.issuer: internal
       caddy.tls.issuer.lifetime: 24000h
 

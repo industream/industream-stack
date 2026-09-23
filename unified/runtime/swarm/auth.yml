@@ -1,0 +1,62 @@
+# runtime/swarm/auth.yml — swarm plumbing for the SSO edge (oauth2-proxy).
+# Merged after base/auth.yml when the `auth` group is assembled (EE-only).
+#
+# Traefik wiring (swarm + file providers active):
+#   • oauth2-proxy exposes /oauth2/* ON EACH protected app's host (here filebrowser)
+#     so the OIDC callback + sign_in land back on the same origin as the app.
+#   • One SHARED middleware is DEFINED here and CONSUMED by every protected app's
+#     router (see runtime/swarm/ironstream.yml → filebrowser):
+#       - <env>-oauth-auth : forwardAuth → oauth2-proxy ROOT (/). Authed → 202
+#         (allow, headers injected); unauthenticated browser → 302 to Logto, which
+#         Traefik forwards as a real redirect. (Pointing forwardAuth at /oauth2/auth
+#         instead returns a bare 401 that Traefik's `errors` middleware can only
+#         re-body — NOT restatus to 3xx on v3 — so the browser never redirects.
+#         Hitting / lets oauth2-proxy issue the 302 itself. Verified on v3.6.7.)
+#   ⚠️ SECURITY: filebrowser auto-creates the user from the injected header, and
+#   Traefik overrides any client-sent X-Auth-Request-* on the forwardAuth response.
+#   The protected router MUST carry <env>-oauth-auth, else a spoofed header = full
+#   access (verified: a spoofed X-Auth-Request-Email still 302s to Logto).
+services:
+  oauth2-proxy:
+    networks:
+      - traefik-public
+      - platform
+    secrets:
+      - source: oauth2_proxy_client_secret
+        target: ${ENV}_oauth2_proxy_client_secret
+      - source: oauth2_proxy_cookie_secret
+        target: ${ENV}_oauth2_proxy_cookie_secret
+    deploy:
+      labels:
+        - traefik.enable=true
+        - traefik.http.services.${ENV}-oauth2-proxy.loadbalancer.server.port=4180
+        # oauth2-proxy endpoints served on the filebrowser host (callback/sign_in/static).
+        # Host+PathPrefix outranks the app's Host-only router → /oauth2/* wins by default.
+        - traefik.http.routers.${ENV}-oauth2-proxy.rule=Host(`filebrowser.${INDUSTREAM_DOMAIN}`) && PathPrefix(`/oauth2/`)
+        - traefik.http.routers.${ENV}-oauth2-proxy.entrypoints=websecure
+        - traefik.http.routers.${ENV}-oauth2-proxy.tls=true
+        - traefik.http.routers.${ENV}-oauth2-proxy.service=${ENV}-oauth2-proxy
+        # ---- shared forwardAuth middleware (referenced by protected apps' routers) ----
+        # address = ROOT (/), NOT /oauth2/auth — so unauthenticated browsers get a
+        # 302 to Logto (Traefik forwards 3xx); authed requests get 202 + headers.
+        - traefik.http.middlewares.${ENV}-oauth-auth.forwardauth.address=http://oauth2-proxy:4180/
+        - traefik.http.middlewares.${ENV}-oauth-auth.forwardauth.trustForwardHeader=true
+        - traefik.http.middlewares.${ENV}-oauth-auth.forwardauth.authResponseHeaders=X-Auth-Request-Email,X-Auth-Request-User,X-Auth-Request-Preferred-Username
+      restart_policy: { condition: any, delay: 5s, window: 120s }
+
+secrets:
+  oauth2_proxy_client_secret:
+    name: ${ENV}_oauth2_proxy_client_secret
+    external: true
+  oauth2_proxy_cookie_secret:
+    name: ${ENV}_oauth2_proxy_cookie_secret
+    external: true
+
+networks:
+  traefik-public:
+    external: true
+    name: traefik-shared_traefik-public
+  platform:
+    name: ${ENV}-platform
+    driver: overlay
+    attachable: true

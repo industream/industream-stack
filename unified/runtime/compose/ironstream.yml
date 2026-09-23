@@ -14,6 +14,10 @@ services:
   material-catalog-api:
     networks: [flowmaker-net]
     restart: unless-stopped
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    secrets:
+      - postgres_admin_password
     labels:
       caddy: materialcatalog-api.${FM_DOMAIN}
       caddy.reverse_proxy: "{{upstreams 9501}}"
@@ -38,6 +42,10 @@ services:
   recipe-maker-api:
     networks: [flowmaker-net]
     restart: unless-stopped
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    secrets:
+      - postgres_admin_password
     labels:
       caddy: recipemaker-api.${FM_DOMAIN}
       caddy.reverse_proxy: "{{upstreams 8080}}"
@@ -108,6 +116,12 @@ services:
       caddy.reverse_proxy: "{{upstreams 8080}}"
       caddy.tls.issuer: internal
       caddy.tls.issuer.lifetime: 24000h
+
+secrets:
+  # File-secret (compose) — same postgres admin password the swarm overlay mounts
+  # as a docker secret. dotnet-entrypoint.sh reads it and injects the placeholder.
+  postgres_admin_password:
+    file: ${SECRETS_DIR:-./secrets}/postgres_admin_password
 
 networks:
   flowmaker-net:

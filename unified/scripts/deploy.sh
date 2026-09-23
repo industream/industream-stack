@@ -28,7 +28,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # unified/
-RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false BUNDLE=""
+RUNTIME="" EDITION="ce" ENV="prod" STACK="" PROJECT="" COMMUNITY=false RENDER=false LIST_IMAGES=false PRINT_GROUPS=false AIRGAP=false BUNDLE=""
 FORGE_SPEC="" FORGE_INTERACTIVE=false   # --forge <exportKey>@<version> | --forge-interactive
 WORKERS_ENABLED=""   # CSV allowlist of flow-box worker services; empty = all
 TYPE="" ATTACH=false
@@ -51,6 +51,9 @@ while [[ $# -gt 0 ]]; do
     --workers)   WORKERS_ENABLED="$2"; shift 2 ;;
     --type)      TYPE="$2"; shift 2 ;;
     --render)    RENDER=true; shift ;;
+    --list-images) LIST_IMAGES=true; shift ;;
+    --print-groups) PRINT_GROUPS=true; shift ;;
+    --airgap)    AIRGAP=true; shift ;;
     -h|--help)   sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -181,9 +184,11 @@ shopt -u nullglob
 CUSTOM_FILES=("${_custom_neutral[@]}" "${_custom_runtime[@]}")
 for cf in "${CUSTOM_FILES[@]}"; do FILES+=(-f "$cf"); done
 
-echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV} / bundle=${BUNDLE_DIR##*/} / groups=[${GROUP_SET}]"
-echo "  files: ${FILES[*]//-f /}"
-[[ ${#CUSTOM_FILES[@]} -gt 0 ]] && echo "  custom overlays: ${CUSTOM_FILES[*]}"
+# Progress banner, not data — sent to stderr so `--list-images`'s stdout is
+# strictly the resolved image list (its designated single source of truth).
+echo "▶ ${EDITION^^} / ${RUNTIME} / env=${ENV} / bundle=${BUNDLE_DIR##*/} / groups=[${GROUP_SET}]" >&2
+echo "  files: ${FILES[*]//-f /}" >&2
+[[ ${#CUSTOM_FILES[@]} -gt 0 ]] && echo "  custom overlays: ${CUSTOM_FILES[*]}" >&2
 
 # ---- Per-worker selection (OPTIONAL) ----------------------------------------
 # --workers "svcA,svcB,…" deploys ONLY those flow-box workers; empty = every
@@ -393,6 +398,19 @@ seed_menu_apps() {
   else
     echo "  ⚠ menu-apps seeding failed (non-fatal)"
   fi
+
+  # Languages (BOTH editions). A fresh Hub knows only the locales that have been
+  # POSTed to it, so every install was English-only until someone called the API
+  # by hand. Override the set with HUB_LANGUAGES="en:English,de:Deutsch,…".
+  # Registering a locale only makes it SELECTABLE — the translations and the
+  # language selector ship with the Hub frontend.
+  local lang_args=(--runtime "$RUNTIME")
+  [[ "$RUNTIME" == swarm ]] && lang_args+=(--stack "$STACK") || lang_args+=(--project "$PROJECT")
+  if HUB_BACKEND_SERVICE=industream-hub-backend bash "$HERE/../scripts/setup/seed-hub-languages-stack.sh" "${lang_args[@]}" >/dev/null 2>&1; then
+    echo "  ✓ Hub languages seeded (${HUB_LANGUAGES:-en, de, fr})"
+  else
+    echo "  ⚠ language seeding failed (non-fatal)"
+  fi
 }
 
 # ---- EE post-deploy seeders -------------------------------------------------
@@ -450,11 +468,33 @@ seed_ee() {
   admin_user="${HUB_BACKEND_ADMIN_USER:-$(cat "$secrets_dir/hub_backend_admin_user" 2>/dev/null || echo industream)}"
   admin_pass="${HUB_BACKEND_ADMIN_PASSWORD:-$(cat "$secrets_dir/hub_backend_admin_password" 2>/dev/null || echo admin)}"
 
+  # The fallback above is only reached when nothing is configured. An EXISTING
+  # secrets file or env var saying "admin" still lands us in the collision, which
+  # is how the Bernegger install ended up unable to log in to Grafana at all:
+  # Grafana already owns a local `admin` (GF_SECURITY_ADMIN_USER) and refuses to
+  # attach an OIDC identity to it, reporting "user not found" — a message that
+  # points nowhere near the real cause. Override rather than warn: a deploy that
+  # knowingly provisions a broken login is worse than one that renames it.
+  if [[ "$admin_user" == "admin" ]]; then
+    echo "  ⚠ configured Logto user is 'admin', which collides with Grafana's local"
+    echo "    admin account and breaks EE SSO — provisioning 'industream' instead."
+    echo "    Set HUB_BACKEND_ADMIN_USER or secrets/$ENV/hub_backend_admin_user to"
+    echo "    silence this."
+    admin_user="industream"
+  fi
+
+  # Derive the email from the USERNAME, never a hardcoded "admin@". Logto enforces
+  # UNIQUE (tenant_id, primary_email), so a fixed address collides the moment a
+  # second account is seeded — including the rename above: provisioning
+  # `industream` with admin@<domain> on an install whose existing `admin` already
+  # holds it violates the index and the whole seeding step fails.
+  admin_email="${HUB_BACKEND_ADMIN_EMAIL:-${admin_user}@${domain}}"
+
   # 1) Logto: OIDC app + roles + bootstrap user (Argon2i → needs python3 + argon2-cffi).
   if python3 -c 'import argon2' 2>/dev/null; then
     if bash "$tmp/seed-logto.sh" --client-id "${OIDC_CLIENT_ID:-industream-hub-app}" \
          --redirect "https://${domain}/" --user "$admin_user" --password "$admin_pass" \
-         --email "admin@${domain}" --role admin "${scope[@]}" >/dev/null 2>&1; then
+         --email "$admin_email" --role admin "${scope[@]}" >/dev/null 2>&1; then
       echo "  ✓ Logto: app '${OIDC_CLIENT_ID:-industream-hub-app}' + roles + user '${admin_user}'"
     else echo "  ⚠ Logto seeding failed (non-fatal — see scripts/setup/seed-logto.sh)"; fi
   else
@@ -513,12 +553,74 @@ seed_ee() {
     else echo "  ⚠ Logto Grafana client-secret update failed (login will fail with invalid_client)"; fi
   fi
 
+  # 5) Audit: Logto accepts a user with no email address, Grafana does not. When
+  #    the userinfo response carries none, Grafana falls back to a GitHub-era
+  #    /me/emails endpoint that Logto does not implement, and the sign-in dies on
+  #    a 404 that names neither the user nor the missing field. Anyone creating an
+  #    account from the Logto console will hit it. Report it here instead, where
+  #    the operator is already looking.
+  if [[ -n "$pg_cid" ]]; then
+    local no_email
+    no_email=$(docker exec "$pg_cid" psql -U postgres -d logto -tAc \
+      "SELECT string_agg(username, ', ')
+         FROM users
+        WHERE tenant_id = 'default'
+          AND username IS NOT NULL
+          AND (primary_email IS NULL OR primary_email = '');" 2>/dev/null | tr -d '[:space:]')
+    if [[ -n "$no_email" && "$no_email" != "" ]]; then
+      echo "  ⚠ Logto users without an email address: ${no_email}"
+      echo "    They can sign in to the Hub but NOT to Grafana — Grafana requires an"
+      echo "    email and fails with an opaque 404. Add one in the Logto console."
+    fi
+  fi
+
   rm -rf "$tmp"
+}
+
+# ---- Resolve image list -------------------------------------------------------
+# Resolve every `image:` reference in the assembled files against the CURRENT
+# environment. Shared by --list-images and the pre-pull so the bundle can never
+# disagree with what the deploy will ask for.
+resolve_image_list() {
+  python3 - "$@" <<'PY'
+import sys, os, re
+seen = set()
+for fn in sys.argv[1:]:
+    try:
+        lines = open(fn).read().splitlines()
+    except OSError:
+        continue
+    for ln in lines:
+        m = re.match(r"\s*image:\s*(.+?)\s*$", ln)
+        if not m:
+            continue
+        raw = re.sub(r"\s+#.*$", "", m.group(1).strip()).strip()
+        img = os.path.expandvars(raw.strip("'\""))
+        if "$" in img or not img or img in seen:
+            continue
+        seen.add(img)
+        print(img)
+PY
 }
 
 # ---- Dispatch ---------------------------------------------------------------
 if [[ "$RUNTIME" == compose ]]; then
   [[ -n "$PROJECT" ]] || { echo "✗ --project required for compose" >&2; exit 1; }
+  # Handle --list-images before any side effects (EE checks, deploy, etc)
+  if [[ "$LIST_IMAGES" == true ]]; then
+    (
+      set -a; export ENV
+      source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+      for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+      [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+      set +a
+      _li_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _li_files+=("$f"); done
+      resolve_image_list "${_li_files[@]}"
+    )
+    exit 0
+  fi
+  # Same reasoning as --list-images above: print and exit before any side effect.
+  if [[ "$PRINT_GROUPS" == true ]]; then echo "$GROUP_SET"; exit 0; fi
   if [[ "$EDITION" == ee ]]; then check_compose_domains; ensure_grafana_oidc_secret; fi
   # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
   # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
@@ -541,6 +643,22 @@ if [[ "$RUNTIME" == compose ]]; then
   [[ "$EDITION" == ee ]] && seed_ee           # EE-only: Logto app/roles/user
 else
   [[ -n "$STACK" ]] || { echo "✗ --stack required for swarm" >&2; exit 1; }
+  # Handle --list-images before any side effects (EE checks, env sourcing, deploy, etc)
+  if [[ "$LIST_IMAGES" == true ]]; then
+    # `docker stack deploy` interpolates ${VAR} from the PROCESS env (not
+    # --env-file), and unlike `compose config` it handles ${ENV}-* network/secret
+    # keys. Source the single env sources into the env, then deploy with -c.
+    set -a; export ENV
+    source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+    for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+    [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+    set +a
+    _li_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _li_files+=("$f"); done
+    resolve_image_list "${_li_files[@]}"
+    exit 0
+  fi
+  # Same reasoning as --list-images above: print and exit before any side effect.
+  if [[ "$PRINT_GROUPS" == true ]]; then echo "$GROUP_SET"; exit 0; fi
   [[ "$EDITION" == ee ]] && ensure_grafana_oidc_secret
   # `docker stack deploy` interpolates ${VAR} from the PROCESS env (not
   # --env-file), and unlike `compose config` it handles ${ENV}-* network/secret
@@ -572,41 +690,24 @@ else
   # forever on that one image. On timeout we SIGTERM/-KILL the pull, retry, then
   # give up and leave the image to the stack deploy. Tune via PULL_TIMEOUT /
   # PULL_RETRIES env.
-  _pp_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _pp_files+=("$f"); done
-  export PULL_TIMEOUT="${PULL_TIMEOUT:-120}" PULL_RETRIES="${PULL_RETRIES:-2}"
-  echo "▶ pre-pulling images (≤4 in parallel, ${PULL_TIMEOUT}s/pull, avoids swarm's all-at-once wedge)…"
-  python3 - "${_pp_files[@]}" <<'PY' | xargs -r -P 4 -n 1 sh -c '
-    img="$1"; n=0
-    while [ "$n" -lt "${PULL_RETRIES:-2}" ]; do
-      n=$((n + 1))
-      if timeout -k 10 "${PULL_TIMEOUT:-120}" docker pull "$img" >/dev/null 2>&1; then
-        echo "  ✓ $img"; exit 0
-      fi
-      [ "$n" -lt "${PULL_RETRIES:-2}" ] && echo "  … retry $img ($n/${PULL_RETRIES:-2}, prev hit ${PULL_TIMEOUT:-120}s)"
-    done
-    echo "  ⚠ $img (slow/wedged after ${PULL_RETRIES:-2}× — left for the stack deploy)"
-  ' _
-import sys, os, re
-seen = set()
-for fn in sys.argv[1:]:
-    try:
-        lines = open(fn).read().splitlines()
-    except OSError:
-        continue
-    for ln in lines:
-        m = re.match(r"\s*image:\s*(.+?)\s*$", ln)
-        if not m:
-            continue
-        raw = m.group(1).strip()
-        # Drop an inline YAML comment (e.g. `image: foo:1.0   # PINNED (never latest)`)
-        # — without this the comment words leak into the pull list as bogus refs.
-        raw = re.sub(r"\s+#.*$", "", raw).strip()
-        img = os.path.expandvars(raw.strip("'\""))
-        if "$" in img or not img or img in seen:
-            continue
-        seen.add(img)
-        print(img)
-PY
+  if [[ "$AIRGAP" == true ]]; then
+    echo "▶ airgap: skipping the pre-pull; images must already be loaded (see airgap.sh)"
+  else
+    _pp_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _pp_files+=("$f"); done
+    export PULL_TIMEOUT="${PULL_TIMEOUT:-120}" PULL_RETRIES="${PULL_RETRIES:-2}"
+    echo "▶ pre-pulling images (≤4 in parallel, ${PULL_TIMEOUT}s/pull, avoids swarm's all-at-once wedge)…"
+    resolve_image_list "${_pp_files[@]}" | xargs -r -P 4 -n 1 sh -c '
+      img="$1"; n=0
+      while [ "$n" -lt "${PULL_RETRIES:-2}" ]; do
+        n=$((n + 1))
+        if timeout -k 10 "${PULL_TIMEOUT:-120}" docker pull "$img" >/dev/null 2>&1; then
+          echo "  ✓ $img"; exit 0
+        fi
+        [ "$n" -lt "${PULL_RETRIES:-2}" ] && echo "  … retry $img ($n/${PULL_RETRIES:-2}, prev hit ${PULL_TIMEOUT:-120}s)"
+      done
+      echo "  ⚠ $img (slow/wedged after ${PULL_RETRIES:-2}× — left for the stack deploy)"
+    ' _
+  fi
   C_FILES=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] && C_FILES+=(-c) || C_FILES+=("$f"); done
   # Submit the stack (detached) then poll convergence OURSELVES. `--detach=false`
   # re-verifies every service SERIALLY (stable-window per service) → minutes for a
@@ -614,7 +715,21 @@ PY
   # restart resets the window. Polling `docker stack services` returns as soon as
   # all replicas are N/N for 2 consecutive checks — bounded by DEPLOY_TIMEOUT; on
   # timeout we name the stragglers instead of hanging (the stack stays deployed).
-  docker stack deploy --detach=true --with-registry-auth --prune "${C_FILES[@]}" "$STACK"
+  # `--resolve-image never` is REQUIRED offline: the default (`always`) contacts
+  # the registry for every tag→digest even when the image is already local.
+  DEPLOY_FLAGS=(--detach=true --prune)
+  if [[ "$AIRGAP" == true ]]; then
+    DEPLOY_FLAGS+=(--resolve-image never)
+  else
+    DEPLOY_FLAGS+=(--with-registry-auth)
+  fi
+  # BEFORE the deploy, not after: a service whose volume it cannot read never
+  # converges, so anything running after the convergence wait is too late.
+  _vo_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _vo_files+=("$f"); done
+  ENV="$ENV" bash "$HERE/../scripts/setup/fix-volume-ownership.sh" --env "$ENV" "${_vo_files[@]}" \
+    || echo "⚠ volume-ownership check skipped/failed (non-fatal)"
+
+  docker stack deploy "${DEPLOY_FLAGS[@]}" "${C_FILES[@]}" "$STACK"
   echo "▶ waiting for services to converge (≤${DEPLOY_TIMEOUT:-600}s)…"
   _deadline=$(( $(date +%s) + ${DEPLOY_TIMEOUT:-600} ))
   _stable=0

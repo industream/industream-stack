@@ -1,0 +1,22 @@
+# IOList §5 — Ore (charged into the furnace)
+section: ChargedOre
+topic_prefix: ironstream/ore
+
+default_tags: {}
+
+streams:
+  - name: charge
+    topic: Rate
+    interval_s: 600.0
+    baseline: 1600
+    drift_per_tick: 10
+    min: 1200
+    max: 2000
+
+  - name: feContent
+    topic: FeContent
+    interval_s: 3600.0
+    baseline: 58
+    drift_per_tick: 0.5
+    min: 50
+    max: 65

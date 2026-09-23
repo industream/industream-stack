@@ -28,25 +28,28 @@ services:
     volumes:
       - datasimulator-mqtt-data:/mosquitto/data
       - datasimulator-mqtt-log:/mosquitto/log
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c '(echo > /dev/tcp/127.0.0.1/1883) 2>/dev/null' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+    # No healthcheck: eclipse-mosquitto (alpine) has no bash/wget probe target for
+    # the MQTT port; swarm running-state covers liveness.
 
   # Blast-furnace simulator: reads scenario yamls, publishes to MQTT, and writes
   # to the shared postgres (same server/db as the IronStream apps).
   data-simulator-publisher:
     image: ${DATA_SIMULATOR_IMAGE}
+    # Same secret-injection wrapper as the .NET apps: dotnet-entrypoint.sh
+    # substitutes the placeholder in POSTGRES_URL (generic — any var), then runs
+    # the python publisher. Password comes from the mounted secret, never env.
+    entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
+    command: ["python", "main.py"]
     environment:
+      - DB_SECRET_PATTERN=${IRONSTREAM_DB_SECRET_PATTERN:-postgres_admin_password}
       - MQTT_HOST=data-simulator-mosquitto
       - MQTT_PORT=1883
       - CONFIG_DIR=/app/config
-      - POSTGRES_URL=postgresql://${IRONSTREAM_DB_USER:-postgres}:${IRONSTREAM_DB_PASSWORD}@${IRONSTREAM_DB_HOST:-datacatalog-postgresql}:5432/${IRONSTREAM_DB_NAME:-ironstream_dev}
+      - POSTGRES_URL=postgresql://${IRONSTREAM_DB_USER:-postgres}:__DB_PASSWORD_PLACEHOLDER__@${IRONSTREAM_DB_HOST:-postgres}:5432/${IRONSTREAM_DB_NAME:-ironstream_dev}
     volumes:
-      # Scenario yamls (demo assets — see header). Read-only.
-      - datasimulator-config:/app/config:ro
+      # Scenario yamls — the recovered IronStream IOList files, bind-mounted from
+      # the vendored config/ (./config/ resolves to base/config/). Read-only.
+      - ./config/data-simulator/scenario:/app/config:ro
     depends_on:
       - data-simulator-mosquitto
 
@@ -60,13 +63,11 @@ services:
       - INFLUX_ORG=${INFLUX_ORG}
       - INFLUX_BUCKET=${INFLUX_BUCKET}
     volumes:
-      # mqtt_consumer → influxdb_v2 bridge config (demo asset — see header). Read-only.
-      - datasimulator-telegraf-config:/etc/telegraf/telegraf.conf:ro
+      # mqtt_consumer → influxdb_v2 bridge config (recovered, vendored). Read-only.
+      - ./config/data-simulator/telegraf.conf:/etc/telegraf/telegraf.conf:ro
     depends_on:
       - data-simulator-mosquitto
 
 volumes:
   datasimulator-mqtt-data:
   datasimulator-mqtt-log:
-  datasimulator-config:
-  datasimulator-telegraf-config:

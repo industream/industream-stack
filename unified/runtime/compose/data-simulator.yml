@@ -10,9 +10,17 @@ services:
   data-simulator-publisher:
     networks: [flowmaker-net]
     restart: unless-stopped
+    volumes:
+      - ./config/dotnet-entrypoint.sh:/scripts/dotnet-entrypoint.sh:ro
+    secrets:
+      - postgres_admin_password
   data-simulator-telegraf:
     networks: [flowmaker-net]
     restart: unless-stopped
+
+secrets:
+  postgres_admin_password:
+    file: ${SECRETS_DIR:-./secrets}/postgres_admin_password
 
 networks:
   flowmaker-net:

@@ -1,0 +1,33 @@
+# =============================================================================
+# custom/swarm/10-eaf.yml — EAF live-demo side-stack overlay (ADDITIVE).
+# =============================================================================
+# Purpose: let an ARBITRARY group slice (workers-premium + timescale) attach to
+# the ALREADY-RUNNING industream-prod core instead of standing up its own
+# isolated overlay network.
+#
+# WHY THIS FILE EXISTS (tree gap, worth a PR):
+#   runtime/swarm/timescale.yml declares
+#       networks: platform: { name: ${ENV}-platform, driver: overlay }
+#   i.e. CREATE, not external — a second stack would collide with the live
+#   prod-platform. The sanctioned attach overlay (runtime/swarm/_platform-attach.yml)
+#   does exactly what this file does, but deploy.sh only wires it in for
+#   `--type workers`, which HARDCODES GROUP_SET="workers" (deploy.sh ~line 71) and
+#   so cannot carry workers-premium or timescale. The proper fix is an `--attach`
+#   flag orthogonal to `--type`; until then this overlay is the escape hatch.
+#   custom/ is merged LAST and wins on any conflict (custom/README.md).
+#
+# SCOPE / SIDE-EFFECT (accepted knowingly):
+#   custom/ applies to EVERY deploy from this tree, so a future industream-prod
+#   deploy would also treat prod-platform as EXTERNAL rather than creating it.
+#   Harmless while the network exists (it does), but it changes ownership: the
+#   network would survive a `docker stack rm industream-prod`.
+#   This file carries NO `services:` key on purpose — a service entry here would
+#   be injected into every stack deployed from this tree, including prod slices
+#   that do not contain the timescale group.
+#
+# UNDO: rm /home/cdm/industream-platform/unified/custom/swarm/10-eaf.yml
+# =============================================================================
+networks:
+  platform:
+    external: true
+    name: ${FM_ATTACHED_CORE}-platform

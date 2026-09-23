@@ -1,0 +1,38 @@
+# IOList §2 — Furnace process (dynamic counterpart of FurnaceDesign).
+# Groups the variables that describe what the furnace is doing in real-time:
+# what comes out (`dailyHotMetal`), how fast the burden descends
+# (`burdenSpeed`), and where its top currently sits (`burdenLevel`).
+section: FurnaceProcess
+topic_prefix: ironstream/furnace-process
+
+default_tags: {}
+
+streams:
+  - name: dailyHotMetal
+    topic: DailyHotMetal
+    interval_s: 60.0
+    baseline: 8000
+    drift_per_tick: 50
+    min: 2000
+    max: 15000
+
+  - name: burdenSpeed
+    topic: BurdenSpeed
+    interval_s: 60.0
+    baseline: 120
+    drift_per_tick: 1
+    min: 60
+    max: 200
+
+  # Altitude between the hearth and the top of the burden — sinks as the
+  # burden descends, then jumps up when a charge is delivered. Sampled
+  # every minute (radar-style level probes don't need 1Hz). Drift sized
+  # to roughly match `burdenSpeed` (~120 mm/min) over each tick. Random
+  # walk is a rough approximation (no charge-event spikes), enough for dev.
+  - name: burdenLevel
+    topic: BurdenLevel
+    interval_s: 60.0
+    baseline: 22
+    drift_per_tick: 0.3
+    min: 15
+    max: 30
