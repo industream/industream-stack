@@ -721,6 +721,9 @@ else
   while read -r bf; do source "$bf"; done < <(bundle_env_files)
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
+  read -r INFLUXDB_MEMORY_LIMIT INFLUXDB_MEMORY_RESERVATION < <(bash "$HERE/../scripts/setup/influxdb-memory.sh")
+  export INFLUXDB_MEMORY_LIMIT INFLUXDB_MEMORY_RESERVATION
+  echo "ℹ InfluxDB memory: limit ${INFLUXDB_MEMORY_LIMIT}, reservation ${INFLUXDB_MEMORY_RESERVATION}"
   # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
   # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
   # made in the Portainer UI are never silently lost. Soft-fails (exit 3) when

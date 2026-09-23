@@ -56,8 +56,8 @@ services:
         - traefik.http.routers.${ENV}-influxdb-secure.middlewares=allow-iframe@file
         - traefik.http.services.${ENV}-influxdb.loadbalancer.server.port=8086
       resources:
-        limits:   { cpus: '2.0', memory: 768M }
-        reservations: { cpus: '0.15', memory: 256M }
+        limits:   { cpus: '2.0', memory: "${INFLUXDB_MEMORY_LIMIT:-768M}" }
+        reservations: { cpus: '0.15', memory: "${INFLUXDB_MEMORY_RESERVATION:-256M}" }
       restart_policy:
         condition: any
         delay: 5s
