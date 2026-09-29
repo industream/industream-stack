@@ -63,7 +63,7 @@ services:
       restart_policy: { condition: any, delay: 5s, window: 120s }
 
   # AI assistant: platform-only (no ingress), restarts until the operator adds
-  # OPENAI_API_KEY. Volume declared below.
+  # OPENROUTER_API_KEY. Volume declared below.
   flowmaker-ai-agent:
     networks:
       - platform
