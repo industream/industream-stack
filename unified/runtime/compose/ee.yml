@@ -67,6 +67,10 @@ services:
     volumes:
       - logto-pgdata:/var/lib/postgresql/data
 
+  flowmaker-ai-agent:
+    networks: [ flowmaker-net ]
+    restart: unless-stopped
+
 secrets:
   logto_db_url:
     file: ${SECRETS_DIR:-./secrets}/logto_db_url
@@ -80,6 +84,7 @@ secrets:
 
 volumes:
   logto-pgdata:
+  flowmaker-ai-agent-data:
 
 networks:
   flowmaker-net:
