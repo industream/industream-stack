@@ -319,6 +319,11 @@ check_compose_domains() {
 # `stack deploy` and a missing compose `file:` secret aborts `compose up`.
 # Idempotent: an existing file/secret is never touched (rotation is a dedicated
 # procedure — the value also lives in Logto's applications row).
+warn_missing_ai_agent_key() {
+  [[ -n "$(peek_env OPENROUTER_API_KEY)" ]] && return
+  echo "  ⚠ OPENROUTER_API_KEY is not set in .env.${ENV}: the FlowMaker AI assistant will deploy without a key and answer nothing." >&2
+}
+
 ensure_grafana_oidc_secret() {
   local canon="$HERE/../secrets/$ENV/grafana_oidc_client_secret"
   mkdir -p "$(dirname "$canon")"; chmod 700 "$(dirname "$canon")" 2>/dev/null || true
@@ -661,7 +666,7 @@ if [[ "$RUNTIME" == compose ]]; then
   fi
   # Same reasoning as --list-images above: print and exit before any side effect.
   if [[ "$PRINT_GROUPS" == true ]]; then echo "$GROUP_SET"; exit 0; fi
-  if [[ "$EDITION" == ee ]]; then check_compose_domains; ensure_grafana_oidc_secret; fi
+  if [[ "$EDITION" == ee ]]; then check_compose_domains; ensure_grafana_oidc_secret; warn_missing_ai_agent_key; fi
   # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
   # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
   # made in the Portainer UI are never silently lost. Soft-fails (exit 3) when
@@ -707,7 +712,7 @@ else
   fi
   # Same reasoning as --list-images above: print and exit before any side effect.
   if [[ "$PRINT_GROUPS" == true ]]; then echo "$GROUP_SET"; exit 0; fi
-  [[ "$EDITION" == ee ]] && ensure_grafana_oidc_secret
+  [[ "$EDITION" == ee ]] && { ensure_grafana_oidc_secret; warn_missing_ai_agent_key; }
   # `docker stack deploy` interpolates ${VAR} from the PROCESS env (not
   # --env-file), and unlike `compose config` it handles ${ENV}-* network/secret
   # keys. Source the single env sources into the env, then deploy with -c.

@@ -237,8 +237,9 @@ services:
   # Connects OUT to the enterprise ConfigHub chat socket (NO published port) and
   # drives DataCatalog through an in-process MCP server (spawned via npx from the
   # CDN registry). Uses the OpenRouter gateway; the API key is operator-supplied
-  # and intentionally NOT committed:
-  #   docker service update --env-add OPENAI_API_KEY=<key> <stack>_flowmaker-ai-agent
+  # and intentionally NOT committed: set OPENROUTER_API_KEY (and optionally
+  # AI_AGENT_MODEL) in .env.<env>. A `service update --env-add` is lost on the
+  # next deploy, which re-applies this environment list.
   # Neutral (image+env+volume). nets/deploy live in the runtime overlay, which
   # must also declare the flowmaker-ai-agent-data volume.
   flowmaker-ai-agent:
@@ -248,8 +249,9 @@ services:
       - FM_DATACATALOG_URL=http://datacatalog-api:8003
       - FM_CDN_REGISTRY_URL=http://cdn-server:4873
       - AI_AGENT_DATA_DIR=/data
-      # - OPENAI_API_KEY=          # operator-supplied (OpenRouter/OpenAI); never committed
-      # - AI_AGENT_MODEL=          # optional; defaults to the agent's built-in default
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      # "default" is the agent's own fallback: an empty value would override it.
+      - AI_AGENT_MODEL=${AI_AGENT_MODEL:-default}
     volumes:
       - flowmaker-ai-agent-data:/data
     depends_on:
