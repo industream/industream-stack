@@ -134,7 +134,7 @@ if [[ -d "$TARGET/unified/releases" ]]; then
       bad "${stray#"$TARGET"/} is loaded as if it were a group env file"
     fi
   done < <(find "$TARGET/unified/releases" -maxdepth 2 -name '.env.*' -type f \
-             ! -regex '.*/\.env\.[a-z0-9-]+$' 2>/dev/null)
+             ! -regex '.*/\.env\.[a-z0-9_-]+$' 2>/dev/null)
 fi
 (( strays == 0 )) && ok "no stray file shadows a group env file"
 

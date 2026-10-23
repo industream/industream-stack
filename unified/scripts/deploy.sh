@@ -153,7 +153,7 @@ ENV_FILES=(--env-file registries.env --env-file versions.env --env-file auth.env
 bundle_env_files() {
   local bf
   for bf in "$BUNDLE_DIR"/.env.*; do
-    if [[ "${bf##*/}" =~ ^\.env\.[a-z0-9-]+$ ]]; then
+    if [[ "${bf##*/}" =~ ^\.env\.[a-z0-9_-]+$ ]]; then
       printf '%s\n' "$bf"
     else
       echo "  ⚠ ignoring ${bf##*/}: not a group env file" >&2

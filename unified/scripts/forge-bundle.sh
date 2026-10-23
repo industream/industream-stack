@@ -143,6 +143,45 @@ install_env_files_from_dir() {
   local copied=0
   for f in "${env_files[@]}"; do cp "$f" "$dest_dir/$(basename "$f")"; copied=$((copied + 1)); done
   log_success "copied ${copied} env file(s) → releases/$(basename "$dest_dir")/"
+
+  write_ee_aliases_from_manifest "$extract_dir" "$dest_dir"
+}
+
+# Forge ships an ENTERPRISE image in the CE-named variable; the EE overlay reads
+# its own. CE variable → EE variable, for the services base/ee.yml swaps.
+FORGE_EE_ALIASES=(
+  "HUB_API_IMAGE=HUB_API_ENTERPRISE_IMAGE"
+  "CONFIGHUB_IMAGE=CONFIGHUB_IMAGE_EE"
+  "DATABRIDGE_API_IMAGE=DATABRIDGE_API_ENTERPRISE_IMAGE"
+)
+
+# ---- shared: alias ENTERPRISE images onto the EE variables ------------------
+# Reads the export's manifest.json (Forge imageType per variable) and writes
+# .env.forge-ee-aliases. An EE variable the bundle already provides is left
+# alone; without a manifest nothing is written (older Forge exports).
+write_ee_aliases_from_manifest() {
+  local extract_dir="$1" dest_dir="$2"
+  shopt -s globstar nullglob
+  local -a manifests=("$extract_dir"/**/manifest.json)
+  shopt -u globstar nullglob
+  [[ ${#manifests[@]} -eq 0 ]] && return 0
+  require jq || return 1
+
+  local alias_file="$dest_dir/.env.forge-ee-aliases" pair ce_var ee_var reference aliased=0
+  : > "$alias_file"
+  for pair in "${FORGE_EE_ALIASES[@]}"; do
+    ce_var="${pair%%=*}" ee_var="${pair#*=}"
+    grep -qE "^${ee_var}=" "$dest_dir"/.env.* && continue
+    reference="$(jq -r --arg v "$ce_var" \
+      '[.images[]? | select(.variable == $v and .imageType == "ENTERPRISE") | .reference] | last // empty' \
+      "${manifests[0]}")" || { log_error "unreadable manifest.json in the bundle archive"; return 1; }
+    [[ -z "$reference" ]] && continue
+    printf '%s="%s"\n' "$ee_var" "$reference" >> "$alias_file"
+    aliased=$((aliased + 1))
+  done
+
+  if [[ $aliased -eq 0 ]]; then rm -f "$alias_file"; return 0; fi
+  log_success "aliased ${aliased} ENTERPRISE image(s) onto EE variables → $(basename "$alias_file")"
 }
 
 # ---- download + extract a bundle into releases/bundle-platform-<key>/ --------
@@ -188,7 +227,7 @@ cmd_fetch() {
   printf 'source=forge\nexportKey=%s\nversion=%s\nforgeUrl=%s\n' "$export_key" "$version" "$forge_url" > "$dest_dir/FORGE_SOURCE"
 
   # LAST stdout line = the bundle key deploy.sh should pass to --bundle.
-  [[ "$print_key" == true ]] && echo "$key"
+  if [[ "$print_key" == true ]]; then echo "$key"; fi
 }
 
 # ---- import a bundle from a LOCAL zip (offline / air-gapped) -----------------
@@ -226,7 +265,7 @@ cmd_import() {
   install_env_files_from_dir "$extract" "$dest_dir" || return 1
   printf 'source=import\nzip=%s\n' "$(readlink -f "$zip_path")" > "$dest_dir/FORGE_SOURCE"
 
-  [[ "$print_key" == true ]] && echo "$key"
+  if [[ "$print_key" == true ]]; then echo "$key"; fi
 }
 
 # ---- check: does a materialized bundle satisfy unified base/*.yml? -----------
