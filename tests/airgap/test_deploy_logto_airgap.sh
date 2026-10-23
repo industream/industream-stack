@@ -21,7 +21,7 @@ MARKER="Have I Been Pwned"
 run_deploy() {  # run_deploy <out-file> <edition> [extra flags…]
   local out="$1" edition="$2"; shift 2
   DEPLOY_TIMEOUT=1 with_docker_stub ./scripts/deploy.sh \
-    --runtime swarm --edition "$edition" --env prod --bundle 1.0.1 \
+    --runtime swarm --edition "$edition" --env prod --bundle 1.0.2 \
     --stack test-logto "$@" >"$out" 2>&1 || true
 }
 

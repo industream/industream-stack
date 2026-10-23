@@ -13,8 +13,9 @@ cd "$REPO_ROOT/unified"
 
 # --- swarm: --airgap reaches deploy.sh, nothing is pulled, default stack ------
 out="$(mktemp -d)"; target="$(mktemp -d)"
+# EE needs bundle 1.0.2: 1.0.1 has no enterprise ConfigHub (FlowMaker 2.1.0).
 bundle="$(with_docker_stub ./scripts/airgap.sh prepare --runtime swarm --edition ee \
-  --out "$out" --skip-images --skip-assets | tail -1)"
+  --bundle 1.0.2 --out "$out" --skip-images --skip-assets | tail -1)"
 
 DEPLOY_TIMEOUT=1 with_docker_stub bash "$bundle/install.sh" --target "$target" --yes >/dev/null 2>&1 || true
 log="$(cat "$DOCKER_LOG")"
