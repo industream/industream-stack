@@ -627,20 +627,10 @@ seed_ee() {
 # environment. Shared by --list-images and the pre-pull so the bundle can never
 # disagree with what the deploy will ask for.
 resolve_image_list() {
-  python3 - "$@" <<'PY'
+  IMAGE_REFS_LIB="$HERE/../scripts/lib" python3 -B - "$@" <<'PY'
 import sys, os, re
-# expandvars misreads ${A:-x${B}} (stops at the first "}") and has no defaults:
-# resolve plain ${VAR} then innermost ${VAR:-default} until stable, else the
-# line keeps a "$" and is dropped as unresolved.
-PLAIN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
-DEFAULTED = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^${}]*)\}")
-def expand(ref):
-    while True:
-        resolved = PLAIN.sub(lambda m: os.environ.get(m.group(1), m.group(0)), ref)
-        resolved = DEFAULTED.sub(lambda m: os.environ.get(m.group(1)) or m.group(2), resolved)
-        if resolved == ref:
-            return os.path.expandvars(ref)
-        ref = resolved
+sys.path.insert(0, os.environ["IMAGE_REFS_LIB"])
+from image_refs import expand
 seen = set()
 for fn in sys.argv[1:]:
     try:
