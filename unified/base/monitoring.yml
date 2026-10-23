@@ -34,7 +34,8 @@ services:
     # Vanilla upstream Grafana OSS — the DataBridge datasource + extra panels are
     # installed at runtime via GF_INSTALL_PLUGINS (no custom grafana-industream
     # build).
-    image: grafana/grafana-oss:${GRAFANA_VERSION}
+    # A bundle may pin Grafana (GRAFANA_IMAGE); otherwise the versions.env tag.
+    image: ${GRAFANA_IMAGE:-grafana/grafana-oss:${GRAFANA_VERSION}}
     environment:
       - TERM=linux
       - GF_DEFAULT_APP_MODE=${GF_APP_MODE}

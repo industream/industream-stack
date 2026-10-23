@@ -287,7 +287,8 @@ cmd_check() {
   # false "missing CADVISOR_IMAGE" that blocked nothing at deploy but looked fatal.
   local -a baseline_env=("$HERE/registries.env" "$HERE/versions.env")
   provided="$(grep -hoE '^[A-Z0-9_]+_IMAGE' "${bfiles[@]}" "${baseline_env[@]}" 2>/dev/null | sort -u)"
-  required="$(grep -rhoE '\$\{[A-Z0-9_]+_IMAGE' "${base_files[@]}" 2>/dev/null | tr -d '${' | sort -u)"
+  # ${X_IMAGE:-default} is an optional override: only bare ${X_IMAGE} is required.
+  required="$(grep -rhoE '\$\{[A-Z0-9_]+_IMAGE\}' "${base_files[@]}" 2>/dev/null | tr -d '${}' | sort -u)"
   missing="$(comm -23 <(printf '%s\n' "$required") <(printf '%s\n' "$provided"))"
 
   echo "▶ checking bundle: $(basename "$dir")  [edition=${edition}, groups: ${groups}]" >&2
