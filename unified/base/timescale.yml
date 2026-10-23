@@ -34,9 +34,9 @@ services:
   # (POSTGRES_PASSWORD_FILE) — the path is supplied by the runtime overlay.
   # ---------------------------------------------------------------------------
   timescaledb:
-    # Forge bundles supply a full image ref (TIMESCALE_TIMESCALEDB_IMAGE); the
-    # CE/render path falls back to the pinned tag from versions.env.
-    image: ${TIMESCALE_TIMESCALEDB_IMAGE:-timescale/timescaledb:${TIMESCALEDB_VERSION}}
+    # Default in versions.env; a Forge bundle may override it. No nested default
+    # here: `stack deploy` does not expand ${A:-${B}}.
+    image: ${TIMESCALE_TIMESCALEDB_IMAGE}
     environment:
       - POSTGRES_USER=${TIMESCALEDB_ADMIN_USER}
       - POSTGRES_PASSWORD_FILE=/run/secrets/${TIMESCALEDB_DB_SECRET_NAME}
