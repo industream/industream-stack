@@ -163,4 +163,22 @@ SOME_IMAGE="example/app:1.0" PATH="$stub_dir:$PATH" \
 assert_contains "$(cat "$CHOWN_LOG")" "fm-prod_data-vol" \
   "a compose volume is found under its project-prefixed name"
 
+# An image written ${OVERRIDE:-repo:${TAG}} (TimescaleDB, Grafana) must resolve
+# to its default, not be skipped as unresolved: its volume would never be fixed.
+cat > "$fixture/defaulted.yml" <<'YAML'
+services:
+  needs-fixing:
+    image: ${UNSET_OVERRIDE:-example/app:${APP_TAG}}
+    volumes:
+      - data-vol:/data
+volumes:
+  data-vol:
+YAML
+: > "$CHOWN_LOG"
+APP_TAG="1.0" PATH="$stub_dir:$PATH" \
+  bash "$SCRIPT" --env prod --project fm-prod "$fixture/defaulted.yml" >/dev/null 2>&1 \
+  || fail "the script must handle an image with a \${VAR:-default}"
+assert_contains "$(cat "$CHOWN_LOG")" "fm-prod_data-vol" \
+  "a volume whose image is \${VAR:-default} is still realigned"
+
 rm -rf "$fixture" "$stub_dir"

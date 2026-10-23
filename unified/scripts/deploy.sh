@@ -629,6 +629,18 @@ seed_ee() {
 resolve_image_list() {
   python3 - "$@" <<'PY'
 import sys, os, re
+# expandvars misreads ${A:-x${B}} (stops at the first "}") and has no defaults:
+# resolve plain ${VAR} then innermost ${VAR:-default} until stable, else the
+# line keeps a "$" and is dropped as unresolved.
+PLAIN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+DEFAULTED = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^${}]*)\}")
+def expand(ref):
+    while True:
+        resolved = PLAIN.sub(lambda m: os.environ.get(m.group(1), m.group(0)), ref)
+        resolved = DEFAULTED.sub(lambda m: os.environ.get(m.group(1)) or m.group(2), resolved)
+        if resolved == ref:
+            return os.path.expandvars(ref)
+        ref = resolved
 seen = set()
 for fn in sys.argv[1:]:
     try:
@@ -640,7 +652,7 @@ for fn in sys.argv[1:]:
         if not m:
             continue
         raw = re.sub(r"\s+#.*$", "", m.group(1).strip()).strip()
-        img = os.path.expandvars(raw.strip("'\""))
+        img = expand(raw.strip("'\""))
         if "$" in img or not img or img in seen:
             continue
         seen.add(img)
