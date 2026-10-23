@@ -333,12 +333,35 @@ cmd_check() {
   echo "▶ checking bundle: $(basename "$dir")  [edition=${edition}, groups: ${groups}]" >&2
   echo "  provided image vars (bundle + versions.env/registries.env): $(printf '%s' "$provided" | grep -c .)   required by scoped base: $(printf '%s' "$required" | grep -c .)" >&2
   if [[ -n "$missing" ]]; then
-    log_error "REQUIRED by the scoped base but MISSING from the bundle (would deploy EMPTY image refs):"
-    printf '    - %s\n' $missing >&2
-    log_warn "if these belong to groups this bundle doesn't cover, narrow --groups/--edition to its scope"
-    return 2
+    # The bundle decides which services run: a service it gives no image is not
+    # deployed (deploy.sh prunes it). Only the platform base is mandatory.
+    local verdict
+    verdict="$(MISSING="$missing" IMAGE_REFS_LIB="$HERE/../scripts/lib" python3 -B - "${base_files[@]}" <<'PY'
+import os, re, sys
+sys.path.insert(0, os.environ["IMAGE_REFS_LIB"])
+from image_refs import PLATFORM_BASE, load_services
+missing = set(os.environ["MISSING"].split())
+final = {}
+for path in sys.argv[1:]:
+    for name, spec in load_services(path)[1].items():
+        if isinstance(spec, dict) and "image" in spec:
+            final[name] = str(spec["image"])
+for name, image in sorted(final.items()):
+    gaps = sorted(set(re.findall(r"\$\{([A-Z0-9_]+_IMAGE)\}", image)) & missing)
+    if gaps:
+        print(("BLOCK" if name in PLATFORM_BASE else "SKIP") + f" {name} {','.join(gaps)}")
+PY
+)" || { log_error "could not classify the missing image vars"; return 1; }
+    if grep -q '^BLOCK ' <<<"$verdict"; then
+      log_error "the bundle provides no image for platform service(s) — not deployable:"
+      grep '^BLOCK ' <<<"$verdict" | awk '{printf "    - %s (%s)\n", $2, $3}' >&2
+      log_warn "if these belong to groups this bundle doesn't cover, narrow --groups/--edition to its scope"
+      return 2
+    fi
+    log_warn "not in the bundle — these services will not be deployed:"
+    awk '{printf "    - %s (%s)\n", $2, $3}' <<<"$verdict" >&2
   fi
-  log_success "all required image vars are present — bundle is deployable for [edition=${edition}, groups: ${groups}]"
+  log_success "bundle is deployable for [edition=${edition}, groups: ${groups}]"
 
   # An `if`, not `[[ … ]] && …`: this is the function's last command, and the
   # && form would return 1 whenever --pullable was not passed.

@@ -51,8 +51,11 @@ command -v docker >/dev/null || die "docker not found"
 
 # service<TAB>image<TAB>volume, one line per mounted named volume. Bind mounts
 # are skipped: they belong to the host, and their ownership is the operator's.
-mapping="$(ENV="$ENV_NAME" python3 - "${FILES[@]}" <<'PY'
-import os, re, sys, yaml
+mapping="$(ENV="$ENV_NAME" IMAGE_REFS_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)" python3 -B - "${FILES[@]}" <<'PY'
+import os, sys, yaml
+
+sys.path.insert(0, os.environ["IMAGE_REFS_LIB"])
+from image_refs import expand
 
 services, volumes = {}, {}
 for path in sys.argv[1:]:
@@ -65,21 +68,6 @@ for path in sys.argv[1:]:
     for name, spec in (doc.get("volumes") or {}).items():
         volumes[name] = spec or {}
 
-# expandvars misreads ${A:-x${B}} and has no defaults (same resolver as
-# deploy.sh --list-images): plain ${VAR}, then innermost ${VAR:-default}.
-PLAIN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
-DEFAULTED = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^${}]*)\}")
-
-def expand(value):
-    if value is None:
-        return ""
-    ref = str(value)
-    while True:
-        resolved = PLAIN.sub(lambda m: os.environ.get(m.group(1), m.group(0)), ref)
-        resolved = DEFAULTED.sub(lambda m: os.environ.get(m.group(1)) or m.group(2), resolved)
-        if resolved == ref:
-            return os.path.expandvars(ref)
-        ref = resolved
 
 for svc, spec in services.items():
     image = expand(spec.get("image"))
