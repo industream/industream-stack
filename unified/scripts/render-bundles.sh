@@ -48,6 +48,7 @@ DATACATALOG_API_IMAGE|datacatalog/api|community|DATACATALOG_API_VERSION|datacata
 DATACATALOG_UI_IMAGE|datacatalog/ui|community|DATACATALOG_UI_VERSION|datacatalog
 # --- data ---
 DATABRIDGE_API_IMAGE|timeseries/api|community|DATABRIDGE_API_VERSION|data
+DATABRIDGE_API_ENTERPRISE_IMAGE|timeseries/api-enterprise|enterprise|DATABRIDGE_API_EE_VERSION|data
 # --- monitoring ---
 GRAFANA_WRAPPER_IMAGE|grafana-hub-wrapper|community|GRAFANA_WRAPPER_VERSION|monitoring
 # --- workers (community) ---

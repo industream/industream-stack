@@ -22,8 +22,11 @@
 # replaces __DB_PASSWORD_PLACEHOLDER__. The base NEVER inlines an image tag
 # (versions.env) or a password (placeholder).
 #
-# The databridge-timescaledb variant reuses the community DATABRIDGE_API_IMAGE
-# pointed at the timescaledb store (timescale/timescaledb is a third-party image).
+# The databridge-timescaledb variant uses the ENTERPRISE DataBridge image
+# (DATABRIDGE_API_ENTERPRISE_IMAGE) with Provider=PostgreSQL: only the EE build
+# carries the PostgreSQL/TimescaleDB provider (community = InfluxDB only), and it
+# auto-detects the Timescale extension (hypertables, compression, continuous
+# aggregates). timescale/timescaledb is a third-party image.
 # =============================================================================
 services:
   # ---------------------------------------------------------------------------
@@ -31,7 +34,9 @@ services:
   # (POSTGRES_PASSWORD_FILE) — the path is supplied by the runtime overlay.
   # ---------------------------------------------------------------------------
   timescaledb:
-    image: timescale/timescaledb:${TIMESCALEDB_VERSION}
+    # Forge bundles supply a full image ref (TIMESCALE_TIMESCALEDB_IMAGE); the
+    # CE/render path falls back to the pinned tag from versions.env.
+    image: ${TIMESCALE_TIMESCALEDB_IMAGE:-timescale/timescaledb:${TIMESCALEDB_VERSION}}
     environment:
       - POSTGRES_USER=${TIMESCALEDB_ADMIN_USER}
       - POSTGRES_PASSWORD_FILE=/run/secrets/${TIMESCALEDB_DB_SECRET_NAME}
@@ -47,13 +52,17 @@ services:
       start_period: 30s
 
   # ---------------------------------------------------------------------------
-  # DataBridge (TimescaleDB variant) — same image, pointed at timescaledb.
+  # DataBridge (TimescaleDB variant) — ENTERPRISE image (PostgreSQL provider),
+  # pointed at timescaledb. Community image has no PostgreSQL provider.
   # ---------------------------------------------------------------------------
   databridge-timescaledb:
-    image: ${DATABRIDGE_API_IMAGE}
+    image: ${DATABRIDGE_API_ENTERPRISE_IMAGE}
     entrypoint: ["/bin/sh", "/scripts/dotnet-entrypoint.sh"]
     command: ["dotnet", "/app/Industream.DataBridge.Api.dll"]
     environment:
+      # Select the PostgreSQL provider (defaults to InfluxDB otherwise); the EE
+      # provider then auto-detects the Timescale extension on the target DB.
+      - Provider=PostgreSQL
       - DB_SECRET_PATTERN=${TIMESCALEDB_DB_SECRET_PATTERN}
       - PostgreSql__ConnectionString=Server=timescaledb;Port=5432;User Id=${TIMESCALEDB_ADMIN_USER};Password=__DB_PASSWORD_PLACEHOLDER__;Database=${TIMESCALEDB_DB_NAME};
     volumes:
