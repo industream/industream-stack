@@ -785,6 +785,13 @@ else
   ENV="$ENV" bash "$HERE/../scripts/setup/fix-volume-ownership.sh" --env "$ENV" "${_vo_files[@]}" \
     || echo "⚠ volume-ownership check skipped/failed (non-fatal)"
 
+  # FATAL, unlike the ownership fix: a Postgres major bump on existing data
+  # crash-loops the service, and only a manual dump/restore gets it back.
+  if [[ " $GROUP_SET " == *" timescale "* ]]; then
+    bash "$HERE/../scripts/setup/check-postgres-major.sh" --volume "${ENV}-timescaledb-data" \
+      --image "${TIMESCALE_TIMESCALEDB_IMAGE:-timescale/timescaledb:${TIMESCALEDB_VERSION}}" || exit 1
+  fi
+
   # Airgap only: a service first deployed online carries a registry digest that
   # `stack deploy` does not rewrite when its image version has not changed, and
   # that --resolve-image never can never re-resolve. Online deploys keep their
