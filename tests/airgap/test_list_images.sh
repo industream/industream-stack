@@ -95,6 +95,11 @@ ts="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-ts --edi
   "${BUNDLE_ARGS[@]}" --groups "core monitoring timescale" --list-images)"
 assert_contains "$ts" "timescale/timescaledb:" "a \${VAR:-default} image falls back to its default"
 assert_contains "$ts" "grafana/grafana-oss:" "Grafana resolves to its default when no bundle pins it"
-pinned="$(GRAFANA_IMAGE=registry.invalid/grafana/grafana-oss:0.0.1 with_docker_stub ./scripts/deploy.sh \
-  --runtime swarm --stack test-ts --edition ee "${BUNDLE_ARGS[@]}" --groups "core monitoring" --list-images)"
-assert_contains "$pinned" "registry.invalid/grafana/grafana-oss:0.0.1" "a set override wins over the default"
+# A bundle overrides the versions.env default (it is sourced after it).
+PIN_DIR="releases/bundle-platform-forge-test-grafana-pin"
+trap 'rm -rf "${REPO_ROOT:?}/unified/$PIN_DIR"' EXIT
+mkdir -p "$PIN_DIR" && cp releases/bundle-platform-1.0.2/.env.* "$PIN_DIR/"
+echo 'GRAFANA_IMAGE=registry.invalid/grafana/grafana-oss:0.0.1' > "$PIN_DIR/.env.dashboard"
+pinned="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-ts --edition ee \
+  --bundle forge-test-grafana-pin --env test --groups "core monitoring" --list-images)"
+assert_contains "$pinned" "registry.invalid/grafana/grafana-oss:0.0.1" "a bundle-set override wins over the default"
