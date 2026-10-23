@@ -88,3 +88,13 @@ pass "Compose EE --list-images does not create secrets"
 with_docker_stub ./scripts/deploy.sh --runtime compose --project test-check --edition ce "${BUNDLE_ARGS[@]}" --list-images >/dev/null
 if grep -q "compose.*up" "$DOCKER_LOG" 2>/dev/null; then fail "Compose --list-images deployed"; fi
 pass "Compose --list-images does not deploy"
+
+# An image written as ${OVERRIDE:-default} must resolve, not vanish: a dropped
+# line is an image the air-gap bundle never ships and the pre-pull never pulls.
+ts="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-ts --edition ee \
+  "${BUNDLE_ARGS[@]}" --groups "core monitoring timescale" --list-images)"
+assert_contains "$ts" "timescale/timescaledb:" "a \${VAR:-default} image falls back to its default"
+assert_contains "$ts" "grafana/grafana-oss:" "Grafana resolves to its default when no bundle pins it"
+pinned="$(GRAFANA_IMAGE=registry.invalid/grafana/grafana-oss:0.0.1 with_docker_stub ./scripts/deploy.sh \
+  --runtime swarm --stack test-ts --edition ee "${BUNDLE_ARGS[@]}" --groups "core monitoring" --list-images)"
+assert_contains "$pinned" "registry.invalid/grafana/grafana-oss:0.0.1" "a set override wins over the default"
