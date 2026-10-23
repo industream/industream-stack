@@ -6,6 +6,9 @@ cd "$REPO_ROOT/unified"
 # --bundle is REQUIRED: two directories match releases/bundle-platform-*/ on this
 # branch, so deploy.sh's auto-select exits 1 at line 139 before any flag is read.
 BUNDLE_ARGS=(--bundle 1.0.1 --env test)
+# EE needs the enterprise ConfigHub, which exists from FlowMaker 2.2.2 (bundle
+# 1.0.2) on: 1.0.1 cannot deploy EE, and a missing platform service now aborts.
+EE_BUNDLE_ARGS=(--bundle 1.0.2 --env test)
 
 echo "=== Testing swarm runtime ==="
 ce="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-ce --edition ce "${BUNDLE_ARGS[@]}" --list-images)"
@@ -26,7 +29,7 @@ pass "no unresolved variables"
 assert_contains "$ce" "postgres:" "third-party images are included"
 
 # EE adds Logto and the enterprise Hub, so it must be a strict superset.
-ee="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-ee --edition ee "${BUNDLE_ARGS[@]}" --list-images)"
+ee="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-ee --edition ee "${EE_BUNDLE_ARGS[@]}" --list-images)"
 (( $(wc -l <<<"$ee") > $(wc -l <<<"$ce") )) || fail "EE list is not larger than CE"
 pass "EE list is larger than CE"
 assert_contains "$ee" "logto" "EE includes Logto"
@@ -72,7 +75,7 @@ if grep -q '\$' <<<"$compose_ce"; then fail "unresolved variable in compose imag
 pass "Compose list has no unresolved variables"
 
 # Compose EE is a strict superset (includes logto, etc)
-compose_ee="$(with_docker_stub ./scripts/deploy.sh --runtime compose --project test-ee --edition ee "${BUNDLE_ARGS[@]}" --list-images)"
+compose_ee="$(with_docker_stub ./scripts/deploy.sh --runtime compose --project test-ee --edition ee "${EE_BUNDLE_ARGS[@]}" --list-images)"
 (( $(wc -l <<<"$compose_ee") > $(wc -l <<<"$compose_ce") )) || fail "Compose EE list is not larger than CE"
 pass "Compose EE list is larger than CE"
 assert_contains "$compose_ee" "logto" "Compose EE includes Logto"
@@ -92,7 +95,7 @@ pass "Compose --list-images does not deploy"
 # An image written as ${OVERRIDE:-default} must resolve, not vanish: a dropped
 # line is an image the air-gap bundle never ships and the pre-pull never pulls.
 ts="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-ts --edition ee \
-  "${BUNDLE_ARGS[@]}" --groups "core monitoring timescale" --list-images)"
+  "${EE_BUNDLE_ARGS[@]}" --groups "core monitoring timescale" --list-images)"
 assert_contains "$ts" "timescale/timescaledb:" "a \${VAR:-default} image falls back to its default"
 assert_contains "$ts" "grafana/grafana-oss:" "Grafana resolves to its default when no bundle pins it"
 # A bundle overrides the versions.env default (it is sourced after it).

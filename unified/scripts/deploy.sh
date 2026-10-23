@@ -650,6 +650,34 @@ for fn in sys.argv[1:]:
 PY
 }
 
+# ---- Bundle-driven services -------------------------------------------------
+# The bundle (Release Forge) decides which Industream services a site runs: a
+# service whose image it does not provide is dropped from FILES (hidden pruned
+# copies next to the originals, so relative paths still resolve) instead of
+# reaching the deploy with an empty image. Needs the env sourced. A missing
+# platform-base service (Hub, FlowMaker core, DataCatalog, CDN) aborts.
+PRUNED_COPIES=()
+cleanup_pruned_copies() { [[ ${#PRUNED_COPIES[@]} -eq 0 ]] || rm -f "${PRUNED_COPIES[@]}"; }
+trap cleanup_pruned_copies EXIT
+write_pruned_list() {  # <list-file>
+  local f; local -a plain=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || plain+=("$f"); done
+  python3 -B "$HERE/../scripts/lib/image_refs.py" prune "$1" "${plain[@]}"
+}
+apply_pruned_list() {  # <list-file>
+  local f; FILES=()
+  while read -r f; do
+    [[ -n "$f" ]] || continue
+    FILES+=(-f "$f")
+    [[ "$(basename "$f")" == .*.pruned.yml ]] && PRUNED_COPIES+=("$f")
+  done < "$1"
+  rm -f "$1"
+}
+prune_unprovided_services() {
+  local list; list="$(mktemp)"
+  write_pruned_list "$list" || { rm -f "$list"; exit 1; }
+  apply_pruned_list "$list"
+}
+
 # ---- Dispatch ---------------------------------------------------------------
 if [[ "$RUNTIME" == compose ]]; then
   [[ -n "$PROJECT" ]] || { echo "✗ --project required for compose" >&2; exit 1; }
@@ -661,8 +689,10 @@ if [[ "$RUNTIME" == compose ]]; then
       while read -r bf; do source "$bf"; done < <(bundle_env_files)
       [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
       set +a
+      prune_unprovided_services
       _li_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _li_files+=("$f"); done
       resolve_image_list "${_li_files[@]}"
+      cleanup_pruned_copies  # a subshell does not inherit the EXIT trap
     )
     exit 0
   fi
@@ -680,6 +710,16 @@ if [[ "$RUNTIME" == compose ]]; then
   # Same reasoning as the swarm branch: a service that cannot read its volume
   # never starts, so this has to happen before `up -d`. --project is required
   # here — compose volumes carry no name: and exist as <project>_<volume>.
+  _pruned_list="$(mktemp)"
+  (
+    set -a; export ENV
+    source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+    while read -r bf; do source "$bf"; done < <(bundle_env_files)
+    [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+    set +a
+    write_pruned_list "$_pruned_list"
+  ) || { rm -f "$_pruned_list"; exit 1; }
+  apply_pruned_list "$_pruned_list"
   _vo_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _vo_files+=("$f"); done
   ENV="$ENV" bash "$HERE/../scripts/setup/fix-volume-ownership.sh" \
     --env "$ENV" --project "$PROJECT" "${_vo_files[@]}" \
@@ -708,6 +748,7 @@ else
     while read -r bf; do source "$bf"; done < <(bundle_env_files)
     [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
     set +a
+    prune_unprovided_services
     _li_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _li_files+=("$f"); done
     resolve_image_list "${_li_files[@]}"
     exit 0
@@ -723,6 +764,7 @@ else
   while read -r bf; do source "$bf"; done < <(bundle_env_files)
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
+  prune_unprovided_services
   read -r INFLUXDB_MEMORY_LIMIT INFLUXDB_MEMORY_RESERVATION < <(bash "$HERE/../scripts/setup/influxdb-memory.sh")
   export INFLUXDB_MEMORY_LIMIT INFLUXDB_MEMORY_RESERVATION
   echo "ℹ InfluxDB memory: limit ${INFLUXDB_MEMORY_LIMIT}, reservation ${INFLUXDB_MEMORY_RESERVATION}"
