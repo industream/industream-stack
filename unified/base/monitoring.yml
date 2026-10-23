@@ -253,7 +253,6 @@ services:
       - /:/rootfs:ro,rslave
       - /var/run:/var/run:rw
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
       - /sys:/sys:ro
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /dev/disk/:/dev/disk:ro
