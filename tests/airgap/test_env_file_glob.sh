@@ -52,3 +52,15 @@ trap - EXIT
 clean="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-glob-clean \
   --edition ce "${BUNDLE_ARGS[@]}" --list-images)"
 assert_eq "$images" "$clean" "the image list is the same with and without strays"
+
+# Forge names its group files after the project key (`.env.industream_datacatalog`):
+# the underscore must not make them look like strays, or a Forge bundle deploys
+# with none of its pinned images.
+FORGE_DIR="releases/bundle-platform-forge-test-glob"
+trap 'rm -rf "${REPO_ROOT:?}/unified/$FORGE_DIR"' EXIT
+mkdir -p "$FORGE_DIR"
+cp "$BUNDLE_DIR"/.env.* "$FORGE_DIR/"
+printf 'DATACATALOG_API_IMAGE=forge.invalid/datacatalog/api:7.7.7\n' > "$FORGE_DIR/.env.industream_datacatalog"
+forge_images="$(with_docker_stub ./scripts/deploy.sh --runtime swarm --stack test-glob-forge \
+  --edition ce --bundle forge-test-glob --env test --list-images)"
+assert_contains "$forge_images" "forge.invalid/datacatalog/api:7.7.7" "a Forge .env.<project_key> file is loaded"
