@@ -105,6 +105,12 @@ if [[ "$EDITION" != ee ]]; then
   done
 fi
 
+# Grafana's DataBridge datasource follows the deployed store: a TimescaleDB deploy runs only
+# databridge-timescaledb, so the default http://databridge:8080 would reach nothing.
+if [[ " $GROUP_SET " == *" timescale "* ]]; then
+  export GRAFANA_DATABRIDGE_URL="${GRAFANA_DATABRIDGE_URL:-http://databridge-timescaledb:8080}"
+fi
+
 # ---- FORGE: materialize a bundle from the Forge API (optional source) --------
 # --forge <exportKey>@<version> (non-interactive, CI-friendly) or
 # --forge-interactive (menu) download a release bundle's .env.* from Forge into

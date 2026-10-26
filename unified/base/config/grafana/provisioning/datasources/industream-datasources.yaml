@@ -39,7 +39,7 @@ datasources:
     # `url` is unused by this plugin (it routes through dataBridgeApiUrl /
     # dataCatalogApiUrl in jsonData). Kept as the internal databridge
     # endpoint for the Grafana datasource-test UI compatibility.
-    url: http://databridge:8080
+    url: $GRAFANA_DATABRIDGE_URL
     jsonData:
       # Internal swarm-overlay HTTP endpoints — no TLS, no public DNS, no
       # Traefik stripprefix needed (the backends serve their bare paths).
@@ -51,7 +51,8 @@ datasources:
       # the plugin, which talks here.
       # Matches PluginSettings struct in pkg/models/settings.go — keep field
       # names in sync if bumping the plugin version.
-      dataBridgeApiUrl: http://databridge:8080
+      # databridge (InfluxDB) or databridge-timescaledb, set by deploy.sh from the deployed store.
+      dataBridgeApiUrl: $GRAFANA_DATABRIDGE_URL
       dataCatalogApiUrl: http://datacatalog-api:8003
       maxRawRows: 50000
       hardLimitRows: 1000000
