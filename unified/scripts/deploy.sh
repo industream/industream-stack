@@ -765,9 +765,18 @@ else
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
   prune_unprovided_services
+  # TimescaleDB, when deployed, is the main store: it takes 40% and InfluxDB 20%.
+  [[ " $GROUP_SET " == *" timescale "* ]] && export INFLUXDB_RAM_PERCENT="${INFLUXDB_RAM_PERCENT:-20}"
   read -r INFLUXDB_MEMORY_LIMIT INFLUXDB_MEMORY_RESERVATION < <(bash "$HERE/../scripts/setup/influxdb-memory.sh")
   export INFLUXDB_MEMORY_LIMIT INFLUXDB_MEMORY_RESERVATION
   echo "ℹ InfluxDB memory: limit ${INFLUXDB_MEMORY_LIMIT}, reservation ${INFLUXDB_MEMORY_RESERVATION}"
+  if [[ " $GROUP_SET " == *" timescale "* ]]; then
+    read -r TIMESCALEDB_MEMORY_LIMIT TIMESCALEDB_MEMORY_RESERVATION TIMESCALEDB_CPUS \
+      TIMESCALEDB_SHARED_BUFFERS TIMESCALEDB_EFFECTIVE_CACHE_SIZE < <(bash "$HERE/../scripts/setup/timescaledb-memory.sh")
+    export TIMESCALEDB_MEMORY_LIMIT TIMESCALEDB_MEMORY_RESERVATION TIMESCALEDB_CPUS \
+      TIMESCALEDB_SHARED_BUFFERS TIMESCALEDB_EFFECTIVE_CACHE_SIZE
+    echo "ℹ TimescaleDB: limit ${TIMESCALEDB_MEMORY_LIMIT}, reservation ${TIMESCALEDB_MEMORY_RESERVATION}, cpus ${TIMESCALEDB_CPUS}, shared_buffers ${TIMESCALEDB_SHARED_BUFFERS}, max_connections ${TIMESCALEDB_MAX_CONNECTIONS:-100}"
+  fi
   # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
   # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
   # made in the Portainer UI are never silently lost. Soft-fails (exit 3) when
