@@ -14,10 +14,20 @@ services:
     secrets:
       - source: timescaledb_password
         target: ${ENV}_timescaledb_password
+    # Sized from the node by scripts/setup/timescaledb-memory.sh on every deploy;
+    # timescaledb-tune only ran once, when the volume was created.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${TIMESCALEDB_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${TIMESCALEDB_EFFECTIVE_CACHE_SIZE:-768MB}
+      - -c
+      - max_connections=${TIMESCALEDB_MAX_CONNECTIONS:-100}
     deploy:
       resources:
-        limits:   { cpus: '2.0', memory: 1024M }
-        reservations: { cpus: '0.15', memory: 256M }
+        limits:   { cpus: "${TIMESCALEDB_CPUS:-2.0}", memory: "${TIMESCALEDB_MEMORY_LIMIT:-1024M}" }
+        reservations: { cpus: '0.15', memory: "${TIMESCALEDB_MEMORY_RESERVATION:-256M}" }
       restart_policy:
         condition: any
         delay: 5s

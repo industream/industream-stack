@@ -26,6 +26,9 @@ assert_eq "$(INFLUXDB_MEMORY_LIMIT=12G MEMINFO="$(fake_meminfo 16777216)" bash "
 assert_eq "$(INFLUXDB_MEMORY_LIMIT=12G INFLUXDB_MEMORY_RESERVATION=4G bash "$sizer")" "12G 4G" \
   "a pinned reservation is kept as is"
 
+assert_eq "$(INFLUXDB_RAM_PERCENT=20 MEMINFO="$(fake_meminfo 16777216)" bash "$sizer")" "3072M 768M" \
+  "next to TimescaleDB, InfluxDB gets the smaller share the deploy passes"
+
 assert_fails env MEMINFO=/nonexistent bash "$sizer" "an unreadable meminfo is an error, not a silent 0M limit"
 
 # Renders the file as `stack deploy` does: a bare ${VAR} inside a flow mapping
