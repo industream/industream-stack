@@ -777,6 +777,12 @@ else
       TIMESCALEDB_SHARED_BUFFERS TIMESCALEDB_EFFECTIVE_CACHE_SIZE
     echo "ℹ TimescaleDB: limit ${TIMESCALEDB_MEMORY_LIMIT}, reservation ${TIMESCALEDB_MEMORY_RESERVATION}, cpus ${TIMESCALEDB_CPUS}, shared_buffers ${TIMESCALEDB_SHARED_BUFFERS}, max_connections ${TIMESCALEDB_MAX_CONNECTIONS:-100}"
   fi
+  if [[ " $GROUP_SET " == *" workers "* ]]; then
+    read -r WORKER_TIMESERIES_MEMORY_LIMIT WORKER_TIMESERIES_MEMORY_RESERVATION WORKER_TIMESERIES_CPUS \
+      < <(bash "$HERE/../scripts/setup/worker-timeseries-sizing.sh")
+    export WORKER_TIMESERIES_MEMORY_LIMIT WORKER_TIMESERIES_MEMORY_RESERVATION WORKER_TIMESERIES_CPUS
+    echo "ℹ worker-timeseries: limit ${WORKER_TIMESERIES_MEMORY_LIMIT}, reservation ${WORKER_TIMESERIES_MEMORY_RESERVATION}, cpus ${WORKER_TIMESERIES_CPUS}"
+  fi
   # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
   # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
   # made in the Portainer UI are never silently lost. Soft-fails (exit 3) when
