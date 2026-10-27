@@ -58,6 +58,9 @@ services:
       # through Grafana's $VAR substitution (apiKey__file: $DATACATALOG_API_KEY_FILE)
       # so a single shared datasources.yaml works on both topologies.
       - DATACATALOG_API_KEY_FILE=/run/secrets/${DATACATALOG_API_KEY_SECRET_NAME}
+      # Read by the datasource provisioning; deploy.sh points it at databridge-timescaledb
+      # when the timescale group is deployed.
+      - GRAFANA_DATABRIDGE_URL=${GRAFANA_DATABRIDGE_URL:-http://databridge:8080}
       - GF_FEATURE_TOGGLES_ENABLE=accessControlOnCall,idForwarding,externalServiceAccounts
       - GF_ALERTING_ENABLED=false
       - GF_UNIFIED_ALERTING_ENABLED=false

@@ -47,6 +47,22 @@ services:
     <<: *swarm-worker
   worker-timeseries:
     <<: *swarm-worker
+    # Sized from the node by scripts/setup/worker-timeseries-sizing.sh: 0.25 CPU / 128M throttled one
+    # 4000-tag flow until it missed scheduler heartbeats. The volume keeps the sink's retry buffer.
+    volumes:
+      - worker-timeseries-data:/usr/app/data
+    deploy:
+      resources:
+        limits:
+          cpus: "${WORKER_TIMESERIES_CPUS:-1.0}"
+          memory: "${WORKER_TIMESERIES_MEMORY_LIMIT:-512M}"
+        reservations:
+          cpus: "0.1"
+          memory: "${WORKER_TIMESERIES_MEMORY_RESERVATION:-256M}"
+      restart_policy:
+        condition: any
+        delay: 10s
+        window: 120s
   worker-influx-client-dc:
     <<: *swarm-worker
   worker-notifications:
@@ -86,3 +102,6 @@ services:
 # service name over that shared overlay — so a 2nd workers stack registers with
 # the same core. (Defining it here would conflict create-vs-external on attach.)
 # =============================================================================
+
+volumes:
+  worker-timeseries-data: { name: "${ENV}-worker-timeseries-data" }

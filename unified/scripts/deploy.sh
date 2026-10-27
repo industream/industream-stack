@@ -105,6 +105,12 @@ if [[ "$EDITION" != ee ]]; then
   done
 fi
 
+# Grafana's DataBridge datasource follows the deployed store: a TimescaleDB deploy runs only
+# databridge-timescaledb, so the default http://databridge:8080 would reach nothing.
+if [[ " $GROUP_SET " == *" timescale "* ]]; then
+  export GRAFANA_DATABRIDGE_URL="${GRAFANA_DATABRIDGE_URL:-http://databridge-timescaledb:8080}"
+fi
+
 # ---- FORGE: materialize a bundle from the Forge API (optional source) --------
 # --forge <exportKey>@<version> (non-interactive, CI-friendly) or
 # --forge-interactive (menu) download a release bundle's .env.* from Forge into
@@ -776,6 +782,12 @@ else
     export TIMESCALEDB_MEMORY_LIMIT TIMESCALEDB_MEMORY_RESERVATION TIMESCALEDB_CPUS \
       TIMESCALEDB_SHARED_BUFFERS TIMESCALEDB_EFFECTIVE_CACHE_SIZE
     echo "ℹ TimescaleDB: limit ${TIMESCALEDB_MEMORY_LIMIT}, reservation ${TIMESCALEDB_MEMORY_RESERVATION}, cpus ${TIMESCALEDB_CPUS}, shared_buffers ${TIMESCALEDB_SHARED_BUFFERS}, max_connections ${TIMESCALEDB_MAX_CONNECTIONS:-100}"
+  fi
+  if [[ " $GROUP_SET " == *" workers "* ]]; then
+    read -r WORKER_TIMESERIES_MEMORY_LIMIT WORKER_TIMESERIES_MEMORY_RESERVATION WORKER_TIMESERIES_CPUS \
+      < <(bash "$HERE/../scripts/setup/worker-timeseries-sizing.sh")
+    export WORKER_TIMESERIES_MEMORY_LIMIT WORKER_TIMESERIES_MEMORY_RESERVATION WORKER_TIMESERIES_CPUS
+    echo "ℹ worker-timeseries: limit ${WORKER_TIMESERIES_MEMORY_LIMIT}, reservation ${WORKER_TIMESERIES_MEMORY_RESERVATION}, cpus ${WORKER_TIMESERIES_CPUS}"
   fi
   # Pre-deploy live snapshot (best-effort): when a deploy-state repo exists, capture
   # the current Portainer-owned stacks BEFORE we overwrite them, so manual edits
