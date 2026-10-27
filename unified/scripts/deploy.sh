@@ -107,7 +107,8 @@ fi
 
 # Grafana's DataBridge datasource follows the deployed store: a TimescaleDB deploy runs only
 # databridge-timescaledb, so the default http://databridge:8080 would reach nothing.
-if [[ " $GROUP_SET " == *" timescale "* ]]; then
+# An exported default beats compose's --env-file, so a value set in .env.<env> is left to it.
+if [[ " $GROUP_SET " == *" timescale "* ]] && ! grep -qs '^GRAFANA_DATABRIDGE_URL=' ".env.${ENV}"; then
   export GRAFANA_DATABRIDGE_URL="${GRAFANA_DATABRIDGE_URL:-http://databridge-timescaledb:8080}"
 fi
 
