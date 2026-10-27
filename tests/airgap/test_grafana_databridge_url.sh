@@ -23,3 +23,5 @@ fi
 deploy="$(cat unified/scripts/deploy.sh)"
 assert_contains "$deploy" 'GRAFANA_DATABRIDGE_URL="${GRAFANA_DATABRIDGE_URL:-http://databridge-timescaledb:8080}"' \
   "a deploy with the timescale group points Grafana at databridge-timescaledb"
+assert_contains "$deploy" '! grep -qs '"'"'^GRAFANA_DATABRIDGE_URL='"'"' ".env.${ENV}"' \
+  "a URL set in .env.<env> wins over the timescale default, also in compose mode (an exported default beats --env-file)"
