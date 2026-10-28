@@ -12,3 +12,15 @@ providers:
     options:
       path: /etc/grafana/provisioning/dashboards/json
 
+  # Loaded only where the bundle deploys the OPC-UA worker: deploy.sh points this
+  # at optional/opc-ua, otherwise it reads the empty optional/off.
+  - name: 'OPC-UA'
+    orgId: 1
+    folder: 'OPC-UA'
+    folderUid: 'opc-ua'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: $GRAFANA_OPCUA_DASHBOARDS

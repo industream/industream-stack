@@ -32,6 +32,8 @@ with_docker_stub() {
   cat > "$stub_dir/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "$*" >> "$DOCKER_LOG"
+# DOCKER_STUB_LOG_ENV="A B": also log those variables as the deploy would see them.
+for _var in ${DOCKER_STUB_LOG_ENV:-}; do echo "env $_var=${!_var-}" >> "$DOCKER_LOG"; done
 case "$1" in
   info)   echo "active" ;;
   image)                     # `image inspect`: present by default (install-side
