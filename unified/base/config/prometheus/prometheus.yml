@@ -106,14 +106,13 @@ scrape_configs:
   # Note: Worker-specific metrics (OPC-UA, S7, Modbus) are exposed via the scheduler
   # Container metrics are collected via cAdvisor with name=~"flowmaker-worker.*"
 
-  # Optional: Direct worker metrics (if workers expose /metrics endpoint)
-  # Uncomment and configure port if workers support Prometheus metrics
-  # - job_name: 'flowmaker-workers'
-  #   dns_sd_configs:
-  #     - names:
-  #         - 'tasks.flowmaker-worker-opc-ua-client'
-  #         - 'tasks.flowmaker-worker-s7-client'
-  #         - 'tasks.flowmaker-worker-modbus-tcp'
-  #       type: 'A'
-  #       port: 9090
-  #   metrics_path: '/metrics'
+  # OPC-UA worker (2.7.1+): health server on :8080 serves /metrics. Swarm only:
+  # tasks.<service> resolves to every replica; nothing resolves where the bundle
+  # has no OPC-UA worker, so the job just has no target there.
+  - job_name: 'opcua-client'
+    dns_sd_configs:
+      - names:
+          - 'tasks.worker-opc-ua-client'
+        type: 'A'
+        port: 8080
+    metrics_path: '/metrics'

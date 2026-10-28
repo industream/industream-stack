@@ -684,6 +684,16 @@ prune_unprovided_services() {
   write_pruned_list "$list" || { rm -f "$list"; exit 1; }
   apply_pruned_list "$list"
 }
+# Grafana loads the OPC-UA dashboard only where the pruned files still deploy the worker.
+# Swarm only: Prometheus finds the worker through tasks.<service>, which compose lacks.
+export_opcua_dashboards() {
+  local f
+  for f in "${FILES[@]}"; do
+    [[ "$f" != -f ]] && grep -qs '^  worker-opc-ua-client:' "$f" || continue
+    export GRAFANA_OPCUA_DASHBOARDS=/etc/grafana/provisioning/dashboards/optional/opc-ua
+    return
+  done
+}
 
 # ---- Dispatch ---------------------------------------------------------------
 if [[ "$RUNTIME" == compose ]]; then
@@ -772,6 +782,7 @@ else
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
   prune_unprovided_services
+  export_opcua_dashboards
   # TimescaleDB, when deployed, is the main store: it takes 40% and InfluxDB 20%.
   [[ " $GROUP_SET " == *" timescale "* ]] && export INFLUXDB_RAM_PERCENT="${INFLUXDB_RAM_PERCENT:-20}"
   read -r INFLUXDB_MEMORY_LIMIT INFLUXDB_MEMORY_RESERVATION < <(bash "$HERE/../scripts/setup/influxdb-memory.sh")
