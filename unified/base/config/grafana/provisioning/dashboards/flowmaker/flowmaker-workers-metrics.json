@@ -15,7 +15,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "targets": [
         {
-          "expr": "rate(container_cpu_usage_seconds_total{name=~\"flowmaker-worker.*\"}[1m]) * 100",
+          "expr": "rate(container_cpu_usage_seconds_total{name=~\".*worker-.*\"}[1m]) * 100",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -37,7 +37,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
       "targets": [
         {
-          "expr": "container_memory_usage_bytes{name=~\"flowmaker-worker.*\"}",
+          "expr": "container_memory_usage_bytes{name=~\".*worker-.*\"}",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -59,8 +59,8 @@
       "gridPos": { "h": 6, "w": 8, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "rate(flowmaker_opcua_reads_total[1m])",
-          "legendFormat": "{{job_id}} - {{node_id}}",
+          "expr": "sum by (endpoint) (rate(flowmaker_opcua_reads_total[1m]))",
+          "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
       ],
@@ -122,8 +122,8 @@
       "gridPos": { "h": 6, "w": 12, "x": 0, "y": 14 },
       "targets": [
         {
-          "expr": "rate(flowmaker_opcua_errors_total[1m])",
-          "legendFormat": "OPC-UA {{error_type}}",
+          "expr": "sum by (endpoint, error_type) (rate(flowmaker_opcua_errors_total[1m]))",
+          "legendFormat": "OPC-UA {{endpoint}} {{error_type}}",
           "refId": "A"
         },
         {
@@ -154,7 +154,7 @@
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 14 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(flowmaker_opcua_read_duration_seconds_bucket[5m])) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(flowmaker_opcua_read_duration_seconds_bucket[5m]))) * 1000",
           "legendFormat": "OPC-UA p95",
           "refId": "A"
         },
@@ -185,8 +185,8 @@
       "gridPos": { "h": 4, "w": 8, "x": 0, "y": 20 },
       "targets": [
         {
-          "expr": "flowmaker_opcua_connection_status",
-          "legendFormat": "OPC-UA",
+          "expr": "max by (endpoint) (flowmaker_opcua_connection_status)",
+          "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
       ],
@@ -308,12 +308,12 @@
       "gridPos": { "h": 6, "w": 8, "x": 16, "y": 24 },
       "targets": [
         {
-          "expr": "rate(container_network_receive_bytes_total{name=~\"flowmaker-worker.*\"}[1m])",
+          "expr": "rate(container_network_receive_bytes_total{name=~\".*worker-.*\"}[1m])",
           "legendFormat": "{{name}} RX",
           "refId": "A"
         },
         {
-          "expr": "rate(container_network_transmit_bytes_total{name=~\"flowmaker-worker.*\"}[1m])",
+          "expr": "rate(container_network_transmit_bytes_total{name=~\".*worker-.*\"}[1m])",
           "legendFormat": "{{name}} TX",
           "refId": "B"
         }
