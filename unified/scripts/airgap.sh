@@ -404,7 +404,7 @@ save_tooling_image() {
 # GRAFANA_HARVEST_TIMEOUT bounds the readiness poll below; overridable so a
 # test running under a stub daemon (where the poll can never truly succeed)
 # does not have to wait out the real-world default.
-: "${GRAFANA_HARVEST_TIMEOUT:=120}"
+: "${GRAFANA_HARVEST_TIMEOUT:=300}"
 harvest_assets() {
   local dest="$1"
   harvest_grafana_plugins "$dest"
@@ -434,7 +434,7 @@ harvest_grafana_plugins() {
   # access, which the build machine has by definition — so --harvest-from
   # (docker_ctx below) does not apply here, only to the CDN copy further down.
   echo "▶ assets: grafana plugins"
-  local preinstall="yesoreyeram-infinity-datasource,marcusolsson-json-datasource,volkovlabs-echarts-panel${GRAFANA_DATABRIDGE_PLUGIN}"
+  local preinstall="yesoreyeram-infinity-datasource,marcusolsson-json-datasource,volkovlabs-echarts-panel,marcusolsson-dynamictext-panel,volkovlabs-table-panel,volkovlabs-form-panel,volkovlabs-variable-panel,volkovlabs-image-panel,volkovlabs-links-panel,marcusolsson-calendar-panel${GRAFANA_DATABRIDGE_PLUGIN}"
   mkdir -p "$dest/assets/grafana-plugins"
   # Grafana runs as uid 472 in the image, never the host uid, so the mount
   # must be world-writable or the installer fails silently with nothing ever
@@ -463,7 +463,7 @@ harvest_grafana_plugins() {
   # directory): Grafana's unrelated bundled-app installer keeps writing other
   # plugins in the background for a while after ours are done, which would
   # otherwise stop the total from ever settling.
-  local waited=0 id ready size prev_size=-1 target_dirs
+  local waited=0 id ready size prev_size=-1 target_dirs settled=false
   while (( waited < GRAFANA_HARVEST_TIMEOUT )); do
     ready=true
     for id in $plugin_ids; do
@@ -472,7 +472,7 @@ harvest_grafana_plugins() {
     if [[ "$ready" == true ]]; then
       target_dirs=(); for id in $plugin_ids; do target_dirs+=("$dest/assets/grafana-plugins/$id"); done
       size="$(du -sbc "${target_dirs[@]}" 2>/dev/null | tail -1 | cut -f1)"
-      [[ "$size" == "$prev_size" ]] && break
+      [[ "$size" == "$prev_size" ]] && { settled=true; break; }
       prev_size="$size"
     fi
     sleep 1; waited=$(( waited + 1 ))
@@ -492,8 +492,16 @@ harvest_grafana_plugins() {
         case " $KEEP " in *" $d "*) ;; *) rm -rf -- "$d" ;; esac
       done'
 
-  [[ -n "$(ls -A "$dest/assets/grafana-plugins")" ]] \
-    || die "no Grafana plugin was produced — Grafana will not boot offline"
+  # Every listed plugin, not just some: GF_PLUGINS_PREINSTALL_SYNC blocks the
+  # offline boot on any missing one.
+  local missing=""
+  for id in $plugin_ids; do
+    [[ -f "$dest/assets/grafana-plugins/$id/plugin.json" ]] || missing+=" $id"
+  done
+  [[ -z "$missing" ]] \
+    || die "Grafana plugins not harvested within ${GRAFANA_HARVEST_TIMEOUT}s:${missing} — Grafana will not boot offline"
+  [[ "$settled" == true ]] \
+    || die "Grafana plugins still being written after ${GRAFANA_HARVEST_TIMEOUT}s — refusing a partial harvest"
   chmod 755 "$dest/assets/grafana-plugins"
 }
 
