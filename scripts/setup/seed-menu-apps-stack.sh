@@ -87,6 +87,8 @@ APPS=(
   "datacatalog-api|DataCatalog API|Catalog REST API|DA|#a855f7|#a855f7|#c084fc|datacatalog-api|/openapi"
   "grafana|Grafana|Visual dashboards|GR|#f46800|#f46800|#ff8c00|dashboard|/"
   "databridge|DataBridge|Time-series API|DB|#10b981|#10b981|#34d399|databridge|/swagger"
+  # Gated: ViewBoard is not part of the default deploy groups yet.
+  "viewboard|ViewBoard|Grafana dashboards portal|VB|#14b8a6|#14b8a6|#2dd4bf|viewboard|/||viewboard"
 
   # Admin-only ops tiles — allowedRoles=admin, gated on their deploy group.
   "portainer|Portainer|Container & stack ops|PT|#13bef9|#13bef9|#0ea5e9|portainer|/|admin|portainer"
