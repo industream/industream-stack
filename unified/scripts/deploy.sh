@@ -695,6 +695,18 @@ export_opcua_dashboards() {
   done
 }
 
+# Both runtimes: only load the scheduler/worker views when the scheduler survived
+# bundle pruning. Reset the value so an inherited export cannot enable empty views.
+export_flowmaker_dashboards() {
+  local f
+  export GRAFANA_FLOWMAKER_DASHBOARDS=/etc/grafana/provisioning/dashboards/optional/off
+  for f in "${FILES[@]}"; do
+    [[ "$f" != -f ]] && grep -qs '^  flowmaker-scheduler:' "$f" || continue
+    export GRAFANA_FLOWMAKER_DASHBOARDS=/etc/grafana/provisioning/dashboards/flowmaker
+    return
+  done
+}
+
 # ---- Dispatch ---------------------------------------------------------------
 if [[ "$RUNTIME" == compose ]]; then
   [[ -n "$PROJECT" ]] || { echo "✗ --project required for compose" >&2; exit 1; }
@@ -737,6 +749,7 @@ if [[ "$RUNTIME" == compose ]]; then
     write_pruned_list "$_pruned_list"
   ) || { rm -f "$_pruned_list"; exit 1; }
   apply_pruned_list "$_pruned_list"
+  export_flowmaker_dashboards
   _vo_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _vo_files+=("$f"); done
   ENV="$ENV" bash "$HERE/../scripts/setup/fix-volume-ownership.sh" \
     --env "$ENV" --project "$PROJECT" "${_vo_files[@]}" \
@@ -783,6 +796,7 @@ else
   set +a
   prune_unprovided_services
   export_opcua_dashboards
+  export_flowmaker_dashboards
   # TimescaleDB, when deployed, is the main store: it takes 40% and InfluxDB 20%.
   [[ " $GROUP_SET " == *" timescale "* ]] && export INFLUXDB_RAM_PERCENT="${INFLUXDB_RAM_PERCENT:-20}"
   read -r INFLUXDB_MEMORY_LIMIT INFLUXDB_MEMORY_RESERVATION < <(bash "$HERE/../scripts/setup/influxdb-memory.sh")

@@ -10,14 +10,52 @@
   "liveNow": false,
   "panels": [
     {
+      "id": 14,
+      "type": "marcusolsson-dynamictext-panel",
+      "title": "",
+      "transparent": true,
+      "description": "Industream monitoring overview",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "targets": [],
+      "options": {
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-banner\"><small>INDUSTREAM · OPERATIONS</small><strong>FlowMaker workers</strong><p>Protocol connections, throughput and latency.</p></div>",
+        "defaultContent": "<div class=\"monitoring-banner\"><small>INDUSTREAM · OPERATIONS</small><strong>FlowMaker workers</strong><p>Protocol connections, throughput and latency.</p></div>",
+        "helpers": "",
+        "styles": ".monitoring-banner {\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n  min-height: 70px;\n  padding: 6px 18px;\n  border-left: 4px solid #5794f2;\n}\n.monitoring-banner small { font-size: 11px; letter-spacing: .12em; opacity: .7; }\n.monitoring-banner strong { font-size: 24px; font-weight: 650; line-height: 1.3; }\n.monitoring-banner p { margin: 2px 0 0; font-size: 13px; opacity: .75; }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
+      }
+    },
+    {
       "title": "CPU Usage par Worker",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 3
+      },
       "targets": [
         {
-          "expr": "rate(container_cpu_usage_seconds_total{name=~\"flowmaker-worker.*\"}[1m]) * 100",
+          "expr": "rate(container_cpu_usage_seconds_total{name=~\".*worker-.*\"}[1m]) * 100",
           "legendFormat": "{{name}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
@@ -29,17 +67,31 @@
             "fillOpacity": 10
           }
         }
+      },
+      "id": 1,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Memory Usage par Worker",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 3
+      },
       "targets": [
         {
-          "expr": "container_memory_usage_bytes{name=~\"flowmaker-worker.*\"}",
+          "expr": "container_memory_usage_bytes{name=~\".*worker-.*\"}",
           "legendFormat": "{{name}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
@@ -51,17 +103,31 @@
             "fillOpacity": 10
           }
         }
+      },
+      "id": 2,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Lectures/sec - OPC-UA",
       "type": "timeseries",
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 8 },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 11
+      },
       "targets": [
         {
-          "expr": "rate(flowmaker_opcua_reads_total[1m])",
-          "legendFormat": "{{job_id}} - {{node_id}}",
-          "refId": "A"
+          "expr": "sum by (endpoint) (rate(flowmaker_opcua_reads_total[1m]))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
@@ -72,17 +138,31 @@
             "lineWidth": 2
           }
         }
+      },
+      "id": 3,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Lectures/sec - S7",
       "type": "timeseries",
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 8 },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 11
+      },
       "targets": [
         {
           "expr": "rate(flowmaker_s7_reads_total[1m])",
           "legendFormat": "{{job_id}} - {{node_id}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
@@ -93,17 +173,31 @@
             "lineWidth": 2
           }
         }
+      },
+      "id": 4,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Lectures/sec - Modbus",
       "type": "timeseries",
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 8 },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 11
+      },
       "targets": [
         {
           "expr": "rate(flowmaker_modbus_reads_total[1m])",
           "legendFormat": "{{job_id}} - {{node_id}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
@@ -114,27 +208,49 @@
             "lineWidth": 2
           }
         }
+      },
+      "id": 5,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Erreurs/sec",
       "type": "timeseries",
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 14 },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
       "targets": [
         {
-          "expr": "rate(flowmaker_opcua_errors_total[1m])",
-          "legendFormat": "OPC-UA {{error_type}}",
-          "refId": "A"
+          "expr": "sum by (endpoint, error_type) (rate(flowmaker_opcua_errors_total[1m]))",
+          "legendFormat": "OPC-UA {{endpoint}} {{error_type}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         },
         {
           "expr": "rate(flowmaker_s7_errors_total[1m])",
           "legendFormat": "S7 {{error_type}}",
-          "refId": "B"
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         },
         {
           "expr": "rate(flowmaker_modbus_errors_total[1m])",
           "legendFormat": "Modbus {{error_type}}",
-          "refId": "C"
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
@@ -144,29 +260,53 @@
             "drawStyle": "line",
             "lineWidth": 2
           },
-          "color": { "mode": "palette-classic" }
+          "color": {
+            "mode": "palette-classic"
+          }
         }
+      },
+      "id": 6,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Latence p95 (ms)",
       "type": "timeseries",
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 14 },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(flowmaker_opcua_read_duration_seconds_bucket[5m])) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(flowmaker_opcua_read_duration_seconds_bucket[5m]))) * 1000",
           "legendFormat": "OPC-UA p95",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         },
         {
           "expr": "histogram_quantile(0.95, rate(flowmaker_s7_read_duration_seconds_bucket[5m])) * 1000",
           "legendFormat": "S7 p95",
-          "refId": "B"
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         },
         {
           "expr": "histogram_quantile(0.95, rate(flowmaker_modbus_read_duration_seconds_bucket[5m])) * 1000",
           "legendFormat": "Modbus p95",
-          "refId": "C"
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
@@ -177,145 +317,383 @@
             "lineWidth": 2
           }
         }
+      },
+      "id": 7,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Connection Status OPC-UA",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 20 },
+      "type": "marcusolsson-dynamictext-panel",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 23
+      },
       "targets": [
         {
-          "expr": "flowmaker_opcua_connection_status",
-          "legendFormat": "OPC-UA",
-          "refId": "A"
+          "expr": "max by (endpoint) (flowmaker_opcua_connection_status)",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
           "mappings": [
-            { "options": { "0": { "text": "Disconnected", "color": "red" } }, "type": "value" },
-            { "options": { "1": { "text": "Connected", "color": "green" } }, "type": "value" }
+            {
+              "options": {
+                "0": {
+                  "text": "Disconnected",
+                  "color": "red"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "1": {
+                  "text": "Connected",
+                  "color": "green"
+                }
+              },
+              "type": "value"
+            }
           ]
         }
+      },
+      "id": 8,
+      "options": {
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"mappings\": [{\"options\": {\"0\": {\"text\": \"Disconnected\", \"color\": \"red\"}}, \"type\": \"value\"}, {\"options\": {\"1\": {\"text\": \"Connected\", \"color\": \"green\"}}, \"type\": \"value\"}]}};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Connection Status S7",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 20 },
+      "type": "marcusolsson-dynamictext-panel",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 23
+      },
       "targets": [
         {
           "expr": "flowmaker_s7_connection_status",
           "legendFormat": "S7",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
           "mappings": [
-            { "options": { "0": { "text": "Disconnected", "color": "red" } }, "type": "value" },
-            { "options": { "1": { "text": "Connected", "color": "green" } }, "type": "value" }
+            {
+              "options": {
+                "0": {
+                  "text": "Disconnected",
+                  "color": "red"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "1": {
+                  "text": "Connected",
+                  "color": "green"
+                }
+              },
+              "type": "value"
+            }
           ]
         }
+      },
+      "id": 9,
+      "options": {
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"mappings\": [{\"options\": {\"0\": {\"text\": \"Disconnected\", \"color\": \"red\"}}, \"type\": \"value\"}, {\"options\": {\"1\": {\"text\": \"Connected\", \"color\": \"green\"}}, \"type\": \"value\"}]}};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Connection Status Modbus",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 20 },
+      "type": "marcusolsson-dynamictext-panel",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 23
+      },
       "targets": [
         {
           "expr": "flowmaker_modbus_connection_status",
           "legendFormat": "Modbus",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
           "mappings": [
-            { "options": { "0": { "text": "Disconnected", "color": "red" } }, "type": "value" },
-            { "options": { "1": { "text": "Connected", "color": "green" } }, "type": "value" }
+            {
+              "options": {
+                "0": {
+                  "text": "Disconnected",
+                  "color": "red"
+                }
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "1": {
+                  "text": "Connected",
+                  "color": "green"
+                }
+              },
+              "type": "value"
+            }
           ]
         }
+      },
+      "id": 10,
+      "options": {
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"mappings\": [{\"options\": {\"0\": {\"text\": \"Disconnected\", \"color\": \"red\"}}, \"type\": \"value\"}, {\"options\": {\"1\": {\"text\": \"Connected\", \"color\": \"green\"}}, \"type\": \"value\"}]}};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Total Reads",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 24 },
+      "type": "marcusolsson-dynamictext-panel",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 27
+      },
       "targets": [
         {
           "expr": "sum(flowmaker_opcua_reads_total)",
           "legendFormat": "OPC-UA",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         },
         {
           "expr": "sum(flowmaker_s7_reads_total)",
           "legendFormat": "S7",
-          "refId": "B"
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         },
         {
           "expr": "sum(flowmaker_modbus_reads_total)",
           "legendFormat": "Modbus",
-          "refId": "C"
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "short"
         }
+      },
+      "id": 11,
+      "options": {
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"unit\": \"short\"}};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Total Errors",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 24 },
+      "type": "marcusolsson-dynamictext-panel",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 27
+      },
       "targets": [
         {
           "expr": "sum(flowmaker_opcua_errors_total)",
           "legendFormat": "OPC-UA",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         },
         {
           "expr": "sum(flowmaker_s7_errors_total)",
           "legendFormat": "S7",
-          "refId": "B"
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         },
         {
           "expr": "sum(flowmaker_modbus_errors_total)",
           "legendFormat": "Modbus",
-          "refId": "C"
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "red", "value": 100 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
             ]
           }
         }
+      },
+      "id": 12,
+      "options": {
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"unit\": \"short\", \"color\": {\"mode\": \"thresholds\"}, \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"yellow\", \"value\": 10}, {\"color\": \"red\", \"value\": 100}]}}};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     },
     {
       "title": "Network I/O",
       "type": "timeseries",
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 24 },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 27
+      },
       "targets": [
         {
-          "expr": "rate(container_network_receive_bytes_total{name=~\"flowmaker-worker.*\"}[1m])",
+          "expr": "rate(container_network_receive_bytes_total{name=~\".*worker-.*\"}[1m])",
           "legendFormat": "{{name}} RX",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         },
         {
-          "expr": "rate(container_network_transmit_bytes_total{name=~\"flowmaker-worker.*\"}[1m])",
+          "expr": "rate(container_network_transmit_bytes_total{name=~\".*worker-.*\"}[1m])",
           "legendFormat": "{{name}} TX",
-          "refId": "B"
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "fieldConfig": {
@@ -326,18 +704,36 @@
             "lineWidth": 1
           }
         }
+      },
+      "id": 13,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       }
     }
   ],
   "refresh": "5s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["flowmaker", "workers", "opc-ua", "modbus", "s7"],
-  "templating": { "list": [] },
-  "time": { "from": "now-30m", "to": "now" },
+  "tags": [
+    "flowmaker",
+    "workers",
+    "opc-ua",
+    "modbus",
+    "s7",
+    "monitoring",
+    "volkov"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "",
   "title": "FlowMaker Workers Metrics",
   "uid": "flowmaker-workers-metrics",
-  "version": 1
+  "version": 2
 }
