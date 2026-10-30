@@ -23,12 +23,41 @@
   "liveNow": false,
   "panels": [
     {
+      "id": 31,
+      "type": "marcusolsson-dynamictext-panel",
+      "title": "",
+      "transparent": true,
+      "description": "Industream monitoring overview",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "targets": [],
+      "options": {
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-banner\"><small>INDUSTREAM · OPERATIONS</small><strong>Swarm</strong><p>Cluster health, tasks and service resources.</p></div>",
+        "defaultContent": "<div class=\"monitoring-banner\"><small>INDUSTREAM · OPERATIONS</small><strong>Swarm</strong><p>Cluster health, tasks and service resources.</p></div>",
+        "helpers": "",
+        "styles": ".monitoring-banner {\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n  min-height: 70px;\n  padding: 6px 18px;\n  border-left: 4px solid #5794f2;\n}\n.monitoring-banner small { font-size: 11px; letter-spacing: .12em; opacity: .7; }\n.monitoring-banner strong { font-size: 24px; font-weight: 650; line-height: 1.3; }\n.monitoring-banner p { margin: 2px 0 0; font-size: 13px; opacity: .75; }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
+      }
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 3
       },
       "id": 1,
       "panels": [],
@@ -74,22 +103,23 @@
         "h": 3,
         "w": 3,
         "x": 0,
-        "y": 1
+        "y": 4
       },
       "id": 20,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"color\": {\"mode\": \"thresholds\"}, \"mappings\": [{\"options\": {\"0\": {\"text\": \"No\"}, \"1\": {\"text\": \"Yes\"}}, \"type\": \"value\"}], \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}]}}, \"overrides\": []};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
       },
       "targets": [
         {
@@ -102,7 +132,7 @@
         }
       ],
       "title": "Is Leader",
-      "type": "stat"
+      "type": "marcusolsson-dynamictext-panel"
     },
     {
       "datasource": {
@@ -132,22 +162,23 @@
         "h": 3,
         "w": 3,
         "x": 3,
-        "y": 1
+        "y": 4
       },
       "id": 21,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"color\": {\"mode\": \"thresholds\"}, \"mappings\": [], \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}]}, \"unit\": \"short\"}, \"overrides\": []};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
       },
       "targets": [
         {
@@ -160,7 +191,7 @@
         }
       ],
       "title": "Nodes",
-      "type": "stat"
+      "type": "marcusolsson-dynamictext-panel"
     },
     {
       "datasource": {
@@ -190,22 +221,23 @@
         "h": 3,
         "w": 3,
         "x": 6,
-        "y": 1
+        "y": 4
       },
       "id": 22,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"color\": {\"mode\": \"thresholds\"}, \"mappings\": [], \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}]}, \"unit\": \"short\"}, \"overrides\": []};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
       },
       "targets": [
         {
@@ -218,7 +250,7 @@
         }
       ],
       "title": "Services",
-      "type": "stat"
+      "type": "marcusolsson-dynamictext-panel"
     },
     {
       "datasource": {
@@ -248,22 +280,23 @@
         "h": 3,
         "w": 3,
         "x": 9,
-        "y": 1
+        "y": 4
       },
       "id": 23,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"color\": {\"mode\": \"thresholds\"}, \"mappings\": [], \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}]}, \"unit\": \"short\"}, \"overrides\": []};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
       },
       "targets": [
         {
@@ -276,7 +309,7 @@
         }
       ],
       "title": "Running Tasks",
-      "type": "stat"
+      "type": "marcusolsson-dynamictext-panel"
     },
     {
       "datasource": {
@@ -310,22 +343,23 @@
         "h": 3,
         "w": 3,
         "x": 12,
-        "y": 1
+        "y": 4
       },
       "id": 24,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"color\": {\"mode\": \"thresholds\"}, \"mappings\": [], \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"red\", \"value\": 1}]}, \"unit\": \"short\"}, \"overrides\": []};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
       },
       "targets": [
         {
@@ -338,7 +372,7 @@
         }
       ],
       "title": "Failed Tasks",
-      "type": "stat"
+      "type": "marcusolsson-dynamictext-panel"
     },
     {
       "datasource": {
@@ -368,22 +402,23 @@
         "h": 3,
         "w": 3,
         "x": 15,
-        "y": 1
+        "y": 4
       },
       "id": 25,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"color\": {\"mode\": \"thresholds\"}, \"mappings\": [], \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}]}, \"unit\": \"short\"}, \"overrides\": []};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
       },
       "targets": [
         {
@@ -396,7 +431,7 @@
         }
       ],
       "title": "Configs",
-      "type": "stat"
+      "type": "marcusolsson-dynamictext-panel"
     },
     {
       "datasource": {
@@ -426,22 +461,23 @@
         "h": 3,
         "w": 3,
         "x": 18,
-        "y": 1
+        "y": 4
       },
       "id": 26,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"color\": {\"mode\": \"thresholds\"}, \"mappings\": [], \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}]}, \"unit\": \"short\"}, \"overrides\": []};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
       },
       "targets": [
         {
@@ -454,7 +490,7 @@
         }
       ],
       "title": "Secrets",
-      "type": "stat"
+      "type": "marcusolsson-dynamictext-panel"
     },
     {
       "collapsed": false,
@@ -462,7 +498,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 4
+        "y": 7
       },
       "id": 30,
       "panels": [],
@@ -497,22 +533,23 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 5
+        "y": 8
       },
       "id": 2,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"color\": {\"mode\": \"thresholds\"}, \"mappings\": [], \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}]}, \"unit\": \"short\"}, \"overrides\": []};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
       },
       "targets": [
         {
@@ -525,7 +562,7 @@
         }
       ],
       "title": "Active Services",
-      "type": "stat"
+      "type": "marcusolsson-dynamictext-panel"
     },
     {
       "datasource": {
@@ -555,22 +592,23 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 5
+        "y": 8
       },
       "id": 3,
       "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"color\": {\"mode\": \"thresholds\"}, \"mappings\": [], \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}]}, \"unit\": \"short\"}, \"overrides\": []};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
       },
       "targets": [
         {
@@ -583,7 +621,7 @@
         }
       ],
       "title": "Total Containers",
-      "type": "stat"
+      "type": "marcusolsson-dynamictext-panel"
     },
     {
       "datasource": {
@@ -621,22 +659,23 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 5
+        "y": 8
       },
       "id": 4,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"color\": {\"mode\": \"thresholds\"}, \"mappings\": [], \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"yellow\", \"value\": 50}, {\"color\": \"red\", \"value\": 80}]}, \"unit\": \"percent\"}, \"overrides\": []};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
       },
       "targets": [
         {
@@ -649,7 +688,7 @@
         }
       ],
       "title": "Swarm CPU Usage",
-      "type": "stat"
+      "type": "marcusolsson-dynamictext-panel"
     },
     {
       "datasource": {
@@ -687,22 +726,23 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 5
+        "y": 8
       },
       "id": 5,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
+        "renderMode": "data",
+        "content": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "defaultContent": "<div class=\"monitoring-cards\" style=\"{{monitoringTheme}}\">\n{{#each (monitoringValues)}}\n<div class=\"monitoring-card\">\n  <div class=\"monitoring-value\" style=\"color:{{color}}\">{{text}}</div>\n  <div class=\"monitoring-label\" title=\"{{label}}\">{{label}}</div>\n  {{#if meter}}<div class=\"monitoring-meter\" role=\"meter\" aria-label=\"{{label}}\" aria-valuemin=\"{{min}}\" aria-valuemax=\"{{max}}\" aria-valuenow=\"{{value}}\"><span style=\"width:{{percent}}%;background:{{color}}\"></span></div>{{/if}}\n</div>\n{{else}}\n<div class=\"monitoring-empty\">No data</div>\n{{/each}}\n</div>\n",
+        "helpers": "const monitoringFieldConfig = {\"defaults\": {\"color\": {\"mode\": \"thresholds\"}, \"mappings\": [], \"thresholds\": {\"mode\": \"absolute\", \"steps\": [{\"color\": \"green\", \"value\": null}, {\"color\": \"yellow\", \"value\": 4000000000}, {\"color\": \"red\", \"value\": 8000000000}]}, \"unit\": \"bytes\"}, \"overrides\": []};\n// Presentation only: select each series' last non-null value, then let Grafana\n// apply its units. Business Text disables Grafana's color/mapping/min/max field\n// options, so the generator embeds that presentation configuration explicitly.\n// PromQL owns\n// rates, totals and ratios. Keep every endpoint/worker separate.\nconst theme = context.grafana.theme.colors;\nconst colorOf = (name) => name === 'text' ? theme.text.primary :\n  context.grafana.theme.visualization.getColorByName(name);\ncontext.handlebars.registerHelper('monitoringTheme', () =>\n  `--monitoring-text:${theme.text.primary};--monitoring-muted:${theme.text.secondary};` +\n  `--monitoring-border:${theme.border.weak};--monitoring-bg:${theme.background.secondary};`);\n\ncontext.handlebars.registerHelper('monitoringValues', () => {\n  const cards = [];\n  for (const frame of context.panelData.series) {\n    for (const field of frame.fields) {\n      if (field.type !== 'number') continue;\n      const config = { ...field.config, ...monitoringFieldConfig.defaults };\n      for (const override of monitoringFieldConfig.overrides || []) {\n        const { id, options } = override.matcher;\n        const name = field.state?.displayName || field.name;\n        const matches = id === 'byName' ? options === name :\n          id === 'byType' ? options === field.type :\n          id === 'byFrameRefID' ? options === frame.refId :\n          id === 'byRegexp' ? new RegExp(options).test(name) : false;\n        if (matches) for (const property of override.properties) config[property.id] = property.value;\n      }\n      let value = null;\n      for (let i = field.values.length - 1; i >= 0; i--) {\n        const candidate = field.values[i];\n        if (typeof candidate === 'number' && Number.isFinite(candidate)) {\n          value = candidate;\n          break;\n        }\n      }\n      const display = value === null ? null : field.display?.(value);\n      const mapping = value === null ? null : (config.mappings || [])\n        .find((m) => Object.hasOwn(m.options, String(value)))?.options[String(value)];\n      const text = value === null ? 'No data' : mapping?.text ?? (display\n        ? [display.prefix, display.text, display.suffix].filter(Boolean).map((p) => p.trim()).join(' ')\n        : String(value));\n      let color = display?.color || theme.text.secondary;\n      if (value !== null && config.color?.mode === 'thresholds') {\n        for (const step of config.thresholds?.steps || []) {\n          if (step.value === null || value >= step.value) color = colorOf(step.color);\n        }\n      }\n      if (mapping?.color) color = colorOf(mapping.color);\n      const label = field.state?.displayName || field.config.displayNameFromDS ||\n        frame.name || field.labels?.endpoint || field.labels?.instance || field.name;\n      const min = config.min;\n      const max = config.max;\n      const meter = value !== null && Number.isFinite(min) && Number.isFinite(max) && max > min;\n      cards.push({\n        label, text, color, meter, min, max, value,\n        // Drawing scale only, like the native gauge; the displayed value is never clamped.\n        percent: meter ? Math.max(0, Math.min(100, (value - min) / (max - min) * 100)) : 0,\n      });\n    }\n  }\n  return cards;\n});\n",
+        "styles": ".monitoring-cards {\n  display: grid;\n  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));\n  gap: 8px;\n  max-height: 100%;\n  overflow: auto;\n  color: var(--monitoring-text);\n}\n.monitoring-card {\n  min-width: 0;\n  padding: 8px 10px;\n  border: 1px solid var(--monitoring-border);\n  border-radius: 8px;\n  background: var(--monitoring-bg);\n}\n.monitoring-value {\n  font-size: clamp(16px, 1.4vw, 24px);\n  font-weight: 650;\n  line-height: 1.25;\n  overflow-wrap: anywhere;\n}\n.monitoring-label {\n  margin-top: 4px;\n  color: var(--monitoring-muted);\n  font-size: 11px;\n  overflow-wrap: anywhere;\n}\n.monitoring-meter {\n  height: 5px;\n  margin-top: 8px;\n  overflow: hidden;\n  border-radius: 4px;\n  background: var(--monitoring-border);\n}\n.monitoring-meter span { display: block; height: 100%; }\n.monitoring-empty { padding: 16px; color: var(--monitoring-muted); }\n",
+        "wrap": false,
+        "editors": [
+          "helpers",
+          "styles"
+        ],
+        "contentPartials": [],
+        "externalStyles": [],
+        "afterRender": ""
       },
       "targets": [
         {
@@ -715,7 +755,7 @@
         }
       ],
       "title": "Swarm Memory",
-      "type": "stat"
+      "type": "marcusolsson-dynamictext-panel"
     },
     {
       "collapsed": false,
@@ -723,7 +763,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 9
+        "y": 12
       },
       "id": 8,
       "panels": [],
@@ -788,7 +828,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 10
+        "y": 13
       },
       "id": 9,
       "options": {
@@ -880,7 +920,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 10
+        "y": 13
       },
       "id": 10,
       "options": {
@@ -920,7 +960,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 23
       },
       "id": 11,
       "panels": [],
@@ -933,7 +973,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 32
       },
       "id": 14,
       "panels": [],
@@ -1081,7 +1121,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 33
       },
       "id": 15,
       "options": {
@@ -1186,7 +1226,9 @@
   "tags": [
     "docker",
     "swarm",
-    "swarmprom"
+    "swarmprom",
+    "monitoring",
+    "volkov"
   ],
   "templating": {
     "list": [
@@ -1247,6 +1289,6 @@
   "timezone": "",
   "title": "Docker Swarm Services",
   "uid": "docker-swarm-services",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }

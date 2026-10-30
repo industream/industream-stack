@@ -64,6 +64,8 @@ services:
       # Read by the dashboard provisioning; deploy.sh points it at optional/opc-ua
       # when the bundle deploys the OPC-UA worker.
       - GRAFANA_OPCUA_DASHBOARDS=${GRAFANA_OPCUA_DASHBOARDS:-/etc/grafana/provisioning/dashboards/optional/off}
+      # Scheduler/worker dashboards are loaded only with the FlowMaker group.
+      - GRAFANA_FLOWMAKER_DASHBOARDS=${GRAFANA_FLOWMAKER_DASHBOARDS:-/etc/grafana/provisioning/dashboards/optional/off}
       - GF_FEATURE_TOGGLES_ENABLE=accessControlOnCall,idForwarding,externalServiceAccounts
       - GF_ALERTING_ENABLED=false
       - GF_UNIFIED_ALERTING_ENABLED=false
