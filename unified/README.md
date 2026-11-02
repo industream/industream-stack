@@ -230,3 +230,19 @@ Notes:
 - **Logto admin** (`auth-admin.${INDUSTREAM_DOMAIN}` → :3002) is exposed only on
   swarm; the compose EE overlay publishes only the public `auth.${FM_DOMAIN}`
   endpoint (:3001).
+
+### Offline Logto password checks
+
+EE deployments with `--airgap` disable only Logto's external Have I Been Pwned
+password check, after the target stack's database becomes ready. This applies to
+all tenants, including the Admin Console, and preserves the remaining password
+requirements. Online deployments retain the external check. The operation is
+idempotent and does not require a Logto restart.
+
+For an existing offline installation, run on its Docker host:
+
+```bash
+bash scripts/setup/logto-airgap-password-policy.sh --container <logto-postgres-container>
+```
+
+Add `--check` to inspect the policy without changing it.
