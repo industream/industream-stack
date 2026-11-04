@@ -111,6 +111,15 @@ ENVOUT="$OUT/stack.env"
   for bf in "$BUNDLE_DIR"/.env.*; do echo "# --- ${bf##*/} ---"; emit_env "$bf" || true; done
   [[ -f ".env.${ENV}" ]] && { echo "# --- .env.${ENV} ---"; emit_env ".env.${ENV}" || true; }
 } > "$ENVOUT"
+# Match deploy.sh's site-aware default and write a literal CSV for Swarm.
+export DATACATALOG_CORS_ALLOWED_ORIGINS="$(
+  source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+  for bf in "$BUNDLE_DIR"/.env.*; do source "$bf"; done
+  [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+  source "$HERE/scripts/lib/datacatalog-cors.sh"
+  datacatalog_cors_origins
+)"
+printf 'DATACATALOG_CORS_ALLOWED_ORIGINS=%s\n' "$DATACATALOG_CORS_ALLOWED_ORIGINS" >> "$ENVOUT"
 
 echo "▶ rendering ${EDITION^^} / env=${ENV} → ${OUT}  groups=[${GROUP_LIST}]"
 

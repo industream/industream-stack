@@ -256,22 +256,6 @@ PY
   echo "  worker selection: ${WORKERS_ENABLED}"
 fi
 
-# ---- Render-only gate (validate the assembled config, deploy nothing) -------
-if [[ "$RENDER" == true ]]; then
-  if [[ "$RUNTIME" == compose ]]; then
-    ENV=$ENV docker compose "${ENV_FILES[@]}" "${FILES[@]}" config
-    exit $?
-  fi
-  # `docker compose config` can't render swarm overlays that use ${ENV} in
-  # network-map KEYS (e.g. ${ENV}-platform) — those only interpolate at
-  # `stack deploy` time. Validate each file is well-formed YAML instead.
-  for f in "${FILES[@]}"; do [[ "$f" == -f ]] && continue
-    python3 -c "import yaml; yaml.safe_load(open('$f'))" || { echo "✗ invalid YAML: $f" >&2; exit 1; }
-  done
-  echo "✓ ${#FILES[@]} swarm file refs are valid YAML (full validation = a live 'stack deploy')"
-  exit 0
-fi
-
 # ---- Env peek ----------------------------------------------------------------
 # Read a variable exactly as the assembled deploy will see it (same file chain,
 # same order as ENV_FILES above), WITHOUT exporting anything into this process.
@@ -287,6 +271,33 @@ peek_env() {
     printf '%s' "${!1-}"
   )
 }
+
+# Resolve the allowlist after all bundle/site overrides; export a literal CSV
+# so Swarm never has to expand a nested ${A:-${B}} default.
+source "$HERE/scripts/lib/datacatalog-cors.sh"
+export DATACATALOG_CORS_ALLOWED_ORIGINS="$(
+  set -a
+  source registries.env; source versions.env; source auth.env; source "runtime.${RUNTIME}.env"
+  while read -r bf; do source "$bf"; done < <(bundle_env_files)
+  [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
+  datacatalog_cors_origins
+)"
+
+# ---- Render-only gate (validate the assembled config, deploy nothing) -------
+if [[ "$RENDER" == true ]]; then
+  if [[ "$RUNTIME" == compose ]]; then
+    ENV=$ENV docker compose "${ENV_FILES[@]}" "${FILES[@]}" config
+    exit $?
+  fi
+  # `docker compose config` can't render swarm overlays that use ${ENV} in
+  # network-map KEYS (e.g. ${ENV}-platform) — those only interpolate at
+  # `stack deploy` time. Validate each file is well-formed YAML instead.
+  for f in "${FILES[@]}"; do [[ "$f" == -f ]] && continue
+    python3 -c "import yaml; yaml.safe_load(open('$f'))" || { echo "✗ invalid YAML: $f" >&2; exit 1; }
+  done
+  echo "✓ ${#FILES[@]} swarm file refs are valid YAML (full validation = a live 'stack deploy')"
+  exit 0
+fi
 
 # ---- Compose EE: FM_DOMAIN and INDUSTREAM_DOMAIN must be the SAME apex -------
 # The compose topology is Caddy-fronted and every host label in
@@ -363,6 +374,29 @@ ensure_grafana_oidc_secret() {
       echo "  ✓ staged ${dir}/grafana_oidc_client_secret for compose"
     fi
   fi
+}
+
+# Provision the Hub's existing fixed secret mount during deployment too.
+ensure_hub_signing_key() {
+  local f needed=false dir first projdir legacy
+  for f in "${FILES[@]}"; do
+    [[ "$f" == -f ]] && continue
+    if grep -qs '^  industream-hub-backend:' "$f"; then needed=true; break; fi
+  done
+  [[ "$needed" == true ]] || return 0
+  dir="$HERE/../secrets/$ENV"
+  legacy="$HERE/../secrets/hub_jwt_signing_key"
+  if [[ "$RUNTIME" == compose ]]; then
+    first="${FILES[1]}"
+    projdir="$(cd "$(dirname "$first")" && pwd)"
+    dir="$(peek_env SECRETS_DIR)"
+    [[ -n "$dir" ]] || dir=./secrets
+    [[ "$dir" == /* ]] || dir="$projdir/${dir#./}"
+    [[ ! -f "$HERE/../secrets/$ENV/hub_jwt_signing_key" ]] || legacy="$HERE/../secrets/$ENV/hub_jwt_signing_key"
+  fi
+  bash "$HERE/../scripts/setup/ensure-hub-jwt-key.sh" \
+    --runtime "$RUNTIME" --env "$ENV" --secrets-dir "$dir" \
+    --legacy-file "$legacy"
 }
 
 # ---- Convergence helper -----------------------------------------------------
@@ -739,6 +773,7 @@ if [[ "$RUNTIME" == compose ]]; then
     write_pruned_list "$_pruned_list"
   ) || { rm -f "$_pruned_list"; exit 1; }
   apply_pruned_list "$_pruned_list"
+  ensure_hub_signing_key
   _vo_files=(); for f in "${FILES[@]}"; do [[ "$f" == -f ]] || _vo_files+=("$f"); done
   ENV="$ENV" bash "$HERE/../scripts/setup/fix-volume-ownership.sh" \
     --env "$ENV" --project "$PROJECT" "${_vo_files[@]}" \
@@ -784,6 +819,8 @@ else
   [[ -f ".env.${ENV}" ]] && source ".env.${ENV}"
   set +a
   prune_unprovided_services
+  ensure_hub_signing_key
+  export DATACATALOG_CORS_ALLOWED_ORIGINS="$(datacatalog_cors_origins)"
   export_opcua_dashboards
   # TimescaleDB, when deployed, is the main store: it takes 40% and InfluxDB 20%.
   [[ " $GROUP_SET " == *" timescale "* ]] && export INFLUXDB_RAM_PERCENT="${INFLUXDB_RAM_PERCENT:-20}"

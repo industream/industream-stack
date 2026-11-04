@@ -199,6 +199,40 @@ diffs stay noise-free. Nothing unscrubbed is ever committed.
 > Like mode B, deploy-state is **swarm-targeted** (it reads/renders the
 > per-group Portainer stacks).
 
+## Hub signing key and asset access
+
+Deploying the `core` group now prepares the Hub's persistent RSA signing key.
+On Swarm, the external `${ENV}_hub_jwt_signing_key` secret is reused whenever
+it exists, even when this machine has no local copy. A missing secret is
+created from `secrets/<env>/hub_jwt_signing_key` (or the legacy flat file),
+generating an RSA key only when neither exists. Redeploying never rotates it.
+Keep an offline backup of the private file; Docker cannot export an existing
+secret. `--render`, `--list-images` and `--print-groups` do not prepare secrets.
+Compose uses the key file at its resolved `SECRETS_DIR` mount instead.
+
+The mount stays `/run/secrets/hub_jwt_signing_key`, and the existing issuer,
+audience and canonical JWKS URL remain defined by `auth.env`. Adding only
+`IH_JWT_SIGNING_KEY_FILE` without creating and mounting that secret is insufficient.
+
+DataCatalog's browser allowlist defaults to the Hub origin plus the FlowMaker
+and DataCatalog UI origins for the resolved site domain. Compose uses
+`FM_DOMAIN`; Swarm uses `INDUSTREAM_DOMAIN`. A custom installation can replace
+the list in `.env.<env>` (or its Forge installation environment):
+
+```dotenv
+DATACATALOG_CORS_ALLOWED_ORIGINS=https://plant.example,https://flowmaker.plant.example,https://datacatalog.plant.example
+```
+
+The same resolved literal list is emitted in Portainer's `stack.env` and used
+for baked stacks. This avoids nested Swarm interpolation. This is a deployment
+tree/configuration change; it does not require different Hub/FlowMaker image
+tags. Flow-to-asset associations remain in ConfigHub's persistent volume.
+
+The DataCatalog API must also honor its `Cors:AllowedOrigins` configuration.
+Existing 1.17.0 builds return `Access-Control-Allow-Origin: *` internally; this
+deployment change supplies the intended allowlist but does not change that
+API behavior. Verify the returned CORS headers when upgrading the API.
+
 ## Compose vs Swarm parity
 
 The compose path runs the **full application**: every group/service, file

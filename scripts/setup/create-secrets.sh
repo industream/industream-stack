@@ -141,7 +141,6 @@ BASE_SECRETS=(
     "backup_monitor_htpasswd"
     "hub_backend_admin_user"
     "hub_backend_admin_password"
-    "hub_jwt_signing_key"
     "portainer_admin_password"
 )
 
@@ -181,11 +180,6 @@ get_or_generate_secret() {
     elif [[ "$secret_name" == *"_user" ]] || [[ "$secret_name" == *"_username" ]]; then
         # Readable default for identity fields (not a password).
         new_secret="admin"
-    elif [ "$secret_name" = "hub_jwt_signing_key" ]; then
-        # The Hub backend signs JWTs with RS256 and reads this via
-        # IH_JWT_SIGNING_KEY_FILE → it must be a PEM RSA private key, NOT a random
-        # string (createPrivateKey() throws ERR_OSSL_UNSUPPORTED otherwise).
-        new_secret=$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null)
     else
         new_secret=$(openssl rand -hex 24)
     fi
@@ -310,6 +304,10 @@ fi
 # Create Swarm secrets for this environment
 # =============================================================================
 create_secrets_for_env "$ENV"
+
+# The external Swarm key is authoritative if the local store is absent.
+bash "$SCRIPT_DIR/ensure-hub-jwt-key.sh" --runtime swarm --env "$ENV" \
+    --secrets-dir "$ENV_SECRETS_DIR" --legacy-file "$SECRETS_DIR/hub_jwt_signing_key"
 
 # =============================================================================
 # Summary
