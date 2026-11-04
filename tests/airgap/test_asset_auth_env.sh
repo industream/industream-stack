@@ -10,13 +10,47 @@ export PATH="$fixture/bin:$PATH"
 source "$REPO_ROOT/unified/scripts/lib/datacatalog-cors.sh"
 unset DATACATALOG_CORS_ALLOWED_ORIGINS
 INDUSTREAM_DOMAIN=plant.test INDUSTREAM_HUB_ORIGIN=https://hub.plant.test RUNTIME=swarm
-expected='https://hub.plant.test,https://flowmaker.plant.test,https://datacatalog.plant.test'
+expected='https://hub.plant.test,https://flowmaker.plant.test,https://datacatalog-ui.plant.test'
 assert_eq "$(datacatalog_cors_origins)" "$expected" "Swarm CORS covers Hub, FlowMaker and DataCatalog UI"
 DATACATALOG_CORS_ALLOWED_ORIGINS='https://custom.example,http://localhost:5173'
 assert_eq "$(datacatalog_cors_origins)" "$DATACATALOG_CORS_ALLOWED_ORIGINS" "explicit allowlist replaces the default"
 unset DATACATALOG_CORS_ALLOWED_ORIGINS
 RUNTIME=compose FM_DOMAIN=compose.test
-assert_eq "$(datacatalog_cors_origins)" 'https://hub.plant.test,https://flowmaker.compose.test,https://datacatalog.compose.test' "Compose origins follow its routing domain"
+assert_eq "$(datacatalog_cors_origins)" 'https://hub.plant.test,https://frontend.compose.test,https://datacatalog-ui.compose.test' "Compose origins follow its routing domain"
+(
+  unset INDUSTREAM_HUB_ORIGIN
+  export RUNTIME FM_DOMAIN
+  python3 - "$REPO_ROOT" "$(datacatalog_cors_origins)" <<'PY'
+import sys,yaml
+from pathlib import Path
+root=Path(sys.argv[1])/'unified'
+services=[('runtime/compose/core.yml','industream-hub-frontend'),('runtime/compose/flowmaker.yml','flowmaker-frontend'),('runtime.compose.yml','datacatalog-ui')]
+origins=[]
+for filename,service in services:
+    labels=yaml.safe_load((root/filename).read_text())['services'][service]['labels']
+    origins.append('https://'+labels['caddy'].replace('${FM_DOMAIN}','compose.test'))
+assert sys.argv[2].split(',')==origins,(sys.argv[2],origins)
+print('  ✓ default Compose allowlist matches actual frontend Caddy routes')
+PY
+)
+(
+  unset INDUSTREAM_HUB_ORIGIN
+  RUNTIME=swarm
+  python3 - "$REPO_ROOT" "$(datacatalog_cors_origins)" <<'PY'
+import re,sys,yaml
+from pathlib import Path
+root=Path(sys.argv[1])/'unified'
+services=[('runtime/swarm/core.yml','industream-hub-frontend'),('runtime/swarm/flowmaker.yml','flowmaker-frontend'),('runtime.swarm.yml','datacatalog-ui')]
+origins=[]
+for filename,service in services:
+    labels=yaml.safe_load((root/filename).read_text())['services'][service]['deploy']['labels']
+    rule=next(label for label in labels if '-secure.rule=Host(' in label)
+    host=re.search(r'Host\(`([^`]+)`\)',rule)[1]
+    origins.append('https://'+host.replace('${INDUSTREAM_DOMAIN}','plant.test'))
+assert sys.argv[2].split(',')==origins,(sys.argv[2],origins)
+print('  ✓ default Swarm allowlist matches actual frontend Traefik routes')
+PY
+)
 unset FM_DOMAIN
 RUNTIME=swarm
 
@@ -81,7 +115,7 @@ unset DATACATALOG_CORS_ALLOWED_ORIGINS
 export DOCKER_STUB_LOG_ENV=DATACATALOG_CORS_ALLOWED_ORIGINS
 with_docker_stub "$fixture/unified/scripts/deploy.sh" --runtime compose --edition ce --env test --project test \
   --bundle 1.0.1 --groups datacatalog --render >/dev/null
-assert_contains "$(cat "$DOCKER_LOG")" 'env DATACATALOG_CORS_ALLOWED_ORIGINS=https://portal.site.test,https://flowmaker.site.test,https://datacatalog.site.test' "site domain overrides are applied before deriving CORS"
+assert_contains "$(cat "$DOCKER_LOG")" 'env DATACATALOG_CORS_ALLOWED_ORIGINS=https://portal.site.test,https://frontend.site.test,https://datacatalog-ui.site.test' "site domain overrides are applied before deriving CORS"
 printf 'DATACATALOG_CORS_ALLOWED_ORIGINS=https://special.site.test\n' >> "$fixture/unified/.env.test"
 with_docker_stub "$fixture/unified/scripts/deploy.sh" --runtime compose --edition ce --env test --project test \
   --bundle 1.0.1 --groups datacatalog --render >/dev/null

@@ -7,10 +7,15 @@ datacatalog_cors_origins() {
     return
   fi
   local domain="${INDUSTREAM_DOMAIN:-}" hub="${INDUSTREAM_HUB_ORIGIN:-}"
-  [[ "${RUNTIME:-swarm}" == compose ]] && domain="${FM_DOMAIN:-$domain}"
+  local flowmaker=flowmaker hub_prefix=
+  if [[ "${RUNTIME:-swarm}" == compose ]]; then
+    domain="${FM_DOMAIN:-$domain}"
+    flowmaker=frontend
+    hub_prefix=hub.
+  fi
   if [[ -z "$domain" ]]; then
     printf '%s' "${hub:-http://localhost:5173}"
     return
   fi
-  printf '%s' "${hub:-https://$domain},https://flowmaker.$domain,https://datacatalog.$domain"
+  printf '%s' "${hub:-https://$hub_prefix$domain},https://$flowmaker.$domain,https://datacatalog-ui.$domain"
 }

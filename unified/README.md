@@ -216,11 +216,14 @@ audience and canonical JWKS URL remain defined by `auth.env`. Adding only
 
 DataCatalog's browser allowlist defaults to the Hub origin plus the FlowMaker
 and DataCatalog UI origins for the resolved site domain. Compose uses
-`FM_DOMAIN`; Swarm uses `INDUSTREAM_DOMAIN`. A custom installation can replace
+`FM_DOMAIN` with `hub`, `frontend` and `datacatalog-ui` subdomains; Swarm uses
+`INDUSTREAM_DOMAIN` with the root Hub origin and `flowmaker` / `datacatalog-ui`
+subdomains. `INDUSTREAM_HUB_ORIGIN` overrides the default Hub origin.
+A custom installation can replace
 the list in `.env.<env>` (or its Forge installation environment):
 
 ```dotenv
-DATACATALOG_CORS_ALLOWED_ORIGINS=https://plant.example,https://flowmaker.plant.example,https://datacatalog.plant.example
+DATACATALOG_CORS_ALLOWED_ORIGINS=https://plant.example,https://flowmaker.plant.example,https://datacatalog-ui.plant.example
 ```
 
 The same resolved literal list is emitted in Portainer's `stack.env` and used
