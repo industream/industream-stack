@@ -59,8 +59,9 @@ if [ ! -f ".env" ]; then
 fi
 
 if [ -f ".env" ]; then
+    # Only the keys this stack uses: one malformed unrelated line must not abort the deploy.
     set -a
-    source .env
+    source <(grep -E '^(INDUSTREAM_DOMAIN|INDUSTREAM_SERVER_IP|TLS_MODE|ACME_EMAIL|TRAEFIK_VERSION|TRAEFIK_LOG_LEVEL|TRAEFIK_AUTH_HTPASSWD)=' .env)
     set +a
     echo -e "${GREEN}✓ Base .env loaded${NC}"
     echo ""
