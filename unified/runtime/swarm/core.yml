@@ -120,7 +120,8 @@ services:
         - traefik.http.routers.${ENV}-minio-api-secure.rule=Host(`s3.${INDUSTREAM_DOMAIN}`)
         - traefik.http.routers.${ENV}-minio-api-secure.tls=true
         - traefik.http.routers.${ENV}-minio-api-secure.service=${ENV}-minio-api
-        - traefik.http.routers.${ENV}-minio-api-secure.middlewares=security-headers@file
+        # allow-iframe: ViewBoard pages embed HTML objects served from s3.${INDUSTREAM_DOMAIN}.
+        - traefik.http.routers.${ENV}-minio-api-secure.middlewares=allow-iframe@file
         - traefik.http.services.${ENV}-minio-api.loadbalancer.server.port=9000
         # MinIO Console
         - traefik.http.routers.${ENV}-minio-console-secure.entrypoints=websecure
