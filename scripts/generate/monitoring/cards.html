@@ -1,0 +1,11 @@
+<div class="monitoring-cards" style="{{monitoringTheme}}">
+{{#each (monitoringValues)}}
+<div class="monitoring-card">
+  <div class="monitoring-value" style="color:{{color}}">{{text}}</div>
+  <div class="monitoring-label" title="{{label}}">{{label}}</div>
+  {{#if meter}}<div class="monitoring-meter" role="meter" aria-label="{{label}}" aria-valuemin="{{min}}" aria-valuemax="{{max}}" aria-valuenow="{{value}}"><span style="width:{{percent}}%;background:{{color}}"></span></div>{{/if}}
+</div>
+{{else}}
+<div class="monitoring-empty">No data</div>
+{{/each}}
+</div>

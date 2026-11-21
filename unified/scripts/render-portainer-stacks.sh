@@ -136,7 +136,7 @@ for g in $GROUP_LIST; do
   _merged="$(mktemp)"; _cleaned="$(mktemp)"
   docker compose "${files[@]}" config --no-interpolate > "$_merged" 2>/dev/null
   # 2) CLEAN: strip cross-group depends_on + externalise shared networks (templated).
-  WORKERS_CSV="$WORKERS_ENABLED" GROUP="$g" \
+  WORKERS_CSV="$WORKERS_ENABLED" GROUP="$g" EDITION="$EDITION" \
     python3 - "$_merged" "$_cleaned" <<'PY'
 import os, sys, yaml
 src, out = sys.argv[1], sys.argv[2]
@@ -181,6 +181,20 @@ doc["networks"] = nets
 keep = {w.strip() for w in os.environ.get("WORKERS_CSV", "").split(",") if w.strip()}
 if keep and os.environ.get("GROUP", "") in ("workers", "workers-premium"):
     doc["services"] = {n: s for n, s in svcs.items() if n in keep}
+
+# Portainer deploys these complete group stacks without going through deploy.sh.
+# Carry the same dashboard selection into the monitoring service itself.
+if os.environ.get("GROUP") == "monitoring":
+    opcua = os.environ["EDITION"] == "ee" and (not keep or "worker-opc-ua-client" in keep)
+    base = "/etc/grafana/provisioning/dashboards/"
+    selected = {"GRAFANA_FLOWMAKER_DASHBOARDS": base + "flowmaker",
+                "GRAFANA_OPCUA_DASHBOARDS": base + ("optional/opc-ua" if opcua else "optional/off")}
+    env = svcs["grafana"].setdefault("environment", {})
+    if isinstance(env, list):
+        env[:] = [v for v in env if v.split("=", 1)[0] not in selected]
+        env.extend(f"{key}={value}" for key, value in selected.items())
+    else:
+        env.update(selected)
 
 yaml.safe_dump(doc, open(out, "w"), sort_keys=False, default_flow_style=False)
 PY
