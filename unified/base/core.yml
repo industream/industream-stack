@@ -114,6 +114,9 @@ services:
       - RUSTFS_ACCESS_KEY_FILE=/run/secrets/${MINIO_ROOT_USER_SECRET_NAME}
       - RUSTFS_SECRET_KEY_FILE=/run/secrets/${MINIO_ROOT_PASSWORD_SECRET_NAME}
       - RUSTFS_CONSOLE_ENABLE=true
+      # RustFS answers no CORS header by default (MinIO allowed every origin):
+      # box forms upload from the browser to s3.<domain>. Single-level ${VAR} only.
+      - RUSTFS_CORS_ALLOWED_ORIGINS=https://flowmaker.${INDUSTREAM_DOMAIN}
     volumes:
       - minio-data:/data
     healthcheck:
