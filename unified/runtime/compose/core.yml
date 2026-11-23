@@ -49,6 +49,9 @@ services:
       caddy.tls.issuer.lifetime: 24000h
 
   minio:
+    # Compose FlowMaker origin (frontend.${FM_DOMAIN}); base defaults to the swarm host.
+    environment:
+      - RUSTFS_CORS_ALLOWED_ORIGINS=${FM_PROTOCOL:-https}://frontend.${FM_DOMAIN}
     networks:
       - flowmaker-net
     restart: unless-stopped
