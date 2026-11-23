@@ -112,6 +112,9 @@ if [[ " $GROUP_SET " == *" timescale "* ]] && ! grep -qs '^GRAFANA_DATABRIDGE_UR
   export GRAFANA_DATABRIDGE_URL="${GRAFANA_DATABRIDGE_URL:-http://databridge-timescaledb:8080}"
 fi
 
+# No registry of plugins to reach offline: Grafana starts on the plugins install.sh seeded.
+[[ "$AIRGAP" == true ]] && export GRAFANA_PLUGINS_PREINSTALL_DISABLED=true
+
 # ---- FORGE: materialize a bundle from the Forge API (optional source) --------
 # --forge <exportKey>@<version> (non-interactive, CI-friendly) or
 # --forge-interactive (menu) download a release bundle's .env.* from Forge into
