@@ -103,6 +103,10 @@ services:
       # nested ${VAR:+,${VAR}} form (compose does) — it leaks the literal — so a
       # flat ${VAR} is used to stay correct on BOTH runtimes.
       - GF_PLUGINS_PREINSTALL_SYNC=yesoreyeram-infinity-datasource,marcusolsson-json-datasource,volkovlabs-echarts-panel,marcusolsson-dynamictext-panel,volkovlabs-table-panel,volkovlabs-form-panel,volkovlabs-variable-panel,volkovlabs-image-panel,volkovlabs-links-panel,marcusolsson-calendar-panel${GRAFANA_DATABRIDGE_PLUGIN}
+      # Air-gapped deploys set this: each unversioned id above costs a 10 s lookup on
+      # grafana.com before Grafana listens, and the health check gives up first.
+      # The plugins seeded into the volume load either way.
+      - GF_PLUGINS_PREINSTALL_DISABLED=${GRAFANA_PLUGINS_PREINSTALL_DISABLED:-false}
       # The DataBridge datasource and the Hub Bridge app ship unsigned →
       # Grafana must be told to load them.
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=industream-databridge-datasource,industream-hubbridge-app
